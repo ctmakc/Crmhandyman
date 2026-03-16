@@ -10,10 +10,24 @@ async function main() {
   const adminPassword = await bcrypt.hash("admin123", 12);
   const workerPassword = await bcrypt.hash("worker123", 12);
 
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@handyman.ca" },
+  // Create main demo tenant
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: "demo" },
     update: {},
     create: {
+      slug: "demo",
+      businessName: "Mike's Handyman Services",
+      ownerEmail: "admin@handyman.ca",
+      plan: "PAID",
+      expiresAt: null,
+    },
+  });
+
+  const admin = await prisma.user.upsert({
+    where: { email_tenantId: { email: "admin@handyman.ca", tenantId: tenant.id } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
       name: "Mike Johnson",
       email: "admin@handyman.ca",
       password: adminPassword,
@@ -22,9 +36,10 @@ async function main() {
   });
 
   const worker1 = await prisma.user.upsert({
-    where: { email: "worker1@handyman.ca" },
+    where: { email_tenantId: { email: "worker1@handyman.ca", tenantId: tenant.id } },
     update: {},
     create: {
+      tenantId: tenant.id,
       name: "Steve Brown",
       email: "worker1@handyman.ca",
       password: workerPassword,
@@ -33,9 +48,10 @@ async function main() {
   });
 
   const worker2 = await prisma.user.upsert({
-    where: { email: "worker2@handyman.ca" },
+    where: { email_tenantId: { email: "worker2@handyman.ca", tenantId: tenant.id } },
     update: {},
     create: {
+      tenantId: tenant.id,
       name: "Dave Wilson",
       email: "worker2@handyman.ca",
       password: workerPassword,
@@ -49,6 +65,7 @@ async function main() {
     update: {},
     create: {
       id: "lead-sample-1",
+      tenantId: tenant.id,
       name: "John Smith",
       phone: "416-555-0101",
       email: "john@example.com",
@@ -68,6 +85,7 @@ async function main() {
     update: {},
     create: {
       id: "project-sample-1",
+      tenantId: tenant.id,
       clientName: "Sarah Connor",
       phone: "416-555-0202",
       email: "sarah@example.com",
@@ -101,12 +119,13 @@ async function main() {
     },
   });
 
-  // Sample task
+  // Sample tasks
   await prisma.task.upsert({
     where: { id: "task-sample-1" },
     update: {},
     create: {
       id: "task-sample-1",
+      tenantId: tenant.id,
       projectId: project.id,
       title: "Buy drywall supplies from Home Depot",
       description: "2 sheets of 5/8\" drywall, joint compound, screws",
@@ -122,6 +141,7 @@ async function main() {
     update: {},
     create: {
       id: "task-sample-2",
+      tenantId: tenant.id,
       projectId: project.id,
       title: "Sand and prime walls",
       description: "Sand all walls, apply primer coat",
@@ -138,6 +158,7 @@ async function main() {
     update: {},
     create: {
       id: "payment-sample-1",
+      tenantId: tenant.id,
       projectId: project.id,
       amount: 500,
       method: "E_TRANSFER",
@@ -151,6 +172,7 @@ async function main() {
     update: {},
     create: {
       id: "expense-sample-1",
+      tenantId: tenant.id,
       projectId: project.id,
       amount: 250,
       category: "MATERIALS",
@@ -159,6 +181,7 @@ async function main() {
   });
 
   console.log("✅ Seed complete");
+  console.log(`Tenant slug: demo (${tenant.id})`);
   console.log("Admin: admin@handyman.ca / admin123");
   console.log("Worker 1: worker1@handyman.ca / worker123");
   console.log("Worker 2: worker2@handyman.ca / worker123");

@@ -6,10 +6,13 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
   const expense = await prisma.expense.create({
     data: {
+      tenantId,
       projectId: body.projectId || undefined,
       amount: Number(body.amount),
       category: body.category || "OTHER",

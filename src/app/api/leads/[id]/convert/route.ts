@@ -6,10 +6,12 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
-  const lead = await prisma.lead.findUnique({
-    where: { id: params.id },
+  const lead = await prisma.lead.findFirst({
+    where: { id: params.id, tenantId },
     include: { project: { select: { id: true } } },
   });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -18,6 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const [project] = await prisma.$transaction([
     prisma.project.create({
       data: {
+        tenantId,
         leadId: params.id,
         clientName: lead.name,
         phone: lead.phone,

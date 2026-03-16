@@ -6,12 +6,14 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const userId = (session.user as { id?: string })?.id;
-  const isAdmin = (session.user as { role?: string })?.role === "ADMIN";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = session.user as any;
+  const tenantId = u.tenantId as string;
+  const userId = u.id as string;
+  const isAdmin = u.role === "ADMIN";
 
   const tasks = await prisma.task.findMany({
-    where: isAdmin ? {} : { assignedToId: userId },
+    where: isAdmin ? { tenantId } : { tenantId, assignedToId: userId },
     include: {
       assignedTo: { select: { id: true, name: true } },
       project: { select: { id: true, title: true } },
@@ -25,12 +27,16 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = session.user as any;
+  const tenantId = u.tenantId as string;
+  const userId = u.id as string;
 
-  const userId = ((session.user as { id?: string })?.id) ?? "";
   const body = await req.json();
 
   const task = await prisma.task.create({
     data: {
+      tenantId,
       title: body.title,
       description: body.description,
       projectId: body.projectId || undefined,

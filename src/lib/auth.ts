@@ -10,13 +10,22 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        tenantId: { label: "Tenant ID", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-        });
+        // Find user by email + tenantId if provided, else first match by email
+        let user;
+        if (credentials.tenantId) {
+          user = await prisma.user.findUnique({
+            where: { email_tenantId: { email: credentials.email, tenantId: credentials.tenantId } },
+          });
+        } else {
+          user = await prisma.user.findFirst({
+            where: { email: credentials.email },
+          });
+        }
 
         if (!user) return null;
 
@@ -27,7 +36,9 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: user.role,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          role: user.role as any,
+          tenantId: user.tenantId,
         };
       },
     }),
@@ -38,13 +49,18 @@ export const authOptions: NextAuthOptions = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         token.role = (user as any).role;
         token.id = user.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        token.tenantId = (user as any).tenantId;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { role?: string; id?: string }).role = token.role as string;
-        (session.user as { role?: string; id?: string }).id = token.id as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const u = session.user as any;
+        u.role = token.role as string;
+        u.id = token.id as string;
+        u.tenantId = token.tenantId as string;
       }
       return session;
     },

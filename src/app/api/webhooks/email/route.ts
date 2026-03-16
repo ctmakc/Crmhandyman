@@ -53,14 +53,23 @@ export async function POST(req: NextRequest) {
   const phone = extractPhoneFromText(bodyText) || undefined;
   const source = detectSource(from, subject);
 
-  // Dedup by email
+  // Find the email integration to determine tenant
+  const emailIntegration = await prisma.channelIntegration.findFirst({
+    where: { channel: "EMAIL", isActive: true },
+  });
+  if (!emailIntegration) return NextResponse.json({ ok: true });
+
+  const tenantId = emailIntegration.tenantId;
+
+  // Dedup by email within tenant
   if (email) {
-    const existing = await prisma.lead.findFirst({ where: { email } });
+    const existing = await prisma.lead.findFirst({ where: { email, tenantId } });
     if (existing) return NextResponse.json({ ok: true });
   }
 
   await prisma.lead.create({
     data: {
+      tenantId,
       name,
       email,
       phone,

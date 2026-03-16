@@ -6,9 +6,11 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
-  const project = await prisma.project.findUnique({
-    where: { id: params.id },
+  const project = await prisma.project.findFirst({
+    where: { id: params.id, tenantId },
     include: {
       lead: { select: { id: true, name: true, source: true } },
       estimates: { orderBy: { createdAt: "desc" } },
@@ -28,6 +30,11 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
+
+  const existing = await prisma.project.findFirst({ where: { id: params.id, tenantId } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
   const project = await prisma.project.update({

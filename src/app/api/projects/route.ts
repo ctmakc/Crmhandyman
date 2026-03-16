@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
@@ -13,6 +15,7 @@ export async function GET(req: NextRequest) {
 
   const projects = await prisma.project.findMany({
     where: {
+      tenantId,
       ...(status ? { status: status as never } : {}),
       ...(q ? {
         OR: [
@@ -36,10 +39,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
   const project = await prisma.project.create({
     data: {
+      tenantId,
       clientName: body.clientName,
       phone: body.phone,
       email: body.email,

@@ -1,15 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [slug, setSlug] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [registered, setRegistered] = useState(false);
+
+  useEffect(() => {
+    const reg = params.get("registered");
+    const s = params.get("slug");
+    if (reg) setRegistered(true);
+    if (s) setSlug(s);
+
+    // Resolve tenant from slug to get tenantId for auth
+    if (s) {
+      fetch(`/api/tenant/resolve?slug=${s}`)
+        .then(r => r.json())
+        .then(d => { if (d.id) setTenantId(d.id); })
+        .catch(() => null);
+    } else {
+      // Default to "demo" tenant for local dev
+      fetch("/api/tenant/resolve?slug=demo")
+        .then(r => r.json())
+        .then(d => { if (d.id) setTenantId(d.id); })
+        .catch(() => null);
+    }
+  }, [params]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,6 +44,7 @@ export default function LoginPage() {
     const res = await signIn("credentials", {
       email,
       password,
+      tenantId,
       redirect: false,
     });
 
@@ -37,8 +63,14 @@ export default function LoginPage() {
           <div className="text-center mb-8">
             <div className="text-4xl mb-3">🔧</div>
             <h1 className="text-2xl font-bold text-gray-900">HandymanPro CRM</h1>
-            <p className="text-gray-500 mt-1">Sign in to your account</p>
+            <p className="text-gray-500 mt-1">{slug ? `Sign in to ${slug}` : "Sign in to your account"}</p>
           </div>
+
+          {registered && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
+              Account created! Sign in to get started.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -79,8 +111,21 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+
+          <p className="text-center text-sm text-gray-500 mt-4">
+            Don&apos;t have an account?{" "}
+            <a href="/register" className="text-blue-600 hover:underline">Start free trial</a>
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

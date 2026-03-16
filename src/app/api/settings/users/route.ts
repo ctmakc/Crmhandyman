@@ -12,8 +12,11 @@ function isNotAdmin(session: any) {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const users = await prisma.user.findMany({
+    where: { tenantId },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
@@ -24,12 +27,15 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
   const password = await bcrypt.hash(body.password, 12);
 
   const user = await prisma.user.create({
     data: {
+      tenantId,
       name: body.name,
       email: body.email,
       password,

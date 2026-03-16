@@ -55,14 +55,21 @@ export async function POST(req: NextRequest) {
 
       if (!isServiceInquiry) continue;
 
+      // Resolve tenant from Instagram integration
+      const integration = await prisma.channelIntegration.findFirst({
+        where: { channel: "INSTAGRAM", isActive: true },
+      });
+      if (!integration) continue;
+
       // Check for duplicate
       const existing = await prisma.lead.findFirst({
-        where: { sourceLeadId: `ig_${senderId}` },
+        where: { sourceLeadId: `ig_${senderId}`, tenantId: integration.tenantId },
       });
       if (existing) continue;
 
       await prisma.lead.create({
         data: {
+          tenantId: integration.tenantId,
           name: `Instagram User ${senderId.slice(-6)}`,
           source: "INSTAGRAM",
           sourceLeadId: `ig_${senderId}`,

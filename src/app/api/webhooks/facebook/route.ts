@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchFbLead, extractLeadField, verifyFbWebhookSignature } from "@/lib/integrations/facebook";
 
-// Facebook webhook verification
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
@@ -15,12 +14,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
-// Facebook webhook event handler
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get("x-hub-signature-256") || "";
 
-  // Verify signature
   if (process.env.META_APP_SECRET) {
     const valid = verifyFbWebhookSignature(rawBody, signature, process.env.META_APP_SECRET);
     if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
@@ -33,21 +30,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Process each lead event
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const leadgenId = change.value?.leadgen_id;
+      const pageId = change.value?.page_id;
       if (!leadgenId) continue;
 
       try {
-        // Get integration token
-        const integration = await prisma.channelIntegration.findUnique({
-          where: { channel: "FACEBOOK" },
-        });
+        // Resolve tenant by pageId
+        const integration = pageId
+          ? await prisma.channelIntegration.findFirst({ where: { pageId, channel: "FACEBOOK" } })
+          : await prisma.channelIntegration.findFirst({ where: { channel: "FACEBOOK", isActive: true } });
 
         if (!integration?.accessToken || !integration.isActive) continue;
 
-        // Fetch lead data from FB Graph API
         const leadData = await fetchFbLead(leadgenId, integration.accessToken);
         const fields = leadData.field_data;
 
@@ -56,14 +52,12 @@ export async function POST(req: NextRequest) {
           `${extractLeadField(fields, "first_name") || ""} ${extractLeadField(fields, "last_name") || ""}`.trim() ||
           "Unknown";
 
-        // Check for duplicate
-        const existing = await prisma.lead.findFirst({
-          where: { sourceLeadId: leadgenId },
-        });
+        const existing = await prisma.lead.findFirst({ where: { sourceLeadId: leadgenId, tenantId: integration.tenantId } });
         if (existing) continue;
 
         await prisma.lead.create({
           data: {
+            tenantId: integration.tenantId,
             name,
             email: extractLeadField(fields, "email"),
             phone: extractLeadField(fields, "phone_number") || extractLeadField(fields, "phone"),
