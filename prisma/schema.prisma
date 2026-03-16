@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  role         Role      @default(WORKER)
+  assignedLeads Lead[]
+  assignedTasks Task[]   @relation("assignedTasks")
+  createdTasks  Task[]   @relation("createdTasks")
+  createdAt    DateTime  @default(now())
+}
+
+enum Role {
+  ADMIN
+  WORKER
+}
+
+model Lead {
+  id           String     @id @default(cuid())
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  city         String?
+  source       LeadSource @default(MANUAL)
+  sourceLeadId String?
+  jobType      String?
+  notes        String?
+  status       LeadStatus @default(NEW)
+  assignedTo   User?      @relation(fields: [assignedToId], references: [id])
+  assignedToId String?
+  project      Project?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+enum LeadSource {
+  FACEBOOK
+  INSTAGRAM
+  GOOGLE
+  HOMESTARS
+  KIJIJI
+  EMAIL
+  MANUAL
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  VERIFIED
+  REJECTED
+  CONVERTED
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  lead          Lead?         @relation(fields: [leadId], references: [id])
+  leadId        String?       @unique
+  clientName    String
+  phone         String?
+  email         String?
+  address       String
+  title         String
+  description   String?
+  jobType       String?
+  status        ProjectStatus @default(SCHEDULED)
+  scheduledDate DateTime?
+  completedDate DateTime?
+  assignedToId  String?
+  estimates     Estimate[]
+  tasks         Task[]
+  payments      Payment[]
+  expenses      Expense[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum ProjectStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Estimate {
+  id         String         @id @default(cuid())
+  project    Project        @relation(fields: [projectId], references: [id])
+  projectId  String
+  lineItems  String
+  subtotal   Float
+  tax        Float
+  total      Float
+  notes      String?
+  validUntil DateTime?
+  status     EstimateStatus @default(DRAFT)
+  pdfUrl     String?
+  createdAt  DateTime       @default(now())
+}
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  project      Project?   @relation(fields: [projectId], references: [id])
+  projectId    String?
+  title        String
+  description  String?
+  assignedTo   User       @relation("assignedTasks", fields: [assignedToId], references: [id])
+  assignedToId String
+  createdBy    User       @relation("createdTasks", fields: [createdById], references: [id])
+  createdById  String
+  dueDate      DateTime?
+  status       TaskStatus @default(TODO)
+  createdAt    DateTime   @default(now())
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  project   Project       @relation(fields: [projectId], references: [id])
+  projectId String
+  amount    Float
+  method    PaymentMethod @default(CASH)
+  date      DateTime      @default(now())
+  notes     String?
+}
+
+enum PaymentMethod {
+  CASH
+  E_TRANSFER
+  CHEQUE
+  CARD
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  project     Project?        @relation(fields: [projectId], references: [id])
+  projectId   String?
+  amount      Float
+  category    ExpenseCategory
+  description String?
+  date        DateTime        @default(now())
+  receiptUrl  String?
+}
+
+enum ExpenseCategory {
+  MATERIALS
+  LABOR
+  TOOLS
+  VEHICLE
+  OTHER
+}
+
+model ChannelIntegration {
+  id            String   @id @default(cuid())
+  channel       String   @unique
+  accessToken   String?
+  pageId        String?
+  webhookSecret String?
+  config        String?
+  isActive      Boolean  @default(false)
+  lastSyncAt    DateTime?
+}
