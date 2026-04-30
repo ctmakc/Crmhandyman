@@ -30,10 +30,17 @@ yarn-error.log*
 .env
 
 # database
+dev.db
+dev.db-journal
+dev.db-shm
+dev.db-wal
 prisma/dev.db
 prisma/dev.db-journal
 prisma/dev.db-shm
 prisma/dev.db-wal
+
+# local browser/session captures
+cookies.txt
 
 # vercel
 .vercel
