@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { PageHead, Plate, buttonClass, spineFor } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Task {
   id: string;
@@ -58,6 +59,7 @@ export default function TasksPage() {
     });
     setForm({ title: "", description: "", assignedToId: "", dueDate: "" });
     setShowForm(false);
+    toast("Task added");
     fetchData();
   }
 

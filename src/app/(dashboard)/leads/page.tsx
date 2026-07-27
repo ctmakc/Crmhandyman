@@ -9,7 +9,9 @@ import {
   Empty,
   Plate,
   buttonClass,
+  Skeleton,
 } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Lead {
   id: string;
@@ -82,6 +84,7 @@ export default function LeadsPage() {
       body: JSON.stringify(form),
     });
     setShowAddForm(false);
+    toast("Lead logged");
     setForm({
       name: "",
       phone: "",
@@ -238,7 +241,7 @@ export default function LeadsPage() {
 
       <div className="space-y-2.5">
         {loading ? (
-          <Empty>Loading…</Empty>
+          <Skeleton lines={4} />
         ) : leads.length === 0 ? (
           <Empty>No leads match this filter</Empty>
         ) : (

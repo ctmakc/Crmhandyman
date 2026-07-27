@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { PageHead, Plate, Empty, buttonClass } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Payment {
   id: string;
@@ -96,6 +97,7 @@ export default function FinancePage() {
     });
     setShowPaymentForm(false);
     setPaymentForm({ projectId: "", amount: "", method: "CASH", notes: "", date: "" });
+    toast("Payment recorded");
     fetchData();
   }
 
@@ -108,6 +110,7 @@ export default function FinancePage() {
     });
     setShowExpenseForm(false);
     setExpenseForm({ projectId: "", amount: "", category: "MATERIALS", description: "", date: "" });
+    toast("Cost recorded");
     fetchData();
   }
 

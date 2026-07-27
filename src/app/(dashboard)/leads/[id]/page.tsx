@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Phone, Check, X, ArrowRight } from "lucide-react";
-import { Empty, Plate, buttonClass, spineFor, textToneFor } from "@/components/ui/primitives";
+import { Plate, buttonClass, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Lead {
   id: string;
@@ -64,6 +65,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     });
     setSaving(false);
     setEditing(false);
+    toast("Lead saved");
     fetchLead();
   }
 
@@ -73,6 +75,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...lead, status }),
     });
+    toast(`Lead marked ${status.toLowerCase()}`);
     fetchLead();
   }
 
@@ -95,7 +98,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     router.push("/leads");
   }
 
-  if (!lead) return <Empty>Loading…</Empty>;
+  if (!lead) return <Skeleton lines={4} />;
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 

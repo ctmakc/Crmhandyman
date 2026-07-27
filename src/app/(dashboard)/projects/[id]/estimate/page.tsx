@@ -3,9 +3,19 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Download, Send, Scissors } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Printer, Send, Scissors, Calculator } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { PageHead, Empty, buttonClass, spineFor, textToneFor } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
+import {
+  JOB_TEMPLATES,
+  PRICE_ITEMS,
+  quoteMove,
+  crewFor,
+  baseHoursFor,
+  type JobTemplate,
+  type MoveInputs,
+} from "@/lib/price-book";
 
 interface LineItem {
   description: string;
@@ -44,6 +54,20 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { description: "", qty: 1, unit: "hr", unitPrice: 0 },
   ]);
+  const [showCalc, setShowCalc] = useState(false);
+  const [move, setMove] = useState<MoveInputs>({
+    bedrooms: 2,
+    flights: 0,
+    travelHours: 1,
+    packing: true,
+  });
+
+  /** A whole job in one click — the price book, not forty keystrokes. */
+  function applyTemplate(t: JobTemplate) {
+    setLineItems(t.lineItems.map((l) => ({ ...l })));
+    setShowCalc(false);
+    toast(`${t.label} loaded — ${t.lineItems.length} lines`);
+  }
 
   async function fetchData() {
     const [projRes, estRes] = await Promise.all([
@@ -88,6 +112,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     setCreating(false);
     setLineItems([{ description: "", qty: 1, unit: "hr", unitPrice: 0 }]);
     setNotes("");
+    toast("Estimate saved");
     fetchData();
   }
 
@@ -97,6 +122,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: estimateId, status }),
     });
+    toast(`Estimate marked ${status.toLowerCase()}`);
     fetchData();
   }
 
@@ -111,7 +137,10 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     setIssuing(null);
     if (res.ok) {
       const invoice = await res.json();
+      toast(`Invoice ${invoice.number} issued`);
       router.push(`/invoices/${invoice.id}`);
+    } else {
+      toast("Could not issue the invoice", "bad");
     }
   }
 
@@ -143,6 +172,94 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
       {creating && (
         <div className="plate p-5">
           <div className="eyebrow">Draft estimate</div>
+
+          {/* Price book: a whole job in one click, before anyone types a word. */}
+          <div className="mt-4 border border-line bg-sunk p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="eyebrow">Start from a template</span>
+              <button
+                onClick={() => setShowCalc((v) => !v)}
+                className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
+              >
+                <Calculator className="h-3.5 w-3.5" /> Moving calculator
+              </button>
+            </div>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {JOB_TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => applyTemplate(t)}
+                  title={t.hint}
+                  className="border border-line bg-plate px-2.5 py-1.5 text-left transition-colors duration-[140ms] ease-instrument hover:border-ink-3"
+                >
+                  <span className="block text-[12px] font-bold leading-tight text-ink">
+                    {t.label}
+                  </span>
+                  <span className="eyebrow">{t.trade}</span>
+                </button>
+              ))}
+            </div>
+
+            {showCalc && (
+              <div className="mt-3 border-t border-line pt-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <label className="eyebrow">Bedrooms</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="8"
+                      value={move.bedrooms}
+                      onChange={(e) => setMove({ ...move, bedrooms: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[80px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Stair flights</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="12"
+                      value={move.flights}
+                      onChange={(e) => setMove({ ...move, flights: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[80px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Travel hrs</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={move.travelHours}
+                      onChange={(e) => setMove({ ...move, travelHours: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[80px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 pb-2 text-[13px] text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={move.packing}
+                      onChange={(e) => setMove({ ...move, packing: e.target.checked })}
+                      className="h-3.5 w-3.5"
+                    />
+                    Packing
+                  </label>
+                  <button
+                    onClick={() => {
+                      setLineItems(quoteMove(move));
+                      toast(
+                        `Crew of ${crewFor(move.bedrooms).size} · ${baseHoursFor(move.bedrooms)} h quoted`
+                      );
+                    }}
+                    className={`${buttonClass("ghost")} mb-0.5`}
+                  >
+                    Quote it
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="mt-4 space-y-2">
             <div className="grid grid-cols-12 gap-2 px-1">
@@ -192,12 +309,45 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                 </button>
               </div>
             ))}
-            <button
-              onClick={addLineItem}
-              className="eyebrow inline-flex items-center gap-1.5 pt-1 hover:text-ink"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add line
-            </button>
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <button
+                onClick={addLineItem}
+                className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
+              >
+                <Plus className="h-3.5 w-3.5" /> Blank line
+              </button>
+              <label className="eyebrow inline-flex items-center gap-2">
+                From price book
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const item = PRICE_ITEMS.find((p) => p.description === e.target.value);
+                    if (item) {
+                      // Drop the `trade` tag — it groups the picker, it is not a line field.
+                      const line = {
+                        description: item.description,
+                        qty: item.qty,
+                        unit: item.unit,
+                        unitPrice: item.unitPrice,
+                      };
+                      setLineItems((prev) => [...prev.filter((l) => l.description), line]);
+                    }
+                  }}
+                  className="mono px-2 py-1 text-[11px] uppercase tracking-[0.06em]"
+                >
+                  <option value="">Pick a line…</option>
+                  {(["HVAC", "MOVING", "GENERAL"] as const).map((trade) => (
+                    <optgroup key={trade} label={trade}>
+                      {PRICE_ITEMS.filter((p) => p.trade === trade).map((p) => (
+                        <option key={p.description} value={p.description}>
+                          {p.description} — {p.unitPrice}/{p.unit}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           <div className="mt-5 flex justify-end border-t border-line pt-4">
@@ -285,9 +435,10 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                     href={`/api/projects/${params.id}/estimate/pdf?estimateId=${estimate.id}`}
                     target="_blank"
                     className="text-ink-3 transition-colors hover:text-ink"
-                    aria-label="Download PDF"
+                    aria-label="Open printable estimate"
+                    title="Printable sheet"
                   >
-                    <Download className="h-4 w-4" />
+                    <Printer className="h-4 w-4" />
                   </a>
                 </div>
               </div>

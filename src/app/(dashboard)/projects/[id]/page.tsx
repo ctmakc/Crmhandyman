@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
-import { Empty, buttonClass, spineFor, textToneFor, Plate } from "@/components/ui/primitives";
+import { Empty, buttonClass, spineFor, textToneFor, Plate, Skeleton } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Project {
   id: string;
@@ -102,6 +103,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...project, status }),
     });
+    toast(`Job marked ${status.replace("_", " ").toLowerCase()}`);
     fetchProject();
   }
 
@@ -114,6 +116,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     });
     setPaymentForm({ amount: "", method: "CASH", notes: "", date: "" });
     setShowPaymentForm(false);
+    toast("Payment recorded");
     fetchProject();
   }
 
@@ -126,6 +129,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     });
     setExpenseForm({ amount: "", category: "MATERIALS", description: "", date: "" });
     setShowExpenseForm(false);
+    toast("Cost recorded");
     fetchProject();
   }
 
@@ -138,7 +142,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     fetchProject();
   }
 
-  if (!project) return <Empty>Loading…</Empty>;
+  if (!project) return <Skeleton lines={5} />;
 
   const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);

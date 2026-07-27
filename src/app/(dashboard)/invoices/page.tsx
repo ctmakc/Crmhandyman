@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { isOverdue, daysOverdue } from "@/lib/invoice-state";
 import {
   PageHead,
   Ticket,
   Empty,
   Money,
+  Skeleton,
   textToneFor,
 } from "@/components/ui/primitives";
 
@@ -24,17 +27,20 @@ interface Invoice {
 }
 
 const STATUSES = ["DRAFT", "SENT", "PARTIAL", "PAID", "VOID"];
+/** "overdue" is derived, so it is filtered client-side rather than sent to the API. */
+const OVERDUE = "overdue";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const params = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState(params.get("status") || "");
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
-    if (statusFilter) params.set("status", statusFilter);
+    if (statusFilter && statusFilter !== OVERDUE) params.set("status", statusFilter);
     fetch(`/api/invoices?${params}`)
       .then((r) => r.json())
       .then((d) => {
@@ -43,13 +49,14 @@ export default function InvoicesPage() {
       });
   }, [search, statusFilter]);
 
+  const shown =
+    statusFilter === OVERDUE ? invoices.filter((i) => isOverdue(i)) : invoices;
   const live = invoices.filter((i) => i.status !== "VOID");
   const outstanding = live
     .filter((i) => i.status === "SENT" || i.status === "PARTIAL")
     .reduce((s, i) => s + (i.total - i.amountPaid), 0);
   const collected = live.reduce((s, i) => s + i.amountPaid, 0);
 
-  const today = new Date();
 
   return (
     <div className="space-y-6 pb-24 md:pb-0">
@@ -98,6 +105,7 @@ export default function InvoicesPage() {
           className="mono px-3 py-2 text-[12px] uppercase tracking-[0.06em]"
         >
           <option value="">All statuses</option>
+          <option value={OVERDUE}>Overdue</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -108,16 +116,17 @@ export default function InvoicesPage() {
 
       <div className="space-y-2.5">
         {loading ? (
-          <Empty>Loading…</Empty>
-        ) : invoices.length === 0 ? (
-          <Empty>No invoices issued yet — start from a job estimate</Empty>
+          <Skeleton lines={3} />
+        ) : shown.length === 0 ? (
+          <Empty>
+            {statusFilter === OVERDUE
+              ? "Nothing overdue — the street is clean"
+              : "No invoices issued yet — start from a job estimate"}
+          </Empty>
         ) : (
-          invoices.map((inv) => {
+          shown.map((inv) => {
             const owing = inv.total - inv.amountPaid;
-            const overdue =
-              inv.dueDate &&
-              new Date(inv.dueDate) < today &&
-              (inv.status === "SENT" || inv.status === "PARTIAL");
+            const overdue = isOverdue(inv);
             return (
               <Ticket
                 key={inv.id}
@@ -134,7 +143,7 @@ export default function InvoicesPage() {
                       color: overdue ? "var(--rose)" : textToneFor(inv.status),
                     }}
                   >
-                    {overdue ? "OVERDUE" : inv.status}
+                    {overdue ? `OVERDUE · ${daysOverdue(inv)}D` : inv.status}
                   </span>
                 </div>
                 <div className="mt-1.5 flex items-end justify-between gap-4">

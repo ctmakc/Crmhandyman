@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { LogOut } from "lucide-react";
+import { LogOut, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface TopBarProps {
@@ -50,7 +50,22 @@ export default function TopBar({ user }: TopBarProps) {
       <div className="text-[15px] font-black tracking-tight text-ink md:hidden">
         HANDYMAN<span className="text-amber-ink">PRO</span>
       </div>
-      <ShiftStamp />
+      <div className="flex items-center gap-4">
+        <ShiftStamp />
+        {/* Discoverability for Cmd+K — a shortcut nobody is told about does not exist. */}
+        <button
+          onClick={() =>
+            window.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })
+            )
+          }
+          className="hidden items-center gap-2 border border-line px-2.5 py-1.5 text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink md:flex"
+        >
+          <Search className="h-3.5 w-3.5" strokeWidth={2} />
+          <span className="mono text-[11px] tracking-[0.06em]">Jump</span>
+          <span className="mono text-[10px] tracking-[0.08em] opacity-60">⌘K</span>
+        </button>
+      </div>
       <div className="flex items-center gap-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate">
           {initials}

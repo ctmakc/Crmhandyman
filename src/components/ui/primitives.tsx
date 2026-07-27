@@ -217,6 +217,24 @@ export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary")
   );
 }
 
+/**
+ * Loading skeleton. A bare "Loading…" on an empty deck reads as a broken page; ruled
+ * placeholder rows read as "the desk is still fetching".
+ */
+export function Skeleton({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="space-y-2.5" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="plate px-4 py-3">
+          <div className="h-2 w-[86px] animate-pulse bg-sunk" />
+          <div className="mt-2.5 h-3.5 w-[45%] animate-pulse bg-sunk" />
+          <div className="mt-2 h-2.5 w-[62%] animate-pulse bg-sunk" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Empty state — a recessed lane, not an illustration. */
 export function Empty({ children }: { children: React.ReactNode }) {
   return (

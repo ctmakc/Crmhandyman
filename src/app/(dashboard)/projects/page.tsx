@@ -10,7 +10,9 @@ import {
   Empty,
   Plate,
   buttonClass,
+  Skeleton,
 } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
 
 interface Project {
   id: string;
@@ -68,6 +70,7 @@ export default function ProjectsPage() {
       body: JSON.stringify(form),
     });
     setShowAddForm(false);
+    toast("Job opened");
     setForm({
       clientName: "",
       phone: "",
@@ -192,7 +195,7 @@ export default function ProjectsPage() {
       <div className="grid gap-2.5 lg:grid-cols-2">
         {loading ? (
           <div className="lg:col-span-2">
-            <Empty>Loading…</Empty>
+            <Skeleton lines={4} />
           </div>
         ) : projects.length === 0 ? (
           <div className="lg:col-span-2">

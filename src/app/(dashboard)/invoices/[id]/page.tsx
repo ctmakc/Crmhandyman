@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { buttonClass, Empty, spineFor, textToneFor } from "@/components/ui/primitives";
+import { buttonClass, Empty, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
+import { toast } from "@/components/ui/Toaster";
+import { isOverdue, daysOverdue, chaseStage } from "@/lib/invoice-state";
 
 interface LineItem {
   description: string;
@@ -74,17 +76,17 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
     });
     await load();
     setBusy(false);
+    if (body.action === "pay") toast(`Payment of ${formatCurrency(Number(body.amount))} recorded`);
+    else if (body.status) toast(`Invoice marked ${String(body.status).toLowerCase()}`);
   }
 
-  if (loading) return <Empty>Loading…</Empty>;
+  if (loading) return <Skeleton lines={6} />;
   if (!invoice) return <Empty>Invoice not found</Empty>;
 
   const items: LineItem[] = JSON.parse(invoice.lineItems);
   const owing = invoice.total - invoice.amountPaid;
-  const overdue =
-    invoice.dueDate &&
-    new Date(invoice.dueDate) < new Date() &&
-    (invoice.status === "SENT" || invoice.status === "PARTIAL");
+  const overdue = isOverdue(invoice);
+  const stage = chaseStage(invoice);
 
   return (
     <div className="space-y-6 pb-24 md:pb-0">
@@ -102,14 +104,20 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               Mark sent
             </button>
           )}
-          <button onClick={() => window.print()} className={buttonClass("ghost")}>
-            <Printer className="h-4 w-4" /> Print
-          </button>
+          <a
+            href={`/api/invoices/${params.id}/pdf`}
+            target="_blank"
+            rel="noopener"
+            className={buttonClass("ghost")}
+          >
+            <Printer className="h-4 w-4" /> Printable sheet
+          </a>
           {invoice.status !== "VOID" && invoice.status !== "PAID" && (
             <button
               disabled={busy}
               onClick={async () => {
                 await fetch(`/api/invoices/${params.id}`, { method: "DELETE" });
+                toast("Invoice voided");
                 router.push("/invoices");
               }}
               className={buttonClass("danger")}
@@ -140,7 +148,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               className="eyebrow"
               style={{ color: overdue ? "var(--rose)" : textToneFor(invoice.status) }}
             >
-              {overdue ? "OVERDUE" : invoice.status}
+              {overdue ? `OVERDUE · ${daysOverdue(invoice)}D` : invoice.status}
             </span>
             <dl className="mt-3 space-y-1 text-[12px]">
               <div className="flex justify-end gap-3">
@@ -266,6 +274,18 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           </div>
         </div>
       </div>
+
+      {stage && (
+        <div
+          className="no-print flex flex-wrap items-center justify-between gap-3 border border-line bg-sunk px-5 py-3"
+          style={{ borderLeft: "3px solid var(--rose)" }}
+        >
+          <span className="text-[13px] text-ink-2">{stage.hint}</span>
+          <span className="eyebrow" style={{ color: "var(--rose)" }}>
+            {stage.label}
+          </span>
+        </div>
+      )}
 
       {/* Payment desk */}
       {invoice.status !== "VOID" && (

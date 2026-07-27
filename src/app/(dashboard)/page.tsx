@@ -13,6 +13,7 @@ import {
   textToneFor,
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
+import ChaseLane from "@/components/ChaseLane";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -65,6 +66,28 @@ export default async function DashboardPage() {
       select: { id: true, title: true, clientName: true, status: true, scheduledDate: true },
     }),
   ]);
+
+  // Overdue is derived, not stored — see lib/invoice-state.ts.
+  const openInvoices = isAdmin
+    ? await prisma.invoice.findMany({
+        where: { status: { in: ["SENT", "PARTIAL"] }, dueDate: { lt: new Date() } },
+        include: { payments: { select: { amount: true } } },
+        orderBy: { dueDate: "asc" },
+      })
+    : [];
+
+  const chase = openInvoices
+    .map((inv) => ({
+      id: inv.id,
+      number: inv.number,
+      clientName: inv.clientName,
+      total: inv.total,
+      amountPaid: inv.payments.reduce((s, p) => s + p.amount, 0),
+      dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
+      status: inv.status,
+    }))
+    .filter((inv) => inv.total - inv.amountPaid > 0.005)
+    .slice(0, 5);
 
   const readouts = [
     // The amber lamp — not amber type — marks the one lane needing attention.
@@ -134,6 +157,8 @@ export default async function DashboardPage() {
           date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
         }))}
       />
+
+      {chase.length > 0 && <ChaseLane invoices={chase} />}
 
       {/* Tickets sit directly on the deck — the notch reads as a bite only when
           the surface behind it is the deck itself. No nested plates. */}
