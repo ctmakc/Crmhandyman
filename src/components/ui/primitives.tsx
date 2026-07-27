@@ -43,7 +43,9 @@ export function spineFor(status?: string | null) {
  */
 export function textToneFor(status?: string | null) {
   const tone = spineFor(status);
-  return tone === "var(--amber)" ? "var(--amber-ink)" : tone;
+  if (tone === "var(--amber)") return "var(--amber-ink)";
+  if (tone === "var(--rose)") return "var(--rose-ink)";
+  return tone;
 }
 
 /** Page header: mono eyebrow over a heavy display line. No decorative badge. */

@@ -146,7 +146,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           <div className="text-right">
             <span
               className="eyebrow"
-              style={{ color: overdue ? "var(--rose)" : textToneFor(invoice.status) }}
+              style={{ color: overdue ? "var(--rose-ink)" : textToneFor(invoice.status) }}
             >
               {overdue ? `OVERDUE · ${daysOverdue(invoice)}D` : invoice.status}
             </span>
@@ -160,7 +160,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               {invoice.dueDate && (
                 <div className="flex justify-end gap-3">
                   <dt className="text-ink-3">Due</dt>
-                  <dd className="mono" style={{ color: overdue ? "var(--rose)" : "var(--ink-2)" }}>
+                  <dd className="mono" style={{ color: overdue ? "var(--rose-ink)" : "var(--ink-2)" }}>
                     {new Date(invoice.dueDate).toLocaleDateString("en-CA")}
                   </dd>
                 </div>
@@ -237,7 +237,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                   </dt>
                   <dd
                     className="mono text-[19px] font-bold"
-                    style={{ color: owing > 0.005 ? "var(--rose)" : "var(--emerald)" }}
+                    style={{ color: owing > 0.005 ? "var(--rose-ink)" : "var(--emerald)" }}
                   >
                     {formatCurrency(Math.max(owing, 0))}
                   </dd>
@@ -281,7 +281,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           style={{ borderLeft: "3px solid var(--rose)" }}
         >
           <span className="text-[13px] text-ink-2">{stage.hint}</span>
-          <span className="eyebrow" style={{ color: "var(--rose)" }}>
+          <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
             {stage.label}
           </span>
         </div>

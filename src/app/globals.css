@@ -30,6 +30,9 @@
   --sky: #2f6be0;
   --emerald: #1b7f55;
   --rose: #c7332f;
+  /* Rose as TEXT: the spine colour clears AA on the plate but not on the recessed
+     lane, so small labels use the darkened value — same rule as amber-ink. */
+  --rose-ink: #b82b27;
   --slate: #64748b;
 
   --r: 3px;

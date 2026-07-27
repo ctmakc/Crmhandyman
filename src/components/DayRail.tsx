@@ -16,7 +16,14 @@ interface RailJob {
  * A ruled seven-day scale for the current week. Booked jobs sit on it as stubs,
  * so the first thing a dispatcher reads is the shape of the week, not a KPI card.
  */
-export default function DayRail({ jobs }: { jobs: RailJob[] }) {
+export default function DayRail({
+  jobs,
+  crewSize = 0,
+}: {
+  jobs: RailJob[];
+  /** Number of people who can be sent out. 0 hides the load readout entirely. */
+  crewSize?: number;
+}) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - start.getDay());
@@ -69,6 +76,20 @@ export default function DayRail({ jobs }: { jobs: RailJob[] }) {
                   {String(day.getDate()).padStart(2, "0")}
                 </span>
               </div>
+
+              {/* Booked vs able-to-go. Over capacity is a double-booked truck. */}
+              {crewSize > 0 && dayJobs.length > 0 && (
+                <div
+                  className="mono mt-1.5 px-1 text-[10px] tracking-[0.08em]"
+                  style={{
+                    color:
+                      dayJobs.length > crewSize ? "var(--rose-ink)" : "var(--ink-3)",
+                  }}
+                >
+                  {dayJobs.length}/{crewSize}
+                  {dayJobs.length > crewSize ? " OVER" : ""}
+                </div>
+              )}
 
               <div className="mt-2 space-y-1.5">
                 {dayJobs.map((job) => (

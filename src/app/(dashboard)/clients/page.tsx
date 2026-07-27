@@ -98,7 +98,7 @@ export default function ClientsPage() {
           {
             label: "Owing us",
             value: formatCurrency(owingTotal),
-            tone: owingTotal > 0 ? "var(--rose)" : "var(--emerald)",
+            tone: owingTotal > 0 ? "var(--rose-ink)" : "var(--emerald)",
           },
         ].map((r) => (
           <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
@@ -229,7 +229,7 @@ export default function ClientsPage() {
                   {c.phone || c.email || "no contact on file"}
                 </span>
                 {c.owing > 0.005 && (
-                  <span className="mono text-[11px]" style={{ color: "var(--rose)" }}>
+                  <span className="mono text-[11px]" style={{ color: "var(--rose-ink)" }}>
                     OWES {formatCurrency(c.owing)}
                   </span>
                 )}

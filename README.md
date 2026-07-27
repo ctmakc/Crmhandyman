@@ -21,6 +21,12 @@ box-shadows, every number in Chivo Mono.
   with the same lines and totals; mark sent, log part payments, auto-settle to PAID, void
   (never delete) so the numbering stays honest. Payments write real `Payment` rows, so
   Finance and the invoice can never disagree.
+- **Service contracts** — seasonal maintenance plans that book themselves onto the
+  board. The schedule is derived, so no cron owns the truth, and pressing "book"
+  twice never double-books a visit. Optional draft invoice per visit.
+- **Field mode** (`/today`) — the tech's screen: today's stops, the equipment on site,
+  and call / drive / start / finish in one tap each. Unclosed work carries forward.
+- **Crew load** — jobs per day against crew size, overbooked days flagged
 - **Tasks** — crew kanban (drag & drop), assign to workers
 - **Finance** — payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
 - **Team** — admin + multiple workers, role-based access

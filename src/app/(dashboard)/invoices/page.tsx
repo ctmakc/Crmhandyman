@@ -140,7 +140,7 @@ export default function InvoicesPage() {
                   <span
                     className="eyebrow"
                     style={{
-                      color: overdue ? "var(--rose)" : textToneFor(inv.status),
+                      color: overdue ? "var(--rose-ink)" : textToneFor(inv.status),
                     }}
                   >
                     {overdue ? `OVERDUE · ${daysOverdue(inv)}D` : inv.status}

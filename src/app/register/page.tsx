@@ -85,7 +85,7 @@ export default function RegisterPage() {
           {error && (
             <p
               className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]"
-              style={{ borderColor: "var(--rose)", color: "var(--rose)" }}
+              style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
             >
               {error}
             </p>

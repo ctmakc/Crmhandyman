@@ -34,7 +34,10 @@ const config: Config = {
         },
         sky: "var(--sky)",
         emerald: "var(--emerald)",
-        rose: "var(--rose)",
+        rose: {
+          DEFAULT: "var(--rose)",
+          ink: "var(--rose-ink)",
+        },
         slate: "var(--slate)",
       },
       fontFamily: {

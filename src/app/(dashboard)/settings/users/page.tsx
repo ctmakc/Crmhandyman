@@ -98,7 +98,7 @@ export default function UsersPage() {
               </select>
             </div>
             {error && (
-              <p className="mono border-l-2 py-1 pl-3 text-[12px]" style={{ borderColor: "var(--rose)", color: "var(--rose)" }}>
+              <p className="mono border-l-2 py-1 pl-3 text-[12px]" style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}>
                 {error}
               </p>
             )}

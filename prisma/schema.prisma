@@ -17,6 +17,7 @@ model Tenant {
   users        User[]
   clients      Client[]
   equipment    Equipment[]
+  contracts    ServiceContract[]
   leads        Lead[]
   projects     Project[]
   tasks        Task[]
@@ -40,6 +41,7 @@ model User {
   password     String
   role         Role      @default(WORKER)
   assignedLeads Lead[]
+  assignedProjects Project[] @relation("assignedProjects")
   assignedTasks Task[]   @relation("assignedTasks")
   createdTasks  Task[]   @relation("createdTasks")
   createdAt    DateTime  @default(now())
@@ -67,6 +69,7 @@ model Client {
   leads     Lead[]
   projects  Project[]
   equipment Equipment[]
+  contracts ServiceContract[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -91,10 +94,36 @@ model Equipment {
   installedAt   DateTime?
   warrantyUntil DateTime?
   notes         String?
+  contracts     ServiceContract[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   @@index([tenantId, clientId])
+}
+
+/// Recurring maintenance — the recurring revenue an HVAC shop actually lives on.
+/// `visitMonths` is a JSON array of 1-12 (e.g. [4,10] = spring and fall), which keeps
+/// the schedule readable in the database and avoids a cron owning the truth.
+model ServiceContract {
+  id            String     @id @default(cuid())
+  tenantId      String
+  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  client        Client     @relation(fields: [clientId], references: [id])
+  clientId      String
+  equipment     Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId   String?
+  name          String
+  visitMonths   String
+  pricePerVisit Float
+  autoInvoice   Boolean    @default(false)
+  active        Boolean    @default(true)
+  startedOn     DateTime   @default(now())
+  notes         String?
+  projects      Project[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([tenantId, active])
 }
 
 enum EquipmentKind {
@@ -158,6 +187,11 @@ model Project {
   leadId        String?       @unique
   client        Client?       @relation(fields: [clientId], references: [id])
   clientId      String?
+  contract      ServiceContract? @relation(fields: [contractId], references: [id])
+  contractId    String?
+  /// Which month of the contract year this visit covers — stops the scheduler
+  /// booking the same seasonal visit twice.
+  contractCycle String?
   clientName    String
   phone         String?
   email         String?
@@ -168,6 +202,7 @@ model Project {
   status        ProjectStatus @default(SCHEDULED)
   scheduledDate DateTime?
   completedDate DateTime?
+  assignedTo    User?         @relation("assignedProjects", fields: [assignedToId], references: [id])
   assignedToId  String?
   estimates     Estimate[]
   tasks         Task[]

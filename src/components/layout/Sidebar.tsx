@@ -9,6 +9,8 @@ import {
   Contact,
   Briefcase,
   CheckSquare,
+  CalendarClock,
+  Truck,
   FileText,
   DollarSign,
   Settings,
@@ -16,14 +18,19 @@ import {
 
 const navItems = [
   { href: "/", label: "Dispatch", code: "01", icon: LayoutDashboard },
-  { href: "/leads", label: "Leads", code: "02", icon: Users },
-  { href: "/clients", label: "Clients", code: "03", icon: Contact },
-  { href: "/projects", label: "Jobs", code: "04", icon: Briefcase },
-  { href: "/tasks", label: "Crew", code: "05", icon: CheckSquare },
-  { href: "/invoices", label: "Invoices", code: "06", icon: FileText },
-  { href: "/finance", label: "Finance", code: "07", icon: DollarSign },
-  { href: "/settings", label: "Settings", code: "08", icon: Settings },
+  { href: "/today", label: "Today", code: "02", icon: Truck },
+  { href: "/leads", label: "Leads", code: "03", icon: Users },
+  { href: "/clients", label: "Clients", code: "04", icon: Contact },
+  { href: "/projects", label: "Jobs", code: "05", icon: Briefcase },
+  { href: "/contracts", label: "Contracts", code: "06", icon: CalendarClock },
+  { href: "/tasks", label: "Crew", code: "07", icon: CheckSquare },
+  { href: "/invoices", label: "Invoices", code: "08", icon: FileText },
+  { href: "/finance", label: "Finance", code: "09", icon: DollarSign },
+  { href: "/settings", label: "Settings", code: "10", icon: Settings },
 ];
+
+/** The phone bar is the tech's tool: today, the board, the book, the money. */
+const mobileItems = ["/today", "/", "/projects", "/clients", "/invoices"];
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -81,7 +88,9 @@ export default function Sidebar() {
 
       {/* Mobile bar — the tech in the driveway gets the same five lanes. */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-navy-700 bg-navy-900 md:hidden">
-        {navItems.slice(0, 5).map((item) => {
+        {mobileItems
+          .map((href) => navItems.find((n) => n.href === href)!)
+          .map((item) => {
           const Icon = item.icon;
           const isActive =
             item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);

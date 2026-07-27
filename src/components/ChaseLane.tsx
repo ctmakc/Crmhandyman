@@ -52,7 +52,7 @@ export default function ChaseLane({ invoices }: { invoices: ChaseInvoice[] }) {
                 <span className="mono text-[11px] font-bold tracking-[0.08em] text-ink-2">
                   {inv.number}
                 </span>
-                <span className="mono text-[11px] tracking-[0.08em]" style={{ color: "var(--rose)" }}>
+                <span className="mono text-[11px] tracking-[0.08em]" style={{ color: "var(--rose-ink)" }}>
                   {days} {days === 1 ? "DAY" : "DAYS"} LATE
                 </span>
               </div>
@@ -64,7 +64,7 @@ export default function ChaseLane({ invoices }: { invoices: ChaseInvoice[] }) {
                   <p className="text-[13px] text-ink-2">{stage?.hint}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <span className="mono text-[17px] font-medium" style={{ color: "var(--rose)" }}>
+                  <span className="mono text-[17px] font-medium" style={{ color: "var(--rose-ink)" }}>
                     {formatCurrency(owing)}
                   </span>
                   <span className="eyebrow mt-0.5 block">{stage?.label}</span>

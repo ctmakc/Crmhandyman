@@ -156,11 +156,11 @@ export default function FinancePage() {
       <div className="grid grid-cols-2 border border-line bg-plate md:grid-cols-4">
         {[
           { label: "Revenue", value: formatCurrency(data?.totalRevenue || 0), tone: "var(--emerald)" },
-          { label: "Expenses", value: formatCurrency(data?.totalExpenses || 0), tone: "var(--rose)" },
+          { label: "Expenses", value: formatCurrency(data?.totalExpenses || 0), tone: "var(--rose-ink)" },
           {
             label: "Net",
             value: formatCurrency(net),
-            tone: net >= 0 ? "var(--ink)" : "var(--rose)",
+            tone: net >= 0 ? "var(--ink)" : "var(--rose-ink)",
           },
           { label: "Jobs closed", value: String(data?.projectCount || 0) },
         ].map((r) => (
@@ -410,7 +410,7 @@ export default function FinancePage() {
                 </div>
                 <span
                   className="mono shrink-0 text-[15px] font-medium"
-                  style={{ color: "var(--rose)" }}
+                  style={{ color: "var(--rose-ink)" }}
                 >
                   {formatCurrency(e.amount)}
                 </span>

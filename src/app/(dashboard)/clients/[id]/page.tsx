@@ -199,7 +199,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           {
             label: "Owing now",
             value: formatCurrency(client.totals.owing),
-            tone: client.totals.owing > 0.005 ? "var(--rose)" : "var(--emerald)",
+            tone: client.totals.owing > 0.005 ? "var(--rose-ink)" : "var(--emerald)",
           },
           { label: "Lifetime paid", value: formatCurrency(client.totals.lifetime), tone: "var(--emerald)" },
           { label: "Our costs", value: formatCurrency(client.totals.costs) },
@@ -464,7 +464,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                     </span>
                     <span
                       className="eyebrow"
-                      style={{ color: late ? "var(--rose)" : textToneFor(inv.status) }}
+                      style={{ color: late ? "var(--rose-ink)" : textToneFor(inv.status) }}
                     >
                       {late ? `OVERDUE · ${daysOverdue(inv)}D` : inv.status}
                     </span>

@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
 import ChaseLane from "@/components/ChaseLane";
+import ServiceDueLane from "@/components/ServiceDueLane";
+import { nextDueVisit, daysUntil } from "@/lib/contracts";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -67,6 +69,46 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  const crewSize = await prisma.user.count({ where: { role: "WORKER" } });
+
+  // Contract visits that need putting on the board — derived, see lib/contracts.ts.
+  const contracts = await prisma.serviceContract.findMany({
+    where: { active: true },
+    include: {
+      client: { select: { id: true, name: true, address: true } },
+      projects: { select: { contractCycle: true } },
+    },
+  });
+  const serviceDue = contracts
+    .map((c) => {
+      const booked = new Set(
+        c.projects.map((p) => p.contractCycle).filter(Boolean) as string[]
+      );
+      const next = nextDueVisit(c, booked);
+      if (!next) return null;
+      const days = daysUntil(next.date);
+      if (days > 45) return null;
+      return {
+        id: c.id,
+        name: c.name,
+        clientName: c.client.name,
+        address: c.client.address,
+        pricePerVisit: c.pricePerVisit,
+        dueOn: next.date.toISOString(),
+        daysUntil: days,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5) as Array<{
+    id: string;
+    name: string;
+    clientName: string;
+    address: string | null;
+    pricePerVisit: number;
+    dueOn: string;
+    daysUntil: number;
+  }>;
+
   // Overdue is derived, not stored — see lib/invoice-state.ts.
   const openInvoices = isAdmin
     ? await prisma.invoice.findMany({
@@ -106,7 +148,7 @@ export default async function DashboardPage() {
             label: `Outstanding · ${outstanding?._count || 0}`,
             value: formatCurrency(outstanding?._sum.total || 0),
             href: "/invoices",
-            tone: (outstanding?._sum.total || 0) > 0 ? "var(--rose)" : undefined,
+            tone: (outstanding?._sum.total || 0) > 0 ? "var(--rose-ink)" : undefined,
           },
         ]
       : []),
@@ -156,7 +198,10 @@ export default async function DashboardPage() {
           status: j.status,
           date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
         }))}
+        crewSize={crewSize}
       />
+
+      {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}
 
       {chase.length > 0 && <ChaseLane invoices={chase} />}
 
@@ -231,7 +276,7 @@ export default async function DashboardPage() {
             <Money
               value={outstanding?._sum.total || 0}
               className="text-[26px]"
-              tone={(outstanding?._sum.total || 0) > 0 ? "var(--rose)" : "var(--emerald)"}
+              tone={(outstanding?._sum.total || 0) > 0 ? "var(--rose-ink)" : "var(--emerald)"}
             />
             <Link href="/invoices" className="eyebrow hover:text-ink">
               Chase →

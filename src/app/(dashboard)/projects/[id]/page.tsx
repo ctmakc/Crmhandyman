@@ -261,7 +261,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             {[
               { label: "Estimate", value: latestEstimate ? formatCurrency(latestEstimate.total) : "—" },
               { label: "Received", value: formatCurrency(totalPaid), tone: "var(--emerald)" },
-              { label: "Expenses", value: formatCurrency(totalExpenses), tone: "var(--rose)" },
+              { label: "Expenses", value: formatCurrency(totalExpenses), tone: "var(--rose-ink)" },
             ].map((r) => (
               <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
                 <div className="eyebrow">{r.label}</div>
@@ -545,14 +545,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       {formatDate(e.date)} · {e.category}
                       {e.description ? ` · ${e.description}` : ""}
                     </span>
-                    <span className="mono text-[14px] font-medium" style={{ color: "var(--rose)" }}>
+                    <span className="mono text-[14px] font-medium" style={{ color: "var(--rose-ink)" }}>
                       {formatCurrency(e.amount)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between bg-sunk px-4 py-2.5">
                   <span className="eyebrow">Total out</span>
-                  <span className="mono text-[15px] font-bold" style={{ color: "var(--rose)" }}>
+                  <span className="mono text-[15px] font-bold" style={{ color: "var(--rose-ink)" }}>
                     {formatCurrency(totalExpenses)}
                   </span>
                 </div>
