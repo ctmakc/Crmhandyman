@@ -10,7 +10,11 @@ box-shadows, every number in Chivo Mono.
 ## Features
 
 - **Multi-channel lead intake** — Facebook Lead Ads, Instagram, Google Local Services Ads, HomeStars/Kijiji (via email), manual entry
-- **Lead management** — contact, verify, reject, convert to a job
+- **Clients** — the customer, not a string on a ticket: one address with its whole
+  history, balance owing, lifetime paid, and every job and invoice on it
+- **Equipment** — what is installed at the address (furnace, AC, heat pump…): brand,
+  model, serial, location, install date and warranty. A job shows it before the drive.
+- **Lead management** — contact, verify, reject, convert to a job (carrying the client)
 - **Jobs** — full work-order lifecycle (Scheduled → In Progress → Completed)
 - **Estimates** — line-item builder with HST/GST, printable view, PDF export
 - **Invoices** — an accepted estimate tears off into a numbered invoice (`INV-YYYY-NNNN`)
@@ -37,6 +41,10 @@ npx prisma migrate dev --name init
 
 # 4. Seed with sample data
 npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
+
+# 4a. If you are upgrading an existing database, fold the old clientName strings
+#     into real Client rows (safe to re-run):
+npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/backfill-clients.ts
 
 # 4b. (optional) Fill a realistic HVAC/moving week — leads, booked jobs, an accepted
 #     estimate, an issued invoice with a part payment, and one overdue invoice.

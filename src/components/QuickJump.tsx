@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { spineFor } from "@/components/ui/primitives";
 
 interface Hit {
-  kind: "lead" | "job" | "invoice";
+  kind: "lead" | "job" | "invoice" | "client";
   id: string;
   title: string;
   sub: string;
@@ -15,6 +15,7 @@ interface Hit {
 }
 
 const KIND_LABEL: Record<Hit["kind"], string> = {
+  client: "CLIENT",
   job: "JOB",
   lead: "LEAD",
   invoice: "INV",
@@ -138,7 +139,7 @@ export default function QuickJump() {
                 style={{ background: spineFor(hit.status) }}
                 aria-hidden
               />
-              <span className="mono w-[38px] shrink-0 text-[10px] tracking-[0.08em] text-ink-3">
+              <span className="mono w-[52px] shrink-0 text-[10px] tracking-[0.08em] text-ink-3">
                 {KIND_LABEL[hit.kind]}
               </span>
               <span className="min-w-0 flex-1">

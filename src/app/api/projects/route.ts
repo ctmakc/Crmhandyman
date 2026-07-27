@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveClient } from "@/lib/client-resolver";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
       } : {}),
     },
     include: {
+      client: { select: { id: true, name: true } },
       estimates: { select: { id: true, total: true, status: true } },
       payments: { select: { amount: true } },
       tasks: { select: { id: true, status: true } },
@@ -43,9 +45,22 @@ export async function POST(req: NextRequest) {
   const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
+
+  // Every job belongs to a client — either the one picked in the form, or the one
+  // this name/phone/address already resolves to.
+  const clientId =
+    body.clientId ||
+    (await resolveClient(tenantId, {
+      name: body.clientName,
+      phone: body.phone,
+      email: body.email,
+      address: body.address,
+    }));
+
   const project = await prisma.project.create({
     data: {
       tenantId,
+      clientId,
       clientName: body.clientName,
       phone: body.phone,
       email: body.email,

@@ -15,6 +15,8 @@ model Tenant {
   expiresAt    DateTime?
   createdAt    DateTime    @default(now())
   users        User[]
+  clients      Client[]
+  equipment    Equipment[]
   leads        Lead[]
   projects     Project[]
   tasks        Task[]
@@ -50,6 +52,62 @@ enum Role {
   WORKER
 }
 
+/// The customer, not the string on a work order. One roof, one furnace history,
+/// one balance owing — jobs and leads point at this, they no longer re-type it.
+model Client {
+  id        String      @id @default(cuid())
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  city      String?
+  notes     String?
+  leads     Lead[]
+  projects  Project[]
+  equipment Equipment[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([tenantId, name])
+}
+
+/// What is actually installed at the address. HVAC lives on iron, not on tickets:
+/// the serial number and the warranty date are what a tech needs before the visit.
+model Equipment {
+  id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  client        Client        @relation(fields: [clientId], references: [id])
+  clientId      String
+  project       Project?      @relation(fields: [projectId], references: [id])
+  projectId     String?
+  kind          EquipmentKind @default(FURNACE)
+  brand         String?
+  model         String?
+  serial        String?
+  location      String?
+  installedAt   DateTime?
+  warrantyUntil DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([tenantId, clientId])
+}
+
+enum EquipmentKind {
+  FURNACE
+  AC
+  HEAT_PUMP
+  WATER_HEATER
+  BOILER
+  THERMOSTAT
+  DUCTWORK
+  OTHER
+}
+
 model Lead {
   id           String     @id @default(cuid())
   tenantId     String
@@ -64,6 +122,8 @@ model Lead {
   jobType      String?
   notes        String?
   status       LeadStatus @default(NEW)
+  client       Client?    @relation(fields: [clientId], references: [id])
+  clientId     String?
   assignedTo   User?      @relation(fields: [assignedToId], references: [id])
   assignedToId String?
   project      Project?
@@ -96,6 +156,8 @@ model Project {
   tenant        Tenant        @relation(fields: [tenantId], references: [id])
   lead          Lead?         @relation(fields: [leadId], references: [id])
   leadId        String?       @unique
+  client        Client?       @relation(fields: [clientId], references: [id])
+  clientId      String?
   clientName    String
   phone         String?
   email         String?
@@ -109,6 +171,7 @@ model Project {
   assignedToId  String?
   estimates     Estimate[]
   tasks         Task[]
+  equipment     Equipment[]
   invoices      Invoice[]
   payments      Payment[]
   expenses      Expense[]

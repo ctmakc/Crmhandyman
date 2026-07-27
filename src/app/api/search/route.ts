@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export interface SearchHit {
-  kind: "lead" | "job" | "invoice";
+  kind: "lead" | "job" | "invoice" | "client";
   id: string;
   title: string;
   sub: string;
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const q = (new URL(req.url).searchParams.get("q") || "").trim();
   if (q.length < 2) return NextResponse.json([]);
 
-  const [leads, jobs, invoices] = await Promise.all([
+  const [leads, jobs, invoices, clients] = await Promise.all([
     prisma.lead.findMany({
       where: {
         tenantId,
@@ -53,9 +53,31 @@ export async function GET(req: NextRequest) {
       take: 5,
       orderBy: { issuedAt: "desc" },
     }),
+    prisma.client.findMany({
+      where: {
+        tenantId,
+        OR: [
+          { name: { contains: q } },
+          { phone: { contains: q } },
+          { email: { contains: q } },
+          { address: { contains: q } },
+        ],
+      },
+      take: 5,
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   const hits: SearchHit[] = [
+    // Clients first: on a service call the address is what the caller gives you.
+    ...clients.map((c) => ({
+      kind: "client" as const,
+      id: c.id,
+      title: c.name,
+      sub: [c.address, c.city, c.phone].filter(Boolean).join(" · ") || "No contact on file",
+      status: "COMPLETED",
+      href: `/clients/${c.id}`,
+    })),
     ...jobs.map((j) => ({
       kind: "job" as const,
       id: j.id,

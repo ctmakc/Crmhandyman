@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Empty, buttonClass, spineFor, textToneFor, Plate, Skeleton } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import AddressHistory from "@/components/AddressHistory";
 
 interface Project {
   id: string;
@@ -17,6 +18,7 @@ interface Project {
   description?: string;
   jobType?: string;
   status: string;
+  clientId?: string | null;
   createdAt?: string;
   scheduledDate?: string;
   completedDate?: string;
@@ -172,7 +174,17 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               {project.title}
             </h1>
             <p className="mt-2 text-[14px] text-ink-2">
-              {project.clientName} · {project.address}
+              {project.clientId ? (
+                <Link
+                  href={`/clients/${project.clientId}`}
+                  className="font-medium text-ink underline underline-offset-4"
+                >
+                  {project.clientName}
+                </Link>
+              ) : (
+                project.clientName
+              )}{" "}
+              · {project.address}
             </p>
           </div>
           <span className="eyebrow" style={{ color: textToneFor(project.status) }}>
@@ -223,6 +235,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
       {tab === "overview" && (
         <div className="space-y-5">
+          <AddressHistory projectId={params.id} />
           <Plate className="divide-y divide-line">
             {[
               ["Address", project.address],

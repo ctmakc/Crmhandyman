@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -13,6 +14,15 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+
+interface ClientOption {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  city?: string | null;
+}
 
 interface Project {
   id: string;
@@ -31,12 +41,15 @@ interface Project {
 const STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
 export default function ProjectsPage() {
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [form, setForm] = useState({
+    clientId: "",
     clientName: "",
     phone: "",
     email: "",
@@ -62,6 +75,42 @@ export default function ProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
+  // Arriving from a client record: open the form with that client already chosen.
+  const presetClient = searchParams.get("client");
+
+  // The picker exists so a repeat customer is chosen, not retyped into a duplicate.
+  useEffect(() => {
+    if (!showAddForm && !presetClient) return;
+    if (clients.length) return;
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((d) => setClients(Array.isArray(d) ? d : []))
+      .catch(() => null);
+  }, [showAddForm, presetClient, clients.length]);
+
+  useEffect(() => {
+    if (!presetClient || !clients.length || form.clientId) return;
+    setShowAddForm(true);
+    pickClient(presetClient);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetClient, clients.length]);
+
+  function pickClient(id: string) {
+    const c = clients.find((x) => x.id === id);
+    if (!c) {
+      setForm((f) => ({ ...f, clientId: "" }));
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      clientId: c.id,
+      clientName: c.name,
+      phone: c.phone || "",
+      email: c.email || "",
+      address: c.address || f.address,
+    }));
+  }
+
   async function handleAddProject(e: React.FormEvent) {
     e.preventDefault();
     await fetch("/api/projects", {
@@ -72,6 +121,7 @@ export default function ProjectsPage() {
     setShowAddForm(false);
     toast("Job opened");
     setForm({
+      clientId: "",
       clientName: "",
       phone: "",
       email: "",
@@ -130,6 +180,22 @@ export default function ProjectsPage() {
       {showAddForm && (
         <Plate className="p-5">
           <div className="eyebrow">New work order</div>
+          <div className="mt-4 border border-line bg-sunk px-3 py-2.5">
+            <label className="eyebrow">Existing client</label>
+            <select
+              value={form.clientId}
+              onChange={(e) => pickClient(e.target.value)}
+              className="mt-1.5 w-full px-3 py-2 text-[13px]"
+            >
+              <option value="">— New client, type the details below —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.address ? ` · ${c.address}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
           <form onSubmit={handleAddProject} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {[
               { label: "Client name *", key: "clientName", type: "text", required: true },

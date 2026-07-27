@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
+  Contact,
   Briefcase,
   CheckSquare,
   FileText,
@@ -16,11 +17,12 @@ import {
 const navItems = [
   { href: "/", label: "Dispatch", code: "01", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", code: "02", icon: Users },
-  { href: "/projects", label: "Jobs", code: "03", icon: Briefcase },
-  { href: "/tasks", label: "Crew", code: "04", icon: CheckSquare },
-  { href: "/invoices", label: "Invoices", code: "05", icon: FileText },
-  { href: "/finance", label: "Finance", code: "06", icon: DollarSign },
-  { href: "/settings", label: "Settings", code: "07", icon: Settings },
+  { href: "/clients", label: "Clients", code: "03", icon: Contact },
+  { href: "/projects", label: "Jobs", code: "04", icon: Briefcase },
+  { href: "/tasks", label: "Crew", code: "05", icon: CheckSquare },
+  { href: "/invoices", label: "Invoices", code: "06", icon: FileText },
+  { href: "/finance", label: "Finance", code: "07", icon: DollarSign },
+  { href: "/settings", label: "Settings", code: "08", icon: Settings },
 ];
 
 export default function Sidebar() {
