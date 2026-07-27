@@ -1,17 +1,26 @@
 # HandymanPro CRM
 
-Simple CRM for a Canadian handyman small business. Built with Next.js 14, Prisma, SQLite, Tailwind CSS, and NextAuth.
+Work-order CRM for Canadian HVAC, moving and trade contractors. Next.js 14, Prisma,
+SQLite, Tailwind CSS, NextAuth.
+
+The interface follows the «НАРЯД / WORK ORDER» design system — see **[DESIGN.md](DESIGN.md)**
+before touching any UI. Tokens are law: no raw hex in components, one 3px radius, zero
+box-shadows, every number in Chivo Mono.
 
 ## Features
 
 - **Multi-channel lead intake** — Facebook Lead Ads, Instagram, Google Local Services Ads, HomeStars/Kijiji (via email), manual entry
-- **Lead management** — verify, contact, reject, convert to project
-- **Projects** — full job lifecycle (Scheduled → In Progress → Completed)
-- **Estimates** — line-item estimate builder with HST/GST, printable HTML view
-- **Tasks** — kanban board (drag & drop), assign to workers
-- **Finance** — record payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
+- **Lead management** — contact, verify, reject, convert to a job
+- **Jobs** — full work-order lifecycle (Scheduled → In Progress → Completed)
+- **Estimates** — line-item builder with HST/GST, printable view, PDF export
+- **Invoices** — an accepted estimate tears off into a numbered invoice (`INV-YYYY-NNNN`)
+  with the same lines and totals; mark sent, log part payments, auto-settle to PAID, void
+  (never delete) so the numbering stays honest. Payments write real `Payment` rows, so
+  Finance and the invoice can never disagree.
+- **Tasks** — crew kanban (drag & drop), assign to workers
+- **Finance** — payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
 - **Team** — admin + multiple workers, role-based access
-- **Mobile-friendly** — works on phone in the field
+- **Mobile-friendly** — the same deck works on a phone in a driveway
 
 ## Quick Start
 
@@ -28,6 +37,10 @@ npx prisma migrate dev --name init
 
 # 4. Seed with sample data
 npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
+
+# 4b. (optional) Fill a realistic HVAC/moving week — leads, booked jobs, an accepted
+#     estimate, an issued invoice with a part payment, and one overdue invoice.
+npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/demo-fill.ts
 
 # 5. Run
 npm run dev

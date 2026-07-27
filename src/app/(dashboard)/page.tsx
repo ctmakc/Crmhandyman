@@ -3,10 +3,26 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
+import {
+  PageHead,
+  Plate,
+  Ticket,
+  WoNumber,
+  Empty,
+  Money,
+  textToneFor,
+} from "@/components/ui/primitives";
+import DayRail from "@/components/DayRail";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const isAdmin = (session?.user as { role?: string })?.role === "ADMIN";
+
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
 
   const [
     newLeadsCount,
@@ -15,6 +31,8 @@ export default async function DashboardPage() {
     recentLeads,
     recentProjects,
     monthRevenue,
+    outstanding,
+    weekJobs,
   ] = await Promise.all([
     prisma.lead.count({ where: { status: { in: ["NEW", "CONTACTED"] } } }),
     prisma.project.count({ where: { status: { in: ["SCHEDULED", "IN_PROGRESS"] } } }),
@@ -24,144 +42,178 @@ export default async function DashboardPage() {
         ...(isAdmin ? {} : { assignedToId: (session?.user as { id?: string })?.id }),
       },
     }),
-    prisma.lead.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
-    prisma.project.findMany({
-      orderBy: { updatedAt: "desc" },
-      take: 5,
-    }),
+    prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 5 }),
+    prisma.project.findMany({ orderBy: { updatedAt: "desc" }, take: 5 }),
     isAdmin
       ? prisma.payment.aggregate({
           where: {
-            date: {
-              gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-            },
+            date: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
           },
           _sum: { amount: true },
         })
       : null,
+    isAdmin
+      ? prisma.invoice.aggregate({
+          where: { status: { in: ["SENT", "PARTIAL"] } },
+          _sum: { total: true },
+          _count: true,
+        })
+      : null,
+    prisma.project.findMany({
+      where: { scheduledDate: { gte: weekStart, lt: weekEnd } },
+      orderBy: { scheduledDate: "asc" },
+      select: { id: true, title: true, clientName: true, status: true, scheduledDate: true },
+    }),
   ]);
 
-  const leadSourceColors: Record<string, string> = {
-    FACEBOOK: "bg-blue-100 text-blue-700",
-    INSTAGRAM: "bg-pink-100 text-pink-700",
-    GOOGLE: "bg-green-100 text-green-700",
-    HOMESTARS: "bg-orange-100 text-orange-700",
-    KIJIJI: "bg-yellow-100 text-yellow-700",
-    EMAIL: "bg-purple-100 text-purple-700",
-    MANUAL: "bg-gray-100 text-gray-700",
-    OTHER: "bg-gray-100 text-gray-700",
-  };
-
-  const projectStatusColors: Record<string, string> = {
-    SCHEDULED: "bg-yellow-100 text-yellow-700",
-    IN_PROGRESS: "bg-blue-100 text-blue-700",
-    COMPLETED: "bg-green-100 text-green-700",
-    CANCELLED: "bg-red-100 text-red-700",
-  };
+  const readouts = [
+    // The amber lamp — not amber type — marks the one lane needing attention.
+    { label: "New leads", value: String(newLeadsCount), href: "/leads", lamp: newLeadsCount > 0 },
+    { label: "Active jobs", value: String(activeProjectsCount), href: "/projects" },
+    { label: "Open crew tasks", value: String(pendingTasksCount), href: "/tasks" },
+    ...(isAdmin
+      ? [
+          {
+            label: "Collected · MTD",
+            value: formatCurrency(monthRevenue?._sum.amount || 0),
+            href: "/finance",
+            tone: "var(--emerald)",
+          },
+          {
+            label: `Outstanding · ${outstanding?._count || 0}`,
+            value: formatCurrency(outstanding?._sum.total || 0),
+            href: "/invoices",
+            tone: (outstanding?._sum.total || 0) > 0 ? "var(--rose)" : undefined,
+          },
+        ]
+      : []),
+  ];
 
   return (
-    <div className="space-y-6 pb-20 md:pb-0">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500">Welcome back, {session?.user?.name}</p>
+    <div className="space-y-7 pb-24 md:pb-0">
+      <PageHead
+        eyebrow={`Shift desk · ${session?.user?.name ?? ""}`}
+        title="Dispatch"
+        sub="Everything booked, quoted and owed — on one deck."
+      />
+
+      {/* Readout strip: ruled lanes, not a card grid. */}
+      <div className="grid grid-cols-2 divide-line border border-line bg-plate md:grid-cols-3 lg:grid-cols-5 lg:divide-x">
+        {readouts.map((r) => (
+          <Link
+            key={r.label}
+            href={r.href}
+            className="group border-b border-line px-4 py-4 transition-colors duration-[140ms] ease-instrument last:border-b-0 hover:bg-sunk lg:border-b-0"
+          >
+            <div className="flex items-center gap-2">
+              {"lamp" in r && r.lamp && (
+                <span
+                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: "var(--amber)" }}
+                />
+              )}
+              <span className="eyebrow">{r.label}</span>
+            </div>
+            <div
+              className="mono mt-3 text-[22px] font-bold leading-none tracking-tight md:text-[28px]"
+              style={{ color: r.tone || "var(--ink)" }}
+            >
+              {r.value}
+            </div>
+          </Link>
+        ))}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">New Leads</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{newLeadsCount}</p>
-          <Link href="/leads" className="text-xs text-blue-600 mt-2 inline-block hover:underline">
-            View leads →
-          </Link>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">Active Jobs</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{activeProjectsCount}</p>
-          <Link href="/projects" className="text-xs text-blue-600 mt-2 inline-block hover:underline">
-            View jobs →
-          </Link>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">My Tasks</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{pendingTasksCount}</p>
-          <Link href="/tasks" className="text-xs text-blue-600 mt-2 inline-block hover:underline">
-            View tasks →
-          </Link>
-        </div>
-        {isAdmin && (
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <p className="text-sm text-gray-500">Revenue (Month)</p>
-            <p className="text-2xl font-bold text-green-600 mt-1">
-              {formatCurrency(monthRevenue?._sum.amount || 0)}
-            </p>
-            <Link href="/finance" className="text-xs text-blue-600 mt-2 inline-block hover:underline">
-              View finance →
+      {/* The day rail — the shape of the week before anything else. */}
+      <DayRail
+        jobs={weekJobs.map((j) => ({
+          id: j.id,
+          title: j.title,
+          client: j.clientName,
+          status: j.status,
+          date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
+        }))}
+      />
+
+      {/* Tickets sit directly on the deck — the notch reads as a bite only when
+          the surface behind it is the deck itself. No nested plates. */}
+      <div className="grid gap-8 lg:grid-cols-2">
+        <section>
+          <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
+              Incoming leads
+            </h2>
+            <Link href="/leads" className="eyebrow hover:text-ink">
+              All leads →
             </Link>
           </div>
-        )}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Recent Leads */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Recent Leads</h2>
-            <Link href="/leads" className="text-sm text-blue-600 hover:underline">View all</Link>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {recentLeads.length === 0 && (
-              <p className="text-sm text-gray-500 p-4">No leads yet.</p>
-            )}
+          <div className="space-y-3">
+            {recentLeads.length === 0 && <Empty>No leads on the desk</Empty>}
             {recentLeads.map((lead) => (
-              <Link
-                key={lead.id}
-                href={`/leads/${lead.id}`}
-                className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{lead.name}</p>
-                  <p className="text-xs text-gray-500">{lead.jobType || "General inquiry"}</p>
+              <Ticket key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <WoNumber id={lead.id} prefix="LD" date={lead.createdAt} />
+                  <span className="eyebrow">{lead.source}</span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${leadSourceColors[lead.source]}`}>
-                  {lead.source}
-                </span>
-              </Link>
+                <p className="mt-1.5 text-[15px] font-bold leading-tight text-ink">{lead.name}</p>
+                <p className="mt-0.5 text-[13px] text-ink-2">
+                  {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
+                </p>
+              </Ticket>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Recent Projects */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Active Projects</h2>
-            <Link href="/projects" className="text-sm text-blue-600 hover:underline">View all</Link>
+        <section>
+          <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
+              Jobs in the yard
+            </h2>
+            <Link href="/projects" className="eyebrow hover:text-ink">
+              All jobs →
+            </Link>
           </div>
-          <div className="divide-y divide-gray-50">
-            {recentProjects.length === 0 && (
-              <p className="text-sm text-gray-500 p-4">No projects yet.</p>
-            )}
+          <div className="space-y-3">
+            {recentProjects.length === 0 && <Empty>Nothing scheduled</Empty>}
             {recentProjects.map((project) => (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{project.title}</p>
-                  <p className="text-xs text-gray-500">{project.clientName}</p>
+              <Ticket key={project.id} href={`/projects/${project.id}`} status={project.status}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <WoNumber id={project.id} date={project.createdAt} />
+                  <span className="eyebrow" style={{ color: textToneFor(project.status) }}>
+                    {project.status.replace("_", " ")}
+                  </span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${projectStatusColors[project.status]}`}>
-                  {project.status.replace("_", " ")}
-                </span>
-              </Link>
+                <p className="mt-1.5 text-[15px] font-bold leading-tight text-ink">{project.title}</p>
+                <p className="mt-0.5 text-[13px] text-ink-2">
+                  {project.clientName}
+                  {project.address ? ` · ${project.address}` : ""}
+                </p>
+              </Ticket>
             ))}
           </div>
-        </div>
+        </section>
       </div>
+
+      {isAdmin && (
+        <Plate className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <div className="eyebrow">Money on the street</div>
+            <p className="mt-1 text-[13px] text-ink-2">
+              Unpaid invoices already issued to clients.
+            </p>
+          </div>
+          <div className="flex items-baseline gap-3">
+            <Money
+              value={outstanding?._sum.total || 0}
+              className="text-[26px]"
+              tone={(outstanding?._sum.total || 0) > 0 ? "var(--rose)" : "var(--emerald)"}
+            />
+            <Link href="/invoices" className="eyebrow hover:text-ink">
+              Chase →
+            </Link>
+          </div>
+        </Plate>
+      )}
     </div>
   );
 }

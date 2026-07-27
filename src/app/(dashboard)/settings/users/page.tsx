@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
 
 interface User {
   id: string;
@@ -53,82 +54,99 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="max-w-xl space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center gap-3">
-        <Link href="/settings" className="text-gray-500 hover:text-gray-900">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-xl font-bold text-gray-900 flex-1">Team Members</h1>
-        <button onClick={() => setShowForm(true)}
-          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
-          <Plus className="h-4 w-4" /> Add
-        </button>
-      </div>
+    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
+      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+        <ArrowLeft className="h-3.5 w-3.5" /> Settings
+      </Link>
+
+      <PageHead
+        eyebrow="Desk setup · 01"
+        title="Team"
+        action={
+          <button onClick={() => setShowForm(true)} className={buttonClass("primary")}>
+            <Plus className="h-4 w-4" /> Add crew
+          </button>
+        }
+      />
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h2 className="font-semibold mb-3">New Team Member</h2>
-          <form onSubmit={handleAdd} className="space-y-3">
+        <Plate className="p-5">
+          <div className="eyebrow">New team member</div>
+          <form onSubmit={handleAdd} className="mt-4 space-y-4">
             <div>
-              <label className="text-xs font-medium text-gray-600">Full Name *</label>
+              <label className="eyebrow">Full Name *</label>
               <input required value={form.name} onChange={e => setForm({...form, name: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="mt-1.5 w-full px-3 py-2 text-[13px]" />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Email *</label>
+              <label className="eyebrow">Email *</label>
               <input required type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="mt-1.5 w-full px-3 py-2 text-[13px]" />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Password *</label>
+              <label className="eyebrow">Password *</label>
               <input required type="password" minLength={6} value={form.password}
                 onChange={e => setForm({...form, password: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="mt-1.5 w-full px-3 py-2 text-[13px]" />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Role</label>
+              <label className="eyebrow">Role</label>
               <select value={form.role} onChange={e => setForm({...form, role: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="mt-1.5 w-full px-3 py-2 text-[13px]">
                 <option value="WORKER">Worker</option>
                 <option value="ADMIN">Admin</option>
               </select>
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p className="mono border-l-2 py-1 pl-3 text-[12px]" style={{ borderColor: "var(--rose)", color: "var(--rose)" }}>
+                {error}
+              </p>
+            )}
             <div className="flex gap-2">
-              <button type="submit" disabled={saving}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                {saving ? "Saving..." : "Add Member"}
+              <button type="submit" disabled={saving} className={buttonClass("primary")}>
+                {saving ? "Saving…" : "Add member"}
               </button>
-              <button type="button" onClick={() => setShowForm(false)}
-                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+              <button type="button" onClick={() => setShowForm(false)} className={buttonClass("ghost")}>
                 Cancel
               </button>
             </div>
           </form>
-        </div>
+        </Plate>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
-        {users.map(user => (
-          <div key={user.id} className="flex items-center justify-between p-4">
-            <div>
-              <p className="font-medium text-gray-900">{user.name}</p>
-              <p className="text-sm text-gray-500">{user.email}</p>
-            </div>
+      <Plate>
+        {users.map((user) => (
+          <div
+            key={user.id}
+            className="flex items-center justify-between gap-4 border-b border-line px-5 py-4 last:border-b-0"
+          >
             <div className="flex items-center gap-3">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                user.role === "ADMIN" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
-              }`}>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-900 text-[11px] font-bold text-plate">
+                {user.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
+              </span>
+              <div>
+                <p className="text-[15px] font-bold leading-tight text-ink">{user.name}</p>
+                <p className="mono text-[12px] text-ink-3">{user.email}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <span
+                className="eyebrow"
+                style={{ color: user.role === "ADMIN" ? "var(--ink)" : "var(--ink-3)" }}
+              >
                 {user.role}
               </span>
-              <button onClick={() => handleDelete(user.id)}
-                className="text-gray-300 hover:text-red-500 transition-colors">
+              <button
+                onClick={() => handleDelete(user.id)}
+                className="text-ink-3 transition-colors hover:text-rose"
+                aria-label="Remove member"
+              >
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </div>
         ))}
-      </div>
+      </Plate>
     </div>
   );
 }

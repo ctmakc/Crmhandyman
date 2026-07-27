@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { buttonClass } from "@/components/ui/primitives";
 
 function LoginForm() {
   const router = useRouter();
@@ -22,18 +23,12 @@ function LoginForm() {
     if (s) setSlug(s);
 
     // Resolve tenant from slug to get tenantId for auth
-    if (s) {
-      fetch(`/api/tenant/resolve?slug=${s}`)
-        .then(r => r.json())
-        .then(d => { if (d.id) setTenantId(d.id); })
-        .catch(() => null);
-    } else {
-      // Default to "demo" tenant for local dev
-      fetch("/api/tenant/resolve?slug=demo")
-        .then(r => r.json())
-        .then(d => { if (d.id) setTenantId(d.id); })
-        .catch(() => null);
-    }
+    fetch(`/api/tenant/resolve?slug=${s || "demo"}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.id) setTenantId(d.id);
+      })
+      .catch(() => null);
   }, [params]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,15 +36,10 @@ function LoginForm() {
     setLoading(true);
     setError("");
 
-    const res = await signIn("credentials", {
-      email,
-      password,
-      tenantId,
-      redirect: false,
-    });
+    const res = await signIn("credentials", { email, password, tenantId, redirect: false });
 
     if (res?.error) {
-      setError("Invalid email or password");
+      setError("That email and password do not match");
       setLoading(false);
     } else {
       router.push("/");
@@ -57,67 +47,109 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
-          <div className="text-center mb-8">
-            <div className="text-4xl mb-3">🔧</div>
-            <h1 className="text-2xl font-bold text-gray-900">HandymanPro CRM</h1>
-            <p className="text-gray-500 mt-1">{slug ? `Sign in to ${slug}` : "Sign in to your account"}</p>
-          </div>
+    <div className="grid min-h-screen bg-deck lg:grid-cols-[5fr_7fr]">
+      {/* Navy plate: the product's face, not a decorative hero. */}
+      <aside className="flex flex-col justify-between bg-navy-900 px-8 py-10 lg:px-12 lg:py-14">
+        <div>
+          <span className="text-[22px] font-black tracking-tight text-plate">
+            HANDYMAN<span className="text-amber">PRO</span>
+          </span>
+          <p className="mono mt-2 text-[10px] uppercase tracking-[0.14em] text-ink-rail">
+            Work-order desk
+          </p>
+        </div>
+
+        <div className="hidden lg:block">
+          <p className="max-w-[22ch] text-[30px] font-black leading-[1.08] tracking-tight text-plate">
+            Leads in.
+            <br />
+            Jobs booked.
+            <br />
+            <span className="text-amber">Invoices paid.</span>
+          </p>
+          <p className="mt-5 max-w-[38ch] text-[14px] leading-relaxed text-ink-rail">
+            Built for HVAC, moving and trade crews who run on tickets, not on
+            enterprise pipelines.
+          </p>
+        </div>
+
+        <ul className="mono space-y-1.5 text-[10px] uppercase tracking-[0.12em] text-ink-rail">
+          {["Multi-channel intake", "Estimates → invoices", "Crew board", "Job P&L"].map((f) => (
+            <li key={f} className="flex items-center gap-2">
+              <span className="inline-block h-[3px] w-3" style={{ background: "var(--amber)" }} />
+              {f}
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      <main className="flex items-center px-6 py-12 lg:px-16">
+        <div className="w-full max-w-[380px]">
+          <div className="eyebrow">{slug ? `Tenant · ${slug}` : "Sign in"}</div>
+          <h1 className="mt-2 text-[32px] font-black leading-none tracking-tight text-ink">
+            Open the desk
+          </h1>
 
           {registered && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
-              Account created! Sign in to get started.
-            </div>
+            <p
+              className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]"
+              style={{ borderColor: "var(--emerald)", color: "var(--emerald)" }}
+            >
+              Account created — sign in to get started.
+            </p>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="mt-7 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="eyebrow">Email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
                 placeholder="admin@handyman.ca"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="eyebrow">Password</label>
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
                 placeholder="••••••••"
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg">
+              <p
+                className="mono border-l-2 py-1 pl-3 text-[12px]"
+                style={{ borderColor: "var(--rose)", color: "var(--rose)" }}
+              >
                 {error}
-              </div>
+              </p>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className={`${buttonClass("primary")} w-full py-2.5`}
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {loading ? "Signing in…" : "Sign in"}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-4">
-            Don&apos;t have an account?{" "}
-            <a href="/register" className="text-blue-600 hover:underline">Start free trial</a>
+          <p className="mt-6 text-[13px] text-ink-2">
+            No account yet?{" "}
+            <a href="/register" className="font-bold text-ink underline underline-offset-4">
+              Start a free trial
+            </a>
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

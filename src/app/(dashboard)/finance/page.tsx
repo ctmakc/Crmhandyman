@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { PageHead, Plate, Empty, buttonClass } from "@/components/ui/primitives";
 
 interface Payment {
   id: string;
@@ -31,6 +32,22 @@ interface FinanceSummary {
   expenses: Expense[];
 }
 
+const MONTHS = [
+  "",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 export default function FinancePage() {
   const [data, setData] = useState<FinanceSummary | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -38,8 +55,20 @@ export default function FinancePage() {
   const [tab, setTab] = useState<"payments" | "expenses">("payments");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ projectId: "", amount: "", method: "CASH", notes: "", date: "" });
-  const [expenseForm, setExpenseForm] = useState({ projectId: "", amount: "", category: "MATERIALS", description: "", date: "" });
+  const [paymentForm, setPaymentForm] = useState({
+    projectId: "",
+    amount: "",
+    method: "CASH",
+    notes: "",
+    date: "",
+  });
+  const [expenseForm, setExpenseForm] = useState({
+    projectId: "",
+    amount: "",
+    category: "MATERIALS",
+    description: "",
+    date: "",
+  });
   const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
 
   async function fetchData() {
@@ -53,7 +82,10 @@ export default function FinancePage() {
     setProjects(await projRes.json());
   }
 
-  useEffect(() => { fetchData(); }, [year, month]);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month]);
 
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault();
@@ -79,199 +111,310 @@ export default function FinancePage() {
     fetchData();
   }
 
-  const months = [
-    "", "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
+  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
+  const net = data?.netProfit || 0;
 
   return (
-    <div className="space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Finance</h1>
-        <div className="flex gap-2">
-          <select value={month} onChange={e => setMonth(e.target.value ? Number(e.target.value) : "")}
-            className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none">
-            <option value="">Full Year</option>
-            {months.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
-          <select value={year} onChange={e => setYear(Number(e.target.value))}
-            className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none">
-            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
+    <div className="space-y-6 pb-24 md:pb-0">
+      <PageHead
+        eyebrow="Books"
+        title="Finance"
+        sub="What came in, what went out, what is left."
+        action={
+          <div className="flex gap-2">
+            <select
+              value={month}
+              onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : "")}
+              className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
+            >
+              <option value="">Full year</option>
+              {MONTHS.slice(1).map((m, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="mono px-2.5 py-2 text-[12px]"
+            >
+              {[2024, 2025, 2026, 2027].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
+
+      {/* The P&L readout — a ruled row of tabular figures, not four cards. */}
+      <div className="grid grid-cols-2 border border-line bg-plate md:grid-cols-4">
+        {[
+          { label: "Revenue", value: formatCurrency(data?.totalRevenue || 0), tone: "var(--emerald)" },
+          { label: "Expenses", value: formatCurrency(data?.totalExpenses || 0), tone: "var(--rose)" },
+          {
+            label: "Net",
+            value: formatCurrency(net),
+            tone: net >= 0 ? "var(--ink)" : "var(--rose)",
+          },
+          { label: "Jobs closed", value: String(data?.projectCount || 0) },
+        ].map((r) => (
+          <div key={r.label} className="border-b border-r border-line px-4 py-4 last:border-r-0">
+            <div className="eyebrow">{r.label}</div>
+            <p
+              className="mono mt-3 text-[24px] font-bold leading-none"
+              style={{ color: r.tone || "var(--ink)" }}
+            >
+              {r.value}
+            </p>
+          </div>
+        ))}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Revenue</p>
-          <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(data?.totalRevenue || 0)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Expenses</p>
-          <p className="text-2xl font-bold text-red-600 mt-1">{formatCurrency(data?.totalExpenses || 0)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Net Profit</p>
-          <p className={`text-2xl font-bold mt-1 ${(data?.netProfit || 0) >= 0 ? "text-gray-900" : "text-red-600"}`}>
-            {formatCurrency(data?.netProfit || 0)}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Jobs Completed</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{data?.projectCount || 0}</p>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-2">
-        <button onClick={() => setShowPaymentForm(!showPaymentForm)}
-          className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-          <Plus className="h-4 w-4" /> Record Payment
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setShowPaymentForm(!showPaymentForm)} className={buttonClass("primary")}>
+          <Plus className="h-4 w-4" /> Payment in
         </button>
-        <button onClick={() => setShowExpenseForm(!showExpenseForm)}
-          className="flex items-center gap-1.5 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
-          <Plus className="h-4 w-4" /> Record Expense
+        <button onClick={() => setShowExpenseForm(!showExpenseForm)} className={buttonClass("ghost")}>
+          <Plus className="h-4 w-4" /> Cost out
         </button>
       </div>
 
-      {/* Payment Form */}
       {showPaymentForm && (
-        <form onSubmit={handleAddPayment} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <h2 className="font-semibold mb-3">Record Payment</h2>
-          <div className="grid grid-cols-2 gap-3">
+        <Plate className="p-5">
+          <div className="eyebrow">Record payment</div>
+          <form onSubmit={handleAddPayment} className="mt-4 grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-gray-600">Project *</label>
-              <select required value={paymentForm.projectId} onChange={e => setPaymentForm({...paymentForm, projectId: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Select project...</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+              <label className="eyebrow">Job *</label>
+              <select
+                required
+                value={paymentForm.projectId}
+                onChange={(e) => setPaymentForm({ ...paymentForm, projectId: e.target.value })}
+                className={field}
+              >
+                <option value="">Select job…</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Amount ($) *</label>
-              <input required type="number" step="0.01" value={paymentForm.amount}
-                onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Amount *</label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                className={`${field} mono`}
+              />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Method</label>
-              <select value={paymentForm.method} onChange={e => setPaymentForm({...paymentForm, method: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                {["CASH", "E_TRANSFER", "CHEQUE", "CARD"].map(m => <option key={m} value={m}>{m.replace("_", "-")}</option>)}
+              <label className="eyebrow">Method</label>
+              <select
+                value={paymentForm.method}
+                onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
+                className={`${field} mono uppercase tracking-[0.06em]`}
+              >
+                {["CASH", "E_TRANSFER", "CHEQUE", "CARD"].map((m) => (
+                  <option key={m} value={m}>
+                    {m.replace("_", "-")}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Date</label>
-              <input type="date" value={paymentForm.date} onChange={e => setPaymentForm({...paymentForm, date: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Date</label>
+              <input
+                type="date"
+                value={paymentForm.date}
+                onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                className={`${field} mono`}
+              />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Notes</label>
-              <input value={paymentForm.notes} onChange={e => setPaymentForm({...paymentForm, notes: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Notes</label>
+              <input
+                value={paymentForm.notes}
+                onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                className={field}
+              />
             </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">Save</button>
-            <button type="button" onClick={() => setShowPaymentForm(false)} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-          </div>
-        </form>
+            <div className="col-span-2 flex gap-2">
+              <button type="submit" className={buttonClass("primary")}>
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPaymentForm(false)}
+                className={buttonClass("ghost")}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Plate>
       )}
 
-      {/* Expense Form */}
       {showExpenseForm && (
-        <form onSubmit={handleAddExpense} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <h2 className="font-semibold mb-3">Record Expense</h2>
-          <div className="grid grid-cols-2 gap-3">
+        <Plate className="p-5">
+          <div className="eyebrow">Record cost</div>
+          <form onSubmit={handleAddExpense} className="mt-4 grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-gray-600">Project (optional)</label>
-              <select value={expenseForm.projectId} onChange={e => setExpenseForm({...expenseForm, projectId: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">General expense</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+              <label className="eyebrow">Job (optional)</label>
+              <select
+                value={expenseForm.projectId}
+                onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
+                className={field}
+              >
+                <option value="">General overhead</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Amount ($) *</label>
-              <input required type="number" step="0.01" value={expenseForm.amount}
-                onChange={e => setExpenseForm({...expenseForm, amount: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Amount *</label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={expenseForm.amount}
+                onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                className={`${field} mono`}
+              />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Category</label>
-              <select value={expenseForm.category} onChange={e => setExpenseForm({...expenseForm, category: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map(c => <option key={c} value={c}>{c}</option>)}
+              <label className="eyebrow">Category</label>
+              <select
+                value={expenseForm.category}
+                onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                className={`${field} mono uppercase tracking-[0.06em]`}
+              >
+                {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Date</label>
-              <input type="date" value={expenseForm.date} onChange={e => setExpenseForm({...expenseForm, date: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Date</label>
+              <input
+                type="date"
+                value={expenseForm.date}
+                onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                className={`${field} mono`}
+              />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Description</label>
-              <input value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Description</label>
+              <input
+                value={expenseForm.description}
+                onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                className={field}
+              />
             </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button type="submit" className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">Save</button>
-            <button type="button" onClick={() => setShowExpenseForm(false)} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-          </div>
-        </form>
+            <div className="col-span-2 flex gap-2">
+              <button type="submit" className={buttonClass("primary")}>
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExpenseForm(false)}
+                className={buttonClass("ghost")}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Plate>
       )}
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 gap-1">
-        {(["payments", "expenses"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${
-              tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}>
-            {t} ({t === "payments" ? data?.payments.length || 0 : data?.expenses.length || 0})
+      <div className="flex gap-6 border-b border-line">
+        {(["payments", "expenses"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "-mb-px border-b-2 pb-2.5 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors duration-[140ms] ease-instrument",
+              tab === t ? "border-navy-900 text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
+            )}
+          >
+            {t}{" "}
+            <span className="mono opacity-60">
+              {t === "payments" ? data?.payments.length || 0 : data?.expenses.length || 0}
+            </span>
           </button>
         ))}
       </div>
 
-      {/* Payments List */}
-      {tab === "payments" && (
-        <div className="space-y-2">
-          {(data?.payments || []).length === 0 ? (
-            <p className="text-sm text-gray-500 p-4">No payments recorded.</p>
-          ) : (
-            data?.payments.map(p => (
-              <div key={p.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-green-600">{formatCurrency(p.amount)}</p>
-                  <p className="text-xs text-gray-500">{p.project.clientName} · {p.project.title}</p>
-                  <p className="text-xs text-gray-400">{p.method.replace("_", "-")} · {formatDate(p.date)}</p>
+      {/* Ledger rows — ruled, right-aligned money, no card per line. */}
+      {tab === "payments" &&
+        ((data?.payments || []).length === 0 ? (
+          <Empty>No payments in this period</Empty>
+        ) : (
+          <Plate>
+            {data?.payments.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-medium text-ink">
+                    {p.project.clientName} · {p.project.title}
+                  </p>
+                  <p className="mono text-[11px] text-ink-3">
+                    {formatDate(p.date)} · {p.method.replace("_", "-")}
+                    {p.notes ? ` · ${p.notes}` : ""}
+                  </p>
                 </div>
+                <span
+                  className="mono shrink-0 text-[15px] font-medium"
+                  style={{ color: "var(--emerald)" }}
+                >
+                  {formatCurrency(p.amount)}
+                </span>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            ))}
+          </Plate>
+        ))}
 
-      {/* Expenses List */}
-      {tab === "expenses" && (
-        <div className="space-y-2">
-          {(data?.expenses || []).length === 0 ? (
-            <p className="text-sm text-gray-500 p-4">No expenses recorded.</p>
-          ) : (
-            data?.expenses.map(e => (
-              <div key={e.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-red-600">{formatCurrency(e.amount)}</p>
-                  <p className="text-xs text-gray-500">{e.category}{e.project ? ` · ${e.project.title}` : ""}</p>
-                  <p className="text-xs text-gray-400">{e.description || ""} · {formatDate(e.date)}</p>
+      {tab === "expenses" &&
+        ((data?.expenses || []).length === 0 ? (
+          <Empty>No costs in this period</Empty>
+        ) : (
+          <Plate>
+            {data?.expenses.map((e) => (
+              <div
+                key={e.id}
+                className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-medium text-ink">
+                    {e.description || e.category}
+                    {e.project ? ` · ${e.project.title}` : ""}
+                  </p>
+                  <p className="mono text-[11px] text-ink-3">
+                    {formatDate(e.date)} · {e.category}
+                  </p>
                 </div>
+                <span
+                  className="mono shrink-0 text-[15px] font-medium"
+                  style={{ color: "var(--rose)" }}
+                >
+                  {formatCurrency(e.amount)}
+                </span>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            ))}
+          </Plate>
+        ))}
     </div>
   );
 }

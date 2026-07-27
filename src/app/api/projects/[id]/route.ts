@@ -18,6 +18,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         include: { assignedTo: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
       },
+      invoices: {
+        orderBy: { issuedAt: "desc" },
+        include: { payments: { select: { amount: true } } },
+      },
       payments: { orderBy: { date: "desc" } },
       expenses: { orderBy: { date: "desc" } },
     },

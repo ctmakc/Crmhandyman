@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import {
+  PageHead,
+  Ticket,
+  WoNumber,
+  Empty,
+  Plate,
+  buttonClass,
+} from "@/components/ui/primitives";
 
 interface Project {
   id: string;
@@ -11,6 +18,7 @@ interface Project {
   clientName: string;
   address: string;
   status: string;
+  createdAt?: string;
   scheduledDate?: string;
   jobType?: string;
   payments: { amount: number }[];
@@ -18,12 +26,7 @@ interface Project {
   tasks: { id: string; status: string }[];
 }
 
-const statusColors: Record<string, string> = {
-  SCHEDULED: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  COMPLETED: "bg-green-100 text-green-700",
-  CANCELLED: "bg-red-100 text-red-700",
-};
+const STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -32,8 +35,14 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState({
-    clientName: "", phone: "", email: "", address: "",
-    title: "", description: "", jobType: "", scheduledDate: ""
+    clientName: "",
+    phone: "",
+    email: "",
+    address: "",
+    title: "",
+    description: "",
+    jobType: "",
+    scheduledDate: "",
   });
 
   async function fetchProjects() {
@@ -46,7 +55,10 @@ export default function ProjectsPage() {
     setLoading(false);
   }
 
-  useEffect(() => { fetchProjects(); }, [search, statusFilter]);
+  useEffect(() => {
+    fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter]);
 
   async function handleAddProject(e: React.FormEvent) {
     e.preventDefault();
@@ -56,118 +68,176 @@ export default function ProjectsPage() {
       body: JSON.stringify(form),
     });
     setShowAddForm(false);
-    setForm({ clientName: "", phone: "", email: "", address: "", title: "", description: "", jobType: "", scheduledDate: "" });
+    setForm({
+      clientName: "",
+      phone: "",
+      email: "",
+      address: "",
+      title: "",
+      description: "",
+      jobType: "",
+      scheduledDate: "",
+    });
     fetchProjects();
   }
 
-  return (
-    <div className="space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-        <button onClick={() => setShowAddForm(true)}
-          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          <Plus className="h-4 w-4" /> New Project
-        </button>
-      </div>
+  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
-      <div className="flex flex-col sm:flex-row gap-2">
+  return (
+    <div className="space-y-6 pb-24 md:pb-0">
+      <PageHead
+        eyebrow="Work orders"
+        title="Jobs"
+        sub="Booked, running and closed work — one ticket each."
+        action={
+          <button onClick={() => setShowAddForm((v) => !v)} className={buttonClass("primary")}>
+            {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showAddForm ? "Close" : "New job"}
+          </button>
+        }
+      />
+
+      <div className="flex flex-col gap-2 border border-line bg-sunk p-2 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-          <input type="text" placeholder="Search projects..." value={search}
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
+            strokeWidth={2}
+          />
+          <input
+            placeholder="Search client, title, address…"
+            value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="w-full py-2 pl-9 pr-3 text-[13px]"
+          />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">All Statuses</option>
-          {["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].map(s => (
-            <option key={s} value={s}>{s.replace("_", " ")}</option>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="mono px-3 py-2 text-[12px] uppercase tracking-[0.06em]"
+        >
+          <option value="">All statuses</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replace("_", " ")}
+            </option>
           ))}
         </select>
       </div>
 
       {showAddForm && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <h2 className="font-semibold mb-4">New Project</h2>
-          <form onSubmit={handleAddProject} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Plate className="p-5">
+          <div className="eyebrow">New work order</div>
+          <form onSubmit={handleAddProject} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {[
-              { label: "Client Name *", field: "clientName", type: "text", required: true },
-              { label: "Phone", field: "phone", type: "tel" },
-              { label: "Email", field: "email", type: "email" },
-              { label: "Job Type", field: "jobType", type: "text" },
-              { label: "Scheduled Date", field: "scheduledDate", type: "date" },
-            ].map(({ label, field, type, required }) => (
-              <div key={field}>
-                <label className="text-xs font-medium text-gray-600">{label}</label>
-                <input required={required} type={type}
-                  value={(form as Record<string, string>)[field] || ""}
-                  onChange={e => setForm({...form, [field]: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              { label: "Client name *", key: "clientName", type: "text", required: true },
+              { label: "Phone", key: "phone", type: "tel" },
+              { label: "Email", key: "email", type: "email" },
+              { label: "Job type", key: "jobType", type: "text" },
+              { label: "Scheduled date", key: "scheduledDate", type: "date" },
+            ].map(({ label, key, type, required }) => (
+              <div key={key}>
+                <label className="eyebrow">{label}</label>
+                <input
+                  required={required}
+                  type={type}
+                  value={(form as Record<string, string>)[key] || ""}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  className={key === "phone" || key === "scheduledDate" ? `${field} mono` : field}
+                />
               </div>
             ))}
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Project Title *</label>
-              <input required value={form.title} onChange={e => setForm({...form, title: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Job title *</label>
+              <input
+                required
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                className={field}
+              />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Address *</label>
-              <input required value={form.address} onChange={e => setForm({...form, address: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Address *</label>
+              <input
+                required
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                className={field}
+              />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Description</label>
-              <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})}
+              <label className="eyebrow">Description</label>
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className={field}
+              />
             </div>
-            <div className="sm:col-span-2 flex gap-2">
-              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Add Project</button>
-              <button type="button" onClick={() => setShowAddForm(false)}
-                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-2 sm:col-span-2">
+              <button type="submit" className={buttonClass("primary")}>
+                Open job
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className={buttonClass("ghost")}
+              >
+                Cancel
+              </button>
             </div>
           </form>
-        </div>
+        </Plate>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid gap-2.5 lg:grid-cols-2">
         {loading ? (
-          <div className="col-span-2 p-8 text-center text-gray-500">Loading...</div>
+          <div className="lg:col-span-2">
+            <Empty>Loading…</Empty>
+          </div>
         ) : projects.length === 0 ? (
-          <div className="col-span-2 p-8 text-center text-gray-500">No projects found.</div>
+          <div className="lg:col-span-2">
+            <Empty>No jobs match this filter</Empty>
+          </div>
         ) : (
           projects.map((project) => {
             const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
             const latestEstimate = project.estimates[0];
-            const doneTasks = project.tasks.filter(t => t.status === "DONE").length;
+            const doneTasks = project.tasks.filter((t) => t.status === "DONE").length;
             return (
-              <Link key={project.id} href={`/projects/${project.id}`}
-                className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">{project.title}</h3>
-                    <p className="text-sm text-gray-500">{project.clientName}</p>
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{project.address}</p>
-                  </div>
-                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[project.status]}`}>
-                    {project.status.replace("_", " ")}
-                  </span>
+              <Ticket key={project.id} href={`/projects/${project.id}`} status={project.status}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <WoNumber id={project.id} date={project.createdAt} />
+                  <span className="eyebrow">{project.status.replace("_", " ")}</span>
                 </div>
-                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                <p className="mt-1.5 truncate text-[15px] font-bold leading-tight text-ink">
+                  {project.title}
+                </p>
+                <p className="truncate text-[13px] text-ink-2">
+                  {project.clientName} · {project.address}
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-line pt-2.5">
                   {latestEstimate && (
-                    <span>Est: {formatCurrency(latestEstimate.total)}</span>
+                    <span className="mono text-[12px] text-ink-2">
+                      EST {formatCurrency(latestEstimate.total)}
+                    </span>
                   )}
                   {totalPaid > 0 && (
-                    <span className="text-green-600">Paid: {formatCurrency(totalPaid)}</span>
+                    <span className="mono text-[12px]" style={{ color: "var(--emerald)" }}>
+                      PAID {formatCurrency(totalPaid)}
+                    </span>
                   )}
                   {project.tasks.length > 0 && (
-                    <span>Tasks: {doneTasks}/{project.tasks.length}</span>
+                    <span className="mono text-[12px] text-ink-3">
+                      CREW {doneTasks}/{project.tasks.length}
+                    </span>
                   )}
                   {project.scheduledDate && (
-                    <span>{new Date(project.scheduledDate).toLocaleDateString("en-CA")}</span>
+                    <span className="mono text-[12px] text-ink-3">
+                      {new Date(project.scheduledDate).toLocaleDateString("en-CA")}
+                    </span>
                   )}
                 </div>
-              </Link>
+              </Ticket>
             );
           })
         )}

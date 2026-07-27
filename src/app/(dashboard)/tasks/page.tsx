@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { PageHead, Plate, buttonClass, spineFor } from "@/components/ui/primitives";
 
 interface Task {
   id: string;
@@ -19,10 +20,10 @@ interface User {
   name: string;
 }
 
-const columns = [
-  { id: "TODO", label: "To Do", color: "bg-gray-100" },
-  { id: "IN_PROGRESS", label: "In Progress", color: "bg-blue-100" },
-  { id: "DONE", label: "Done", color: "bg-green-100" },
+const COLUMNS = [
+  { id: "TODO", label: "Queued" },
+  { id: "IN_PROGRESS", label: "On the truck" },
+  { id: "DONE", label: "Closed" },
 ];
 
 export default function TasksPage() {
@@ -31,6 +32,9 @@ export default function TasksPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", assignedToId: "", dueDate: "" });
   const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  /** Ids that just changed column — drives the signature ticket-snap. */
+  const [snapped, setSnapped] = useState<string | null>(null);
 
   async function fetchData() {
     const [tasksRes, usersRes] = await Promise.all([
@@ -41,7 +45,9 @@ export default function TasksPage() {
     setUsers(await usersRes.json());
   }
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();
@@ -61,136 +67,184 @@ export default function TasksPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    // Optimistically update
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
+    setSnapped(taskId);
+    setTimeout(() => setSnapped((cur) => (cur === taskId ? null : cur)), 300);
   }
 
   async function handleDelete(taskId: string) {
     await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-  }
-
-  function handleDragStart(taskId: string) {
-    setDragging(taskId);
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
   }
 
   function handleDrop(status: string) {
+    setDropTarget(null);
     if (dragging) {
       handleStatusChange(dragging, status);
       setDragging(null);
     }
   }
 
-  return (
-    <div className="space-y-4 pb-20 md:pb-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-        <button onClick={() => setShowForm(true)}
-          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
-          <Plus className="h-4 w-4" /> New Task
-        </button>
-      </div>
+  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
-      {/* Add Task Form */}
+  return (
+    <div className="space-y-6 pb-24 md:pb-6">
+      <PageHead
+        eyebrow="Crew board"
+        title="Tasks"
+        sub="Drag a ticket between lanes — it snaps into the new state."
+        action={
+          <button onClick={() => setShowForm((v) => !v)} className={buttonClass("primary")}>
+            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showForm ? "Close" : "New task"}
+          </button>
+        }
+      />
+
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h2 className="font-semibold mb-3">New Task</h2>
-          <form onSubmit={handleAddTask} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Plate className="p-5">
+          <div className="eyebrow">New crew task</div>
+          <form onSubmit={handleAddTask} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Title *</label>
-              <input required value={form.title} onChange={e => setForm({...form, title: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Title *</label>
+              <input
+                required
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                className={field}
+              />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Assign To</label>
-              <select value={form.assignedToId} onChange={e => setForm({...form, assignedToId: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <label className="eyebrow">Assign to</label>
+              <select
+                value={form.assignedToId}
+                onChange={(e) => setForm({ ...form, assignedToId: e.target.value })}
+                className={field}
+              >
                 <option value="">— Self —</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Due Date</label>
-              <input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="eyebrow">Due date</label>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                className={`${field} mono`}
+              />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Description</label>
-              <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})}
+              <label className="eyebrow">Description</label>
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className={field}
+              />
             </div>
-            <div className="sm:col-span-2 flex gap-2">
-              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Add Task</button>
-              <button type="button" onClick={() => setShowForm(false)}
-                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-2 sm:col-span-2">
+              <button type="submit" className={buttonClass("primary")}>
+                Add task
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className={buttonClass("ghost")}
+              >
+                Cancel
+              </button>
             </div>
           </form>
-        </div>
+        </Plate>
       )}
 
-      {/* Kanban Board */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {columns.map(col => {
-          const colTasks = tasks.filter(t => t.status === col.id);
+      {/* Lanes: recessed channels in the deck, separated by hairlines. */}
+      <div className="grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-3">
+        {COLUMNS.map((col) => {
+          const colTasks = tasks.filter((t) => t.status === col.id);
+          const isTarget = dropTarget === col.id;
           return (
             <div
               key={col.id}
-              className={`${col.color} rounded-xl p-3 min-h-40`}
-              onDragOver={e => e.preventDefault()}
+              className="min-h-[220px] p-3 transition-colors duration-[140ms] ease-instrument"
+              style={{ background: isTarget ? "var(--sunk)" : "var(--deck)" }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDropTarget(col.id);
+              }}
+              onDragLeave={() => setDropTarget((c) => (c === col.id ? null : c))}
               onDrop={() => handleDrop(col.id)}
             >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-700 text-sm">{col.label}</h3>
-                <span className="text-xs bg-white rounded-full px-2 py-0.5 text-gray-500 font-medium">
-                  {colTasks.length}
+              <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
+                <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink">
+                  {col.label}
+                </h3>
+                <span className="mono text-[12px] font-bold text-ink-3">
+                  {String(colTasks.length).padStart(2, "0")}
                 </span>
               </div>
-              <div className="space-y-2">
-                {colTasks.map(task => (
+
+              <div className="space-y-2.5">
+                {colTasks.map((task) => (
                   <div
                     key={task.id}
                     draggable
-                    onDragStart={() => handleDragStart(task.id)}
-                    className="bg-white rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing border border-gray-100 hover:shadow-md transition-shadow"
+                    onDragStart={() => setDragging(task.id)}
+                    onDragEnd={() => setDragging(null)}
+                    className={`ticket ticket-hover cursor-grab px-3 py-2.5 active:cursor-grabbing ${
+                      snapped === task.id ? "ticket-snap" : ""
+                    }`}
+                    style={
+                      {
+                        ["--spine"]: spineFor(task.status),
+                        opacity: dragging === task.id ? 0.5 : 1,
+                      } as React.CSSProperties
+                    }
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-gray-900 text-sm leading-snug">{task.title}</p>
-                      <button onClick={() => handleDelete(task.id)}
-                        className="shrink-0 text-gray-300 hover:text-red-500 transition-colors">
+                      <p className="text-[14px] font-bold leading-snug text-ink">{task.title}</p>
+                      <button
+                        onClick={() => handleDelete(task.id)}
+                        className="shrink-0 text-ink-3 transition-colors hover:text-rose"
+                        aria-label="Delete task"
+                      >
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     {task.description && (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>
+                      <p className="mt-1 line-clamp-2 text-[12px] text-ink-2">{task.description}</p>
                     )}
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <span className="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">
-                        {task.assignedTo.name}
-                      </span>
+                    <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-2">
+                      <span className="eyebrow">{task.assignedTo.name}</span>
                       {task.project && (
-                        <span className="text-xs bg-blue-50 text-blue-600 rounded px-1.5 py-0.5 truncate max-w-24">
-                          {task.project.title}
-                        </span>
+                        <span className="truncate text-[11px] text-ink-2">{task.project.title}</span>
                       )}
                       {task.dueDate && (
-                        <span className="text-xs text-gray-400">{formatDate(task.dueDate)}</span>
+                        <span className="mono text-[11px] text-ink-3">
+                          {formatDate(task.dueDate)}
+                        </span>
                       )}
                     </div>
-                    {/* Quick status change on mobile */}
                     <select
                       value={task.status}
-                      onChange={e => handleStatusChange(task.id, e.target.value)}
-                      className="mt-2 w-full text-xs border border-gray-200 rounded px-1 py-1 text-gray-600 md:hidden"
+                      onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                      className="mono mt-2 w-full px-2 py-1 text-[11px] uppercase tracking-[0.06em] md:hidden"
                     >
-                      <option value="TODO">To Do</option>
-                      <option value="IN_PROGRESS">In Progress</option>
-                      <option value="DONE">Done</option>
+                      <option value="TODO">Queued</option>
+                      <option value="IN_PROGRESS">On the truck</option>
+                      <option value="DONE">Closed</option>
                     </select>
                   </div>
                 ))}
                 {colTasks.length === 0 && (
-                  <p className="text-xs text-gray-400 text-center py-4">Drop tasks here</p>
+                  <div className="border border-dashed border-line py-6 text-center">
+                    <span className="eyebrow">Drop here</span>
+                  </div>
                 )}
               </div>
             </div>

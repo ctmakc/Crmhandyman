@@ -28,13 +28,22 @@ export default function DemoBanner() {
     : null;
 
   return (
-    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-sm">
-      <span className="text-amber-800">
-        <strong>Demo Account</strong> — {daysLeft !== null ? `${daysLeft} day${daysLeft !== 1 ? "s" : ""} remaining` : "Trial active"}
+    <div className="flex items-center justify-between gap-3 border-b border-line bg-sunk px-4 py-2 md:px-6">
+      <span className="flex items-center gap-2">
+        <span
+          className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ background: "var(--amber)" }}
+        />
+        <span className="eyebrow">
+          Demo account —{" "}
+          {daysLeft !== null
+            ? `${daysLeft} day${daysLeft !== 1 ? "s" : ""} left`
+            : "trial active"}
+        </span>
       </span>
       <a
         href="/api/tenant/upgrade"
-        className="bg-amber-500 text-white px-3 py-1 rounded font-medium hover:bg-amber-600 transition-colors"
+        className="border border-navy-900 bg-navy-900 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-plate transition-colors duration-[140ms] ease-instrument hover:bg-navy-800"
       >
         Upgrade
       </a>

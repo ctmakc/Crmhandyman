@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Phone, Mail, MapPin, Check, X, ArrowRight } from "lucide-react";
+import { ArrowLeft, Phone, Check, X, ArrowRight } from "lucide-react";
+import { Empty, Plate, buttonClass, spineFor, textToneFor } from "@/components/ui/primitives";
 
 interface Lead {
   id: string;
@@ -22,14 +23,6 @@ interface Lead {
   project?: { id: string; title: string; status: string };
 }
 
-const statusColors: Record<string, string> = {
-  NEW: "bg-blue-100 text-blue-700",
-  CONTACTED: "bg-yellow-100 text-yellow-700",
-  VERIFIED: "bg-green-100 text-green-700",
-  REJECTED: "bg-red-100 text-red-700",
-  CONVERTED: "bg-purple-100 text-purple-700",
-};
-
 export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [lead, setLead] = useState<Lead | null>(null);
@@ -37,7 +30,11 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [form, setForm] = useState<Partial<Lead>>({});
   const [convertForm, setConvertForm] = useState({
-    title: "", description: "", address: "", scheduledDate: "", assignedToId: ""
+    title: "",
+    description: "",
+    address: "",
+    scheduledDate: "",
+    assignedToId: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -46,14 +43,17 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     const data = await res.json();
     setLead(data);
     setForm(data);
-    setConvertForm(prev => ({
+    setConvertForm((prev) => ({
       ...prev,
       title: data.jobType ? `${data.jobType} for ${data.name}` : `Job for ${data.name}`,
       address: data.address || "",
     }));
   }
 
-  useEffect(() => { fetchLead(); }, []);
+  useEffect(() => {
+    fetchLead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSave() {
     setSaving(true);
@@ -95,195 +95,231 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     router.push("/leads");
   }
 
-  if (!lead) return <div className="p-4 text-gray-500">Loading...</div>;
+  if (!lead) return <Empty>Loading…</Empty>;
+
+  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center gap-3">
-        <Link href="/leads" className="text-gray-500 hover:text-gray-900">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-xl font-bold text-gray-900 flex-1">{lead.name}</h1>
-        <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColors[lead.status]}`}>
-          {lead.status}
-        </span>
+    <div className="mx-auto max-w-3xl space-y-6 pb-24 md:pb-0">
+      <Link href="/leads" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+        <ArrowLeft className="h-3.5 w-3.5" /> All leads
+      </Link>
+
+      <div
+        className="plate px-5 py-5"
+        style={{ borderLeft: `4px solid ${spineFor(lead.status)}` }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
+              LD-{new Date(lead.createdAt).getFullYear()}-{lead.id.slice(-4).toUpperCase()}
+            </span>
+            <h1 className="mt-1.5 text-[26px] font-black leading-none tracking-tight text-ink">
+              {lead.name}
+            </h1>
+            <p className="mt-2 text-[14px] text-ink-2">
+              {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="eyebrow" style={{ color: textToneFor(lead.status) }}>
+              {lead.status}
+            </span>
+            <p className="eyebrow mt-2">via {lead.source}</p>
+          </div>
+        </div>
       </div>
 
-      {/* Lead Info Card */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Lead Info</h2>
-          <button onClick={() => setEditing(!editing)}
-            className="text-sm text-blue-600 hover:underline">
+      <Plate>
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">Contact</h2>
+          <button onClick={() => setEditing(!editing)} className="eyebrow hover:text-ink">
             {editing ? "Cancel" : "Edit"}
           </button>
         </div>
 
         {editing ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
             {[
-              { label: "Name", field: "name", type: "text" },
-              { label: "Phone", field: "phone", type: "tel" },
-              { label: "Email", field: "email", type: "email" },
-              { label: "Address", field: "address", type: "text" },
-              { label: "City", field: "city", type: "text" },
-              { label: "Job Type", field: "jobType", type: "text" },
-            ].map(({ label, field, type }) => (
-              <div key={field}>
-                <label className="text-xs font-medium text-gray-600">{label}</label>
+              { label: "Name", key: "name", type: "text" },
+              { label: "Phone", key: "phone", type: "tel" },
+              { label: "Email", key: "email", type: "email" },
+              { label: "Address", key: "address", type: "text" },
+              { label: "City", key: "city", type: "text" },
+              { label: "Job type", key: "jobType", type: "text" },
+            ].map(({ label, key, type }) => (
+              <div key={key}>
+                <label className="eyebrow">{label}</label>
                 <input
                   type={type}
-                  value={(form as Record<string, string>)[field] || ""}
-                  onChange={e => setForm({ ...form, [field]: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={(form as Record<string, string>)[key] || ""}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  className={key === "phone" ? `${field} mono` : field}
                 />
               </div>
             ))}
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Notes</label>
+              <label className="eyebrow">Notes</label>
               <textarea
                 value={form.notes || ""}
-                onChange={e => setForm({ ...form, notes: e.target.value })}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 rows={3}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={field}
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600">Status</label>
+              <label className="eyebrow">Status</label>
               <select
                 value={form.status || lead.status}
-                onChange={e => setForm({ ...form, status: e.target.value })}
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className={`${field} mono uppercase tracking-[0.06em]`}
               >
-                {["NEW", "CONTACTED", "VERIFIED", "REJECTED"].map(s => (
-                  <option key={s} value={s}>{s}</option>
+                {["NEW", "CONTACTED", "VERIFIED", "REJECTED"].map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
             </div>
-            <div className="sm:col-span-2 flex gap-2">
-              <button onClick={handleSave} disabled={saving}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                {saving ? "Saving..." : "Save"}
+            <div className="sm:col-span-2">
+              <button onClick={handleSave} disabled={saving} className={buttonClass("primary")}>
+                {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-2 text-sm">
-            {lead.phone && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Phone className="h-4 w-4 text-gray-400" />
-                <a href={`tel:${lead.phone}`} className="hover:text-blue-600">{lead.phone}</a>
-              </div>
+          <div className="divide-y divide-line">
+            {[
+              ["Phone", lead.phone, `tel:${lead.phone}`],
+              ["Email", lead.email, `mailto:${lead.email}`],
+              ["Address", [lead.address, lead.city].filter(Boolean).join(", "), null],
+              ["Logged", new Date(lead.createdAt).toLocaleDateString("en-CA"), null],
+            ]
+              .filter(([, v]) => v)
+              .map(([k, v, href]) => (
+                <div key={k as string} className="flex gap-4 px-5 py-3">
+                  <span className="eyebrow w-[90px] shrink-0 pt-0.5">{k}</span>
+                  {href ? (
+                    <a
+                      href={href as string}
+                      className="mono text-[14px] text-ink underline underline-offset-4"
+                    >
+                      {v}
+                    </a>
+                  ) : (
+                    <span className="text-[14px] text-ink">{v}</span>
+                  )}
+                </div>
+              ))}
+            {lead.notes && (
+              <p className="bg-sunk px-5 py-3 text-[13px] text-ink-2">{lead.notes}</p>
             )}
-            {lead.email && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Mail className="h-4 w-4 text-gray-400" />
-                <a href={`mailto:${lead.email}`} className="hover:text-blue-600">{lead.email}</a>
-              </div>
-            )}
-            {(lead.address || lead.city) && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <MapPin className="h-4 w-4 text-gray-400" />
-                <span>{[lead.address, lead.city].filter(Boolean).join(", ")}</span>
-              </div>
-            )}
-            {lead.jobType && <p><span className="text-gray-500">Job:</span> {lead.jobType}</p>}
-            {lead.notes && <p className="text-gray-600 bg-gray-50 p-2 rounded mt-2">{lead.notes}</p>}
-            <p><span className="text-gray-500">Source:</span> {lead.source}</p>
-            <p><span className="text-gray-500">Created:</span> {new Date(lead.createdAt).toLocaleDateString("en-CA")}</p>
           </div>
         )}
-      </div>
+      </Plate>
 
-      {/* Actions */}
       {lead.status !== "CONVERTED" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h2 className="font-semibold text-gray-900 mb-3">Quick Actions</h2>
-          <div className="flex flex-wrap gap-2">
-            {lead.status !== "CONTACTED" && (
-              <button onClick={() => handleStatusChange("CONTACTED")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-lg text-sm hover:bg-yellow-100">
-                <Phone className="h-4 w-4" /> Mark Contacted
-              </button>
-            )}
-            {lead.status !== "VERIFIED" && (
-              <button onClick={() => handleStatusChange("VERIFIED")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm hover:bg-green-100">
-                <Check className="h-4 w-4" /> Verify Lead
-              </button>
-            )}
-            {lead.status === "VERIFIED" && !lead.project && (
-              <button onClick={() => setShowConvertModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                <ArrowRight className="h-4 w-4" /> Convert to Project
-              </button>
-            )}
-            {lead.status !== "REJECTED" && (
-              <button onClick={() => handleStatusChange("REJECTED")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm hover:bg-red-100">
-                <X className="h-4 w-4" /> Reject
-              </button>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {lead.status !== "CONTACTED" && (
+            <button onClick={() => handleStatusChange("CONTACTED")} className={buttonClass("ghost")}>
+              <Phone className="h-3.5 w-3.5" /> Mark contacted
+            </button>
+          )}
+          {lead.status !== "VERIFIED" && (
+            <button onClick={() => handleStatusChange("VERIFIED")} className={buttonClass("ghost")}>
+              <Check className="h-3.5 w-3.5" /> Verify
+            </button>
+          )}
+          {lead.status === "VERIFIED" && !lead.project && (
+            <button onClick={() => setShowConvertModal(true)} className={buttonClass("primary")}>
+              <ArrowRight className="h-3.5 w-3.5" /> Open a job
+            </button>
+          )}
+          {lead.status !== "REJECTED" && (
+            <button onClick={() => handleStatusChange("REJECTED")} className={buttonClass("danger")}>
+              <X className="h-3.5 w-3.5" /> Reject
+            </button>
+          )}
         </div>
       )}
 
-      {/* Linked Project */}
       {lead.project && (
-        <Link href={`/projects/${lead.project.id}`}
-          className="block bg-white rounded-xl border border-blue-200 shadow-sm p-4 hover:bg-blue-50 transition-colors">
-          <p className="text-sm font-medium text-blue-700">Converted to Project</p>
-          <p className="text-gray-900 font-semibold mt-1">{lead.project.title}</p>
-          <p className="text-sm text-gray-500">{lead.project.status}</p>
+        <Link
+          href={`/projects/${lead.project.id}`}
+          className="ticket ticket-hover block px-4 py-3"
+          style={{ ["--spine" as string]: spineFor(lead.project.status) } as React.CSSProperties}
+        >
+          <div className="eyebrow">Converted to job</div>
+          <p className="mt-1.5 text-[15px] font-bold text-ink">{lead.project.title}</p>
+          <p className="eyebrow mt-1">{lead.project.status.replace("_", " ")}</p>
         </Link>
       )}
 
-      {/* Delete */}
       {!lead.project && (
-        <button onClick={handleDelete}
-          className="text-sm text-red-500 hover:text-red-700 hover:underline">
+        <button onClick={handleDelete} className="eyebrow hover:text-rose">
           Delete lead
         </button>
       )}
 
-      {/* Convert Modal */}
       {showConvertModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Convert to Project</h2>
-            <form onSubmit={handleConvert} className="space-y-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/70 p-4">
+          <div className="plate w-full max-w-md p-6">
+            <div className="eyebrow">New work order</div>
+            <h2 className="mt-2 text-[22px] font-black leading-none tracking-tight text-ink">
+              Open a job
+            </h2>
+            <form onSubmit={handleConvert} className="mt-5 space-y-4">
               <div>
-                <label className="text-xs font-medium text-gray-600">Project Title *</label>
-                <input required value={convertForm.title}
-                  onChange={e => setConvertForm({...convertForm, title: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <label className="eyebrow">Job title *</label>
+                <input
+                  required
+                  value={convertForm.title}
+                  onChange={(e) => setConvertForm({ ...convertForm, title: e.target.value })}
+                  className={field}
+                />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Address *</label>
-                <input required value={convertForm.address}
-                  onChange={e => setConvertForm({...convertForm, address: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <label className="eyebrow">Address *</label>
+                <input
+                  required
+                  value={convertForm.address}
+                  onChange={(e) => setConvertForm({ ...convertForm, address: e.target.value })}
+                  className={field}
+                />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Scheduled Date</label>
-                <input type="date" value={convertForm.scheduledDate}
-                  onChange={e => setConvertForm({...convertForm, scheduledDate: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <label className="eyebrow">Scheduled date</label>
+                <input
+                  type="date"
+                  value={convertForm.scheduledDate}
+                  onChange={(e) =>
+                    setConvertForm({ ...convertForm, scheduledDate: e.target.value })
+                  }
+                  className={`${field} mono`}
+                />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Description</label>
-                <textarea value={convertForm.description}
-                  onChange={e => setConvertForm({...convertForm, description: e.target.value})}
+                <label className="eyebrow">Description</label>
+                <textarea
+                  value={convertForm.description}
+                  onChange={(e) => setConvertForm({ ...convertForm, description: e.target.value })}
                   rows={2}
-                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className={field}
+                />
               </div>
-              <div className="flex gap-2 pt-2">
-                <button type="submit" disabled={saving}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "Creating..." : "Create Project"}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={`${buttonClass("primary")} flex-1`}
+                >
+                  {saving ? "Opening…" : "Open job"}
                 </button>
-                <button type="button" onClick={() => setShowConvertModal(false)}
-                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setShowConvertModal(false)}
+                  className={`${buttonClass("ghost")} flex-1`}
+                >
                   Cancel
                 </button>
               </div>

@@ -1,31 +1,42 @@
 import Link from "next/link";
-import { Users, Plug } from "lucide-react";
+import { PageHead } from "@/components/ui/primitives";
+
+const SECTIONS = [
+  {
+    href: "/settings/users",
+    code: "01",
+    title: "Team",
+    sub: "Add crew, set admin or worker access",
+  },
+  {
+    href: "/settings/integrations",
+    code: "02",
+    title: "Intake channels",
+    sub: "Facebook, Instagram, Google LSA, email marketplaces",
+  },
+];
 
 export default function SettingsPage() {
   return (
-    <div className="max-w-xl space-y-4 pb-20 md:pb-0">
-      <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link href="/settings/users"
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow flex items-center gap-4">
-          <div className="p-3 bg-blue-100 rounded-xl">
-            <Users className="h-6 w-6 text-blue-600" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Team Members</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Add workers, manage access</p>
-          </div>
-        </Link>
-        <Link href="/settings/integrations"
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow flex items-center gap-4">
-          <div className="p-3 bg-purple-100 rounded-xl">
-            <Plug className="h-6 w-6 text-purple-600" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Integrations</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Facebook, Instagram, Google, Email</p>
-          </div>
-        </Link>
+    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
+      <PageHead eyebrow="Desk setup" title="Settings" />
+
+      {/* Ruled rows — the same list language as everywhere else. */}
+      <div className="border border-line bg-plate">
+        {SECTIONS.map((s) => (
+          <Link
+            key={s.href}
+            href={s.href}
+            className="flex items-baseline gap-5 border-b border-line px-5 py-5 transition-colors duration-[140ms] ease-instrument last:border-b-0 hover:bg-sunk"
+          >
+            <span className="mono text-[12px] tracking-[0.1em] text-ink-3">{s.code}</span>
+            <span className="flex-1">
+              <span className="block text-[17px] font-bold leading-none text-ink">{s.title}</span>
+              <span className="mt-1.5 block text-[13px] text-ink-2">{s.sub}</span>
+            </span>
+            <span className="eyebrow">Open →</span>
+          </Link>
+        ))}
       </div>
     </div>
   );

@@ -2,12 +2,200 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   HandymanPro — «НАРЯД» / WORK ORDER design system.
+   See DESIGN.md. Tokens are law: no raw hex below this block, no raw hex in
+   components. Depth = hairline + recess + status spine. Never a box-shadow.
+   ========================================================================== */
+
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --navy-900: #0e1626;
+  --navy-800: #16223a;
+  --navy-700: #22314f;
+
+  --deck: #edf0f4;
+  --sunk: #e1e7ee;
+  --plate: #fbfcfd;
+  --line: #d3dbe4;
+
+  --ink: #131a26;
+  --ink-2: #45536c;
+  --ink-3: #5d6b82;
+  /* Text on the navy rail needs its own value — ink-3 is tuned for the light
+     deck and drops below AA against navy-900. */
+  --rail-ink: #97a3b8;
+
+  --amber: #ffb020;
+  --amber-ink: #7a5200;
+  --sky: #2f6be0;
+  --emerald: #1b7f55;
+  --rose: #c7332f;
+  --slate: #64748b;
+
+  --r: 3px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 140ms;
+  --t: 180ms;
 }
 
+html,
 body {
-  color: var(--foreground);
-  background: var(--background);
+  background: var(--deck);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every number in this product is a mono tabular readout. */
+.mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Mono eyebrow — the label language of the whole product. */
+.eyebrow {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------------------
+   THE TICKET PLATE — the signature primitive. Status spine on the left,
+   punched notch on the bottom edge. Used for every record in the product.
+   -------------------------------------------------------------------------- */
+.plate {
+  position: relative;
+  background: var(--plate);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.ticket {
+  position: relative;
+  background: var(--plate);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--spine, var(--slate));
+  border-radius: var(--r);
+  transition: border-color var(--t) var(--ease), transform var(--t) var(--ease),
+    background-color var(--t) var(--ease);
+}
+
+/* The punched notch: a half-disc bitten out of the bottom edge, so the plate
+   reads as a torn ticket rather than a card. Only the inward-facing arc is
+   drawn — the bottom border of the plate closes the shape. */
+.ticket::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 20px;
+  height: 10px;
+  margin-left: -10px;
+  background: var(--deck);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 999px 999px 0 0;
+}
+
+/* Hover darkens the frame only — the status spine must never be overwritten,
+   or a hovered ticket loses the one thing that tells you its state. */
+a.ticket:hover,
+.ticket-hover:hover {
+  border-top-color: var(--ink-3);
+  border-right-color: var(--ink-3);
+  border-bottom-color: var(--ink-3);
+  transform: translateY(-1px);
+}
+
+/* Signature motion: a record that just changed state snaps into place. */
+@keyframes ticket-snap {
+  0% {
+    transform: translateX(8px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.ticket-snap {
+  animation: ticket-snap 160ms var(--ease) both;
+}
+
+/* Perforation: the estimate's tear-off edge. */
+.perf {
+  height: 2px;
+  background-image: radial-gradient(circle, var(--ink-3) 1px, transparent 1.3px);
+  background-size: 8px 2px;
+  background-repeat: repeat-x;
+}
+
+/* Form controls inherit the system rather than the browser. */
+input,
+select,
+textarea {
+  background: var(--plate);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink);
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--navy-800);
+  box-shadow: inset 0 0 0 1px var(--navy-800);
+}
+
+::placeholder {
+  color: var(--ink-3);
+}
+
+::selection {
+  background: var(--amber);
+  color: var(--navy-900);
+}
+
+/* Scrollbars on the deck, not the OS default slab. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sunk);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--sunk);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  a.ticket:hover,
+  .ticket-hover:hover {
+    transform: none;
+  }
 }

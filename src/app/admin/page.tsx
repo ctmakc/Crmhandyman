@@ -45,29 +45,30 @@ export default function SuperAdminPage() {
   const superAdminEmails = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "";
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 p-6">
+    <div className="min-h-screen bg-navy-900 p-6 text-plate">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">Super Admin Panel</h1>
-        <p className="text-gray-400 mb-6 text-sm">Logged in as: {email}</p>
+        <div className="mono text-[11px] uppercase tracking-[0.12em] text-ink-rail">Operator console</div>
+        <h1 className="mt-2 text-[28px] font-black leading-none tracking-tight">Tenants</h1>
+        <p className="mono mb-7 mt-2 text-[12px] text-ink-rail">{email}</p>
 
-        {loading && <p className="text-gray-400">Loading...</p>}
-        {error && <p className="text-red-400">{error}</p>}
+        {loading && <p className="mono text-[12px] text-ink-rail">Loading…</p>}
+        {error && <p className="mono text-[12px]" style={{ color: "var(--rose)" }}>{error}</p>}
         {!superAdminEmails && (
-          <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-700 rounded text-yellow-300 text-sm">
+          <div className="mb-4 border-l-2 py-1.5 pl-3 text-[13px]" style={{ borderColor: "var(--amber)", color: "var(--amber)" }}>
             Set SUPER_ADMIN_EMAILS in .env to grant access to this panel.
           </div>
         )}
 
-        <div className="bg-gray-800 rounded-xl overflow-hidden">
+        <div className="overflow-hidden border border-navy-700 bg-navy-800">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left p-4 text-gray-400 font-medium">Tenant</th>
-                <th className="text-left p-4 text-gray-400 font-medium">Owner</th>
-                <th className="text-left p-4 text-gray-400 font-medium">Plan</th>
-                <th className="text-left p-4 text-gray-400 font-medium">Data</th>
-                <th className="text-left p-4 text-gray-400 font-medium">Created</th>
-                <th className="text-right p-4 text-gray-400 font-medium">Actions</th>
+              <tr className="border-b border-navy-700">
+                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Tenant</th>
+                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Owner</th>
+                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Plan</th>
+                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Data</th>
+                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Created</th>
+                <th className="mono p-4 text-right text-[11px] uppercase tracking-[0.09em] text-ink-rail">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -77,38 +78,45 @@ export default function SuperAdminPage() {
                   ? Math.max(0, Math.ceil((new Date(t.expiresAt).getTime() - Date.now()) / 86400000))
                   : null;
                 return (
-                  <tr key={t.id} className="border-b border-gray-700/50 hover:bg-gray-750">
+                  <tr key={t.id} className="border-b border-navy-700 transition-colors duration-[140ms] hover:bg-navy-700/40">
                     <td className="p-4">
                       <div className="font-medium">{t.businessName}</div>
-                      <div className="text-gray-400 text-xs">{t.slug}</div>
+                      <div className="mono text-[11px] text-ink-rail">{t.slug}</div>
                     </td>
-                    <td className="p-4 text-gray-300">{t.ownerEmail}</td>
+                    <td className="mono p-4 text-[12px] text-ink-rail">{t.ownerEmail}</td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        t.plan === "PAID" ? "bg-green-900 text-green-300" :
-                        expired ? "bg-red-900 text-red-300" : "bg-amber-900 text-amber-300"
-                      }`}>
+                      <span
+                        className="mono text-[11px] uppercase tracking-[0.08em]"
+                        style={{
+                          color:
+                            t.plan === "PAID"
+                              ? "var(--emerald)"
+                              : expired
+                                ? "var(--rose)"
+                                : "var(--amber)",
+                        }}
+                      >
                         {t.plan === "PAID" ? "Paid" : expired ? "Expired" : `Demo (${daysLeft}d)`}
                       </span>
                     </td>
-                    <td className="p-4 text-gray-400 text-xs">
+                    <td className="mono p-4 text-[11px] text-ink-rail">
                       {t._count.users}u · {t._count.leads}l · {t._count.projects}p
                     </td>
-                    <td className="p-4 text-gray-400 text-xs">
+                    <td className="mono p-4 text-[11px] text-ink-rail">
                       {new Date(t.createdAt).toLocaleDateString()}
                     </td>
                     <td className="p-4 text-right space-x-2">
                       {t.plan === "DEMO" && (
                         <button
                           onClick={() => upgrade(t.id)}
-                          className="px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-xs"
+                          className="mono border border-navy-700 px-3 py-1 text-[11px] uppercase tracking-[0.06em] transition-colors hover:border-plate"
                         >
                           Upgrade
                         </button>
                       )}
                       <button
                         onClick={() => deleteTenant(t.id, t.businessName)}
-                        className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs"
+                        className="mono border border-navy-700 px-3 py-1 text-[11px] uppercase tracking-[0.06em] transition-colors hover:border-rose"
                       >
                         Delete
                       </button>
@@ -118,14 +126,14 @@ export default function SuperAdminPage() {
               })}
               {!loading && tenants.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-500">No tenants yet</td>
+                  <td colSpan={6} className="mono p-8 text-center text-[12px] uppercase tracking-[0.09em] text-ink-rail">No tenants yet</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
 
-        <div className="mt-4 text-xs text-gray-500">
+        <div className="mono mt-4 text-[11px] uppercase tracking-[0.09em] text-ink-rail">
           Total: {tenants.length} tenants · {tenants.filter(t => t.plan === "PAID").length} paid · {tenants.filter(t => t.plan === "DEMO").length} demo
         </div>
       </div>

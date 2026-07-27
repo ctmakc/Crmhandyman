@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react";
 import { LogOut } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface TopBarProps {
   user?: {
@@ -10,18 +11,58 @@ interface TopBarProps {
   };
 }
 
-export default function TopBar({ user }: TopBarProps) {
+/** The shift clock — a dispatcher always wants to know the date on the ticket. */
+function ShiftStamp() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  if (!now) return <span className="mono text-[11px] text-ink-3">&nbsp;</span>;
+  const stamp = now
+    .toLocaleString("en-CA", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .toUpperCase();
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6">
-      <div className="md:hidden text-lg font-bold text-gray-900">🔧 HandymanPro</div>
-      <div className="hidden md:block" />
+    <span className="mono hidden text-[11px] tracking-[0.08em] text-ink-3 sm:inline">
+      {stamp}
+    </span>
+  );
+}
+
+export default function TopBar({ user }: TopBarProps) {
+  const initials = (user?.name || user?.email || "?")
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  return (
+    <header className="flex h-14 items-center justify-between border-b border-line bg-plate px-4 md:px-6">
+      <div className="text-[15px] font-black tracking-tight text-ink md:hidden">
+        HANDYMAN<span className="text-amber-ink">PRO</span>
+      </div>
+      <ShiftStamp />
       <div className="flex items-center gap-3">
-        <span className="text-sm text-gray-600">{user?.name || user?.email}</span>
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate">
+          {initials}
+        </span>
+        <span className="hidden text-[13px] font-medium text-ink-2 sm:inline">
+          {user?.name || user?.email}
+        </span>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+          className="flex items-center gap-1.5 border border-line px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
           <span className="hidden sm:inline">Sign out</span>
         </button>
       </div>

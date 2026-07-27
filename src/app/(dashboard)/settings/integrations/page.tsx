@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
 import { ArrowLeft, Check, ExternalLink } from "lucide-react";
 
 interface IntegrationConfig {
@@ -81,51 +82,69 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center gap-3">
-        <Link href="/settings" className="text-gray-500 hover:text-gray-900">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-xl font-bold text-gray-900">Channel Integrations</h1>
-      </div>
+    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
+      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+        <ArrowLeft className="h-3.5 w-3.5" /> Settings
+      </Link>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-        <p className="font-medium mb-1">Webhook URLs for your integrations:</p>
-        <p>Facebook/Instagram: <code className="bg-blue-100 px-1 rounded">/api/webhooks/facebook</code></p>
-        <p>Instagram: <code className="bg-blue-100 px-1 rounded">/api/webhooks/instagram</code></p>
-        <p>Email (Mailgun): <code className="bg-blue-100 px-1 rounded">/api/webhooks/email</code></p>
-        <p className="mt-1 text-blue-600">Verify token: <code className="bg-blue-100 px-1 rounded">{typeof window !== "undefined" ? process.env.NEXT_PUBLIC_META_WEBHOOK_TOKEN || "Set META_WEBHOOK_VERIFY_TOKEN in .env" : "Set META_WEBHOOK_VERIFY_TOKEN"}</code></p>
+      <PageHead
+        eyebrow="Desk setup · 02"
+        title="Intake channels"
+        sub="Where leads come from before anyone picks up the phone."
+      />
+
+      {/* The endpoints you paste into the provider consoles — mono, copyable. */}
+      <div className="border border-line bg-sunk px-5 py-4">
+        <div className="eyebrow">Webhook endpoints</div>
+        <dl className="mt-3 space-y-1.5">
+          {[
+            ["Facebook", "/api/webhooks/facebook"],
+            ["Instagram", "/api/webhooks/instagram"],
+            ["Email (Mailgun)", "/api/webhooks/email"],
+          ].map(([k, v]) => (
+            <div key={k} className="flex flex-wrap items-baseline gap-x-3">
+              <dt className="w-[130px] shrink-0 text-[13px] text-ink-2">{k}</dt>
+              <dd className="mono text-[12px] text-ink">{v}</dd>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-baseline gap-x-3 border-t border-line pt-2">
+            <dt className="w-[130px] shrink-0 text-[13px] text-ink-2">Verify token</dt>
+            <dd className="mono text-[12px] text-ink-3">
+              {process.env.NEXT_PUBLIC_META_WEBHOOK_TOKEN || "set META_WEBHOOK_VERIFY_TOKEN in .env"}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       <div className="space-y-4">
         {integrations.map(integration => (
-          <div key={integration.channel} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-            <div className="flex items-start gap-3 mb-3">
-              <span className="text-2xl">{integration.icon}</span>
+          <Plate key={integration.channel} className="p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <span className="text-[20px] leading-none">{integration.icon}</span>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold text-gray-900">{integration.label}</h2>
+                  <h2 className="text-[15px] font-bold text-ink">{integration.label}</h2>
                   {integration.docsUrl && (
                     <a href={integration.docsUrl} target="_blank" rel="noopener noreferrer"
-                      className="text-gray-400 hover:text-blue-600">
+                      className="text-ink-3 transition-colors hover:text-ink">
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">{integration.description}</p>
+                <p className="mt-1 text-[13px] text-ink-2">{integration.description}</p>
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {integration.fields.map(field => (
                 <div key={field.key}>
-                  <label className="text-xs font-medium text-gray-600">{field.label}</label>
+                  <label className="eyebrow">{field.label}</label>
                   <input
                     type={field.type || "password"}
                     placeholder={field.placeholder}
                     value={forms[integration.channel]?.[field.key] || ""}
                     onChange={e => updateField(integration.channel, field.key, e.target.value)}
-                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1.5 w-full px-3 py-2 text-[13px]"
                   />
                 </div>
               ))}
@@ -133,17 +152,17 @@ export default function IntegrationsPage() {
 
             <button
               onClick={() => handleSave(integration.channel)}
-              className={`mt-3 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                saved[integration.channel]
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-900 text-white hover:bg-gray-800"
-              }`}
+              className={`${buttonClass("primary")} mt-4`}
             >
               {saved[integration.channel] ? (
-                <><Check className="h-4 w-4" /> Saved!</>
-              ) : "Save Configuration"}
+                <>
+                  <Check className="h-4 w-4" /> Saved
+                </>
+              ) : (
+                "Save configuration"
+              )}
             </button>
-          </div>
+          </Plate>
         ))}
       </div>
     </div>
