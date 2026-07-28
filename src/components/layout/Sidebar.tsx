@@ -10,21 +10,24 @@ import {
   Globe2,
   LayoutDashboard,
   Settings,
+  Share2,
   Users,
   Wrench,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/leads", label: "Leads", icon: Users },
-  { href: "/projects", label: "Projects", icon: Briefcase },
-  { href: "/tasks", label: "Tasks", icon: CheckSquare },
-  { href: "/finance", label: "Finance", icon: DollarSign },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/app", label: "Dashboard", icon: LayoutDashboard, mobile: true },
+  { href: "/leads", label: "Leads", icon: Users, mobile: true },
+  { href: "/network", label: "Network", icon: Share2, mobile: true },
+  { href: "/projects", label: "Projects", icon: Briefcase, mobile: true },
+  { href: "/tasks", label: "Tasks", icon: CheckSquare, mobile: true },
+  { href: "/finance", label: "Finance", icon: DollarSign, mobile: false },
+  { href: "/settings", label: "Settings", icon: Settings, mobile: false },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const mobileItems = navItems.filter((item) => item.mobile);
 
   return (
     <>
@@ -71,7 +74,7 @@ export default function Sidebar() {
       </aside>
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-gray-700 bg-gray-900 text-white md:hidden">
-        {navItems.slice(0, 5).map((item) => {
+        {mobileItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -79,7 +82,7 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs transition-colors",
+                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors",
                 isActive ? "text-orange-400" : "text-gray-400"
               )}
             >
