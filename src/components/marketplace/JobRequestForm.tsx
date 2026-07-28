@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import { SERVICE_CATALOG } from "@/lib/marketplace";
+import { SERVICE_CATALOG } from "@/lib/marketplace-config";
 
 type Props = {
   defaultService?: string;
@@ -10,6 +10,19 @@ type Props = {
   defaultProvince?: string;
   preferredContractor?: string;
 };
+
+const PROVINCES = [
+  "Ontario",
+  "Quebec",
+  "British Columbia",
+  "Alberta",
+  "Manitoba",
+  "Saskatchewan",
+  "Nova Scotia",
+  "New Brunswick",
+  "Newfoundland and Labrador",
+  "Prince Edward Island",
+];
 
 export default function JobRequestForm({
   defaultService = "",
@@ -25,23 +38,12 @@ export default function JobRequestForm({
     setStatus("submitting");
     setMessage("");
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const payload = {
-      customerName: form.get("customerName"),
-      customerEmail: form.get("customerEmail"),
-      customerPhone: form.get("customerPhone"),
-      title: form.get("title"),
-      description: form.get("description"),
-      serviceSlug: form.get("serviceSlug"),
-      city: form.get("city"),
-      province: form.get("province"),
-      postalCode: form.get("postalCode"),
-      budgetMin: form.get("budgetMin"),
-      budgetMax: form.get("budgetMax"),
-      urgency: form.get("urgency"),
-      preferredContractor: form.get("preferredContractor"),
-      companyWebsite: form.get("companyWebsite"),
+      ...Object.fromEntries(form.entries()),
       consentToShare: form.get("consentToShare") === "on",
+      preferredContractor,
     };
 
     try {
@@ -57,9 +59,9 @@ export default function JobRequestForm({
         throw new Error(details || "Unable to submit project request.");
       }
 
+      formElement.reset();
       setStatus("success");
       setMessage("Project received. Relevant contractors can now be matched.");
-      event.currentTarget.reset();
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Unable to submit project request.");
@@ -88,7 +90,6 @@ export default function JobRequestForm({
 
   return (
     <form onSubmit={submit} className="space-y-7">
-      <input type="hidden" name="preferredContractor" value={preferredContractor} />
       <label className="hidden" aria-hidden="true">
         Company website
         <input name="companyWebsite" tabIndex={-1} autoComplete="off" />
@@ -112,12 +113,7 @@ export default function JobRequestForm({
           </label>
           <label>
             <span className="text-sm font-bold">Service</span>
-            <select
-              name="serviceSlug"
-              required
-              defaultValue={defaultService}
-              className={inputClass}
-            >
+            <select name="serviceSlug" required defaultValue={defaultService} className={inputClass}>
               <option value="" disabled>
                 Select service
               </option>
@@ -175,14 +171,9 @@ export default function JobRequestForm({
               <option value="" disabled>
                 Select
               </option>
-              <option>Ontario</option>
-              <option>Quebec</option>
-              <option>British Columbia</option>
-              <option>Alberta</option>
-              <option>Manitoba</option>
-              <option>Saskatchewan</option>
-              <option>Nova Scotia</option>
-              <option>New Brunswick</option>
+              {PROVINCES.map((province) => (
+                <option key={province}>{province}</option>
+              ))}
             </select>
           </label>
           <label>
@@ -207,13 +198,7 @@ export default function JobRequestForm({
           </label>
           <label className="sm:col-span-2">
             <span className="text-sm font-bold">Email</span>
-            <input
-              name="customerEmail"
-              required
-              type="email"
-              maxLength={160}
-              className={inputClass}
-            />
+            <input name="customerEmail" required type="email" maxLength={160} className={inputClass} />
           </label>
         </div>
       </fieldset>
