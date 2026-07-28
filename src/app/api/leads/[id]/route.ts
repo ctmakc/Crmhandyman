@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
 
@@ -77,19 +78,22 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: "Validation failed.", details: errors }, { status: 422 });
   }
 
+  const updateData: Prisma.LeadUncheckedUpdateInput = {};
+  if (name !== undefined && name !== null) updateData.name = name;
+  if (phone !== undefined) updateData.phone = phone;
+  if (email !== undefined) updateData.email = email;
+  if (address !== undefined) updateData.address = address;
+  if (city !== undefined) updateData.city = city;
+  if (jobType !== undefined) updateData.jobType = jobType;
+  if (notes !== undefined) updateData.notes = notes;
+  if (status !== undefined) {
+    updateData.status = status as "NEW" | "CONTACTED" | "VERIFIED" | "REJECTED" | "CONVERTED";
+  }
+  if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
+
   const lead = await prisma.lead.update({
     where: { id: params.id },
-    data: {
-      name,
-      phone,
-      email,
-      address,
-      city,
-      jobType,
-      notes,
-      status: status as "NEW" | "CONTACTED" | "VERIFIED" | "REJECTED" | "CONVERTED" | undefined,
-      assignedToId,
-    },
+    data: updateData,
     include: {
       assignedTo: { select: { id: true, name: true } },
       project: { select: { id: true, title: true, status: true } },
