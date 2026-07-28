@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Settings,
   Share2,
+  UserSearch,
   Users,
   Wrench,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/network", label: "Network", icon: Share2, mobile: true },
   { href: "/projects", label: "Projects", icon: Briefcase, mobile: true },
   { href: "/tasks", label: "Tasks", icon: CheckSquare, mobile: true },
+  { href: "/recruiting", label: "Recruiting", icon: UserSearch, mobile: false },
   { href: "/finance", label: "Finance", icon: DollarSign, mobile: false },
   { href: "/settings", label: "Settings", icon: Settings, mobile: false },
 ];
@@ -40,7 +42,7 @@ export default function Sidebar() {
           <p className="mt-1 text-xs text-gray-400">CRM + Contractor Network</p>
         </div>
 
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
