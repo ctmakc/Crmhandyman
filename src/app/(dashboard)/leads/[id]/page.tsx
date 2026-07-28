@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Phone, Check, X, ArrowRight } from "lucide-react";
-import { Plate, buttonClass, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
+import { buttonClass, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 interface Lead {
@@ -133,16 +133,16 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      <Plate>
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">Contact</h2>
+      <section>
+        <div className="flex items-center justify-between pb-2.5">
+          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">Contact</h2>
           <button onClick={() => setEditing(!editing)} className="eyebrow hover:text-ink">
             {editing ? "Cancel" : "Edit"}
           </button>
         </div>
 
         {editing ? (
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 border-t border-line pt-5 sm:grid-cols-2">
             {[
               { label: "Name", key: "name", type: "text" },
               { label: "Phone", key: "phone", type: "tel" },
@@ -191,7 +191,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
             </div>
           </div>
         ) : (
-          <div className="divide-y divide-line">
+          <div className="border-t border-line">
             {[
               ["Phone", lead.phone, `tel:${lead.phone}`],
               ["Email", lead.email, `mailto:${lead.email}`],
@@ -200,7 +200,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
             ]
               .filter(([, v]) => v)
               .map(([k, v, href]) => (
-                <div key={k as string} className="flex gap-4 px-5 py-3">
+                <div key={k as string} className="flex gap-4 border-b border-line px-1 py-3">
                   <span className="eyebrow w-[90px] shrink-0 pt-0.5">{k}</span>
                   {href ? (
                     <a
@@ -215,11 +215,11 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
                 </div>
               ))}
             {lead.notes && (
-              <p className="bg-sunk px-5 py-3 text-[13px] text-ink-2">{lead.notes}</p>
+              <p className="border-b border-line px-1 py-3 text-[13px] text-ink-2">{lead.notes}</p>
             )}
           </div>
         )}
-      </Plate>
+      </section>
 
       {lead.status !== "CONVERTED" && (
         <div className="flex flex-wrap gap-2">

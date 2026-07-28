@@ -176,13 +176,29 @@ export default function FinancePage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => setShowPaymentForm(!showPaymentForm)} className={buttonClass("primary")}>
-          <Plus className="h-4 w-4" /> Payment in
-        </button>
-        <button onClick={() => setShowExpenseForm(!showExpenseForm)} className={buttonClass("ghost")}>
-          <Plus className="h-4 w-4" /> Cost out
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setShowPaymentForm(!showPaymentForm)} className={buttonClass("primary")}>
+            <Plus className="h-4 w-4" /> Payment in
+          </button>
+          <button onClick={() => setShowExpenseForm(!showExpenseForm)} className={buttonClass("ghost")}>
+            <Plus className="h-4 w-4" /> Cost out
+          </button>
+        </div>
+
+        {/* Straight to the bookkeeper — the period above is what gets exported. */}
+        <div className="flex flex-wrap items-baseline gap-4">
+          <span className="eyebrow">Export CSV</span>
+          {(["invoices", "payments", "expenses", "jobs"] as const).map((kind) => (
+            <a
+              key={kind}
+              href={`/api/export/${kind}?year=${year}${month ? `&month=${month}` : ""}`}
+              className="eyebrow underline underline-offset-4 hover:text-ink"
+            >
+              {kind}
+            </a>
+          ))}
+        </div>
       </div>
 
       {showPaymentForm && (
@@ -363,11 +379,11 @@ export default function FinancePage() {
         ((data?.payments || []).length === 0 ? (
           <Empty>No payments in this period</Empty>
         ) : (
-          <Plate>
+          <div className="border-t border-line">
             {data?.payments.map((p) => (
               <div
                 key={p.id}
-                className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0"
+                className="flex items-center justify-between gap-4 border-b border-line px-1 py-3"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-medium text-ink">
@@ -386,18 +402,18 @@ export default function FinancePage() {
                 </span>
               </div>
             ))}
-          </Plate>
+          </div>
         ))}
 
       {tab === "expenses" &&
         ((data?.expenses || []).length === 0 ? (
           <Empty>No costs in this period</Empty>
         ) : (
-          <Plate>
+          <div className="border-t border-line">
             {data?.expenses.map((e) => (
               <div
                 key={e.id}
-                className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0"
+                className="flex items-center justify-between gap-4 border-b border-line px-1 py-3"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-medium text-ink">
@@ -416,7 +432,7 @@ export default function FinancePage() {
                 </span>
               </div>
             ))}
-          </Plate>
+          </div>
         ))}
     </div>
   );

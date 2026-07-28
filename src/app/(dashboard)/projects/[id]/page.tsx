@@ -4,8 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
-import { Empty, buttonClass, spineFor, textToneFor, Plate, Skeleton } from "@/components/ui/primitives";
+import {
+  Empty,
+  buttonClass,
+  spineFor,
+  textToneFor,
+  Plate,
+  Skeleton,
+  LaneHead,
+} from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import { jobMoney, marginTone, marginVerdict } from "@/lib/margin";
 import AddressHistory from "@/components/AddressHistory";
 
 interface Project {
@@ -148,7 +157,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
   const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
-  const latestEstimate = project.estimates[0];
+  const money = jobMoney(project);
   const invoices = project.invoices ?? [];
   const acceptedEstimate = project.estimates.find((e) => e.status === "ACCEPTED");
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
@@ -236,7 +245,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       {tab === "overview" && (
         <div className="space-y-5">
           <AddressHistory projectId={params.id} />
-          <Plate className="divide-y divide-line">
+          <div className="border-t border-line">
             {[
               ["Address", project.address],
               ["Phone", project.phone],
@@ -247,33 +256,73 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             ]
               .filter(([, v]) => v)
               .map(([k, v]) => (
-                <div key={k as string} className="flex gap-4 px-5 py-3">
+                <div key={k as string} className="flex gap-4 border-b border-line px-1 py-3">
                   <span className="eyebrow w-[110px] shrink-0 pt-0.5">{k}</span>
                   <span className="text-[14px] text-ink">{v}</span>
                 </div>
               ))}
             {project.description && (
-              <div className="bg-sunk px-5 py-3 text-[13px] text-ink-2">{project.description}</div>
+              <p className="border-b border-line px-1 py-3 text-[13px] text-ink-2">
+                {project.description}
+              </p>
             )}
-          </Plate>
-
-          <div className="grid grid-cols-3 border border-line bg-plate">
-            {[
-              { label: "Estimate", value: latestEstimate ? formatCurrency(latestEstimate.total) : "—" },
-              { label: "Received", value: formatCurrency(totalPaid), tone: "var(--emerald-ink)" },
-              { label: "Expenses", value: formatCurrency(totalExpenses), tone: "var(--rose-ink)" },
-            ].map((r) => (
-              <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
-                <div className="eyebrow">{r.label}</div>
-                <p
-                  className="mono mt-2.5 text-[20px] font-bold leading-none"
-                  style={{ color: r.tone || "var(--ink)" }}
-                >
-                  {r.value}
-                </p>
-              </div>
-            ))}
           </div>
+
+          {/* Did this job make money — the four numbers, then the verdict. */}
+          <section>
+            <LaneHead title="Job economics" />
+            <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-4">
+              {[
+                { label: "Quoted", value: formatCurrency(money.quoted) },
+                { label: "Invoiced", value: formatCurrency(money.invoiced) },
+                { label: "Collected", value: formatCurrency(money.collected), tone: "var(--emerald-ink)" },
+                { label: "Costs", value: formatCurrency(money.costs), tone: "var(--rose-ink)" },
+              ].map((r) => (
+                <div key={r.label}>
+                  <div className="eyebrow">{r.label}</div>
+                  <p
+                    className="mono mt-1.5 text-[22px] font-bold leading-none"
+                    style={{ color: r.tone || "var(--ink)" }}
+                  >
+                    {r.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-line pt-5">
+              <div>
+                <div className="eyebrow">Margin — collected minus costs</div>
+                <p className="mt-1 text-[13px] text-ink-2">{marginVerdict(money)}</p>
+                {money.unbilled > 0.005 && (
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--amber-ink)" }}>
+                    {formatCurrency(money.unbilled)} quoted but never invoiced
+                  </p>
+                )}
+                {money.outstanding > 0.005 && (
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--rose-ink)" }}>
+                    {formatCurrency(money.outstanding)} billed and still on the street
+                  </p>
+                )}
+              </div>
+              <div className="text-right">
+                <span
+                  className="mono block text-[30px] font-bold leading-none"
+                  style={{ color: marginTone(money.marginPct) }}
+                >
+                  {formatCurrency(money.margin)}
+                </span>
+                {money.marginPct !== null && (
+                  <span
+                    className="mono mt-1 block text-[13px]"
+                    style={{ color: marginTone(money.marginPct) }}
+                  >
+                    {money.marginPct.toFixed(0)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
         </div>
       )}
 
@@ -433,11 +482,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             {project.payments.length === 0 ? (
               <Empty>Nothing collected yet</Empty>
             ) : (
-              <Plate>
+              <div className="border-t border-line">
                 {project.payments.map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between border-b border-line px-4 py-2.5 last:border-b-0"
+                    className="flex items-center justify-between border-b border-line px-1 py-2.5"
                   >
                     <span className="mono text-[12px] text-ink-3">
                       {formatDate(p.date)} · {p.method.replace("_", "-")}
@@ -448,13 +497,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     </span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between bg-sunk px-4 py-2.5">
+                <div className="flex items-center justify-between px-1 py-2.5">
                   <span className="eyebrow">Total in</span>
                   <span className="mono text-[15px] font-bold" style={{ color: "var(--emerald-ink)" }}>
                     {formatCurrency(totalPaid)}
                   </span>
                 </div>
-              </Plate>
+              </div>
             )}
           </section>
 
@@ -535,11 +584,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             {project.expenses.length === 0 ? (
               <Empty>No costs logged</Empty>
             ) : (
-              <Plate>
+              <div className="border-t border-line">
                 {project.expenses.map((e) => (
                   <div
                     key={e.id}
-                    className="flex items-center justify-between border-b border-line px-4 py-2.5 last:border-b-0"
+                    className="flex items-center justify-between border-b border-line px-1 py-2.5"
                   >
                     <span className="mono text-[12px] text-ink-3">
                       {formatDate(e.date)} · {e.category}
@@ -550,13 +599,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     </span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between bg-sunk px-4 py-2.5">
+                <div className="flex items-center justify-between px-1 py-2.5">
                   <span className="eyebrow">Total out</span>
                   <span className="mono text-[15px] font-bold" style={{ color: "var(--rose-ink)" }}>
                     {formatCurrency(totalExpenses)}
                   </span>
                 </div>
-              </Plate>
+              </div>
             )}
           </section>
         </div>

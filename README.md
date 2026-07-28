@@ -28,6 +28,17 @@ box-shadows, every number in Chivo Mono.
   and call / drive / start / finish in one tap each. Unclosed work carries forward.
 - **Crew load** — jobs per day against crew size, overbooked days flagged
 - **Tasks** — crew kanban (drag & drop), assign to workers
+- **Job economics** — quoted → invoiced → collected → costs → margin on every job.
+  Margin is measured against what was *collected*, not what was billed: money still on
+  the street is not profit. Flags the two silent leaks — quoted-but-never-invoiced and
+  billed-but-unpaid.
+- **Deposits** — an accepted estimate can be torn into two independently payable
+  invoices (50/50, 30/70, 25/75). The deposit is a single percentage line; the balance
+  carries the real items and subtracts the deposit. The halves sum to the whole exactly.
+- **Overdue reminders** — tone escalates with the age of the debt (nudge → call → final
+  notice). The attempt is always recorded, and if SMTP is not configured the desk says
+  so rather than pretending an email went out.
+- **CSV export** — invoices, payments, expenses and per-job margin, Excel-safe
 - **Finance** — payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
 - **Team** — admin + multiple workers, role-based access
 - **Mobile-friendly** — the same deck works on a phone in a driveway

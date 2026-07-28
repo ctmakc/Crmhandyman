@@ -47,6 +47,7 @@ export function textToneFor(status?: string | null) {
   if (tone === "var(--rose)") return "var(--rose-ink)";
   if (tone === "var(--sky)") return "var(--sky-ink)";
   if (tone === "var(--emerald)") return "var(--emerald-ink)";
+  if (tone === "var(--slate)") return "var(--slate-ink)";
   return tone;
 }
 

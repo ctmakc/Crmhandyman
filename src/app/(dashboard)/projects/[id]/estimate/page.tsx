@@ -16,6 +16,7 @@ import {
   type JobTemplate,
   type MoveInputs,
 } from "@/lib/price-book";
+import { SPLIT_PLANS } from "@/lib/margin";
 
 interface LineItem {
   description: string;
@@ -51,6 +52,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState<string | null>(null);
+  const [split, setSplit] = useState("full");
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { description: "", qty: 1, unit: "hr", unitPrice: 0 },
   ]);
@@ -129,15 +131,24 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   /** Tear off the stub: an accepted estimate becomes an invoice, lines intact. */
   async function issueInvoice(estimateId: string) {
     setIssuing(estimateId);
+    const plan = SPLIT_PLANS.find((p) => p.id === split);
     const res = await fetch("/api/invoices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: params.id, estimateId }),
+      body: JSON.stringify({
+        projectId: params.id,
+        estimateId,
+        depositRate: plan?.deposit ?? 0,
+      }),
     });
     setIssuing(null);
     if (res.ok) {
       const invoice = await res.json();
-      toast(`Invoice ${invoice.number} issued`);
+      toast(
+        invoice.split
+          ? `Deposit ${invoice.number} + balance ${invoice.balance.number} issued`
+          : `Invoice ${invoice.number} issued`
+      );
       router.push(`/invoices/${invoice.id}`);
     } else {
       toast("Could not issue the invoice", "bad");
@@ -514,18 +525,47 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
               {estimate.status === "ACCEPTED" && (
                 <>
                   <div className="perf mx-5" />
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                  <div className="px-5 py-4">
                     <p className="text-[13px] text-ink-2">
                       Accepted — tear off the stub and bill it.
                     </p>
-                    <button
-                      disabled={issuing === estimate.id}
-                      onClick={() => issueInvoice(estimate.id)}
-                      className={buttonClass("primary")}
-                    >
-                      <Scissors className="h-3.5 w-3.5" />
-                      {issuing === estimate.id ? "Issuing…" : "Issue invoice"}
-                    </button>
+                    {/* An install is billed as a deposit plus a balance, not one lump. */}
+                    <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                      <div>
+                        <label className="eyebrow">Billing</label>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {SPLIT_PLANS.map((pl) => (
+                            <button
+                              key={pl.id}
+                              type="button"
+                              onClick={() => setSplit(pl.id)}
+                              title={pl.hint}
+                              className="border px-2.5 py-1.5 text-[12px] font-bold transition-colors duration-[140ms] ease-instrument"
+                              style={{
+                                borderColor:
+                                  split === pl.id ? "var(--navy-900)" : "var(--line)",
+                                background:
+                                  split === pl.id ? "var(--sunk)" : "var(--plate)",
+                                color: "var(--ink)",
+                              }}
+                            >
+                              {pl.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[12px] text-ink-2">
+                          {SPLIT_PLANS.find((pl) => pl.id === split)?.hint}
+                        </p>
+                      </div>
+                      <button
+                        disabled={issuing === estimate.id}
+                        onClick={() => issueInvoice(estimate.id)}
+                        className={buttonClass("primary")}
+                      >
+                        <Scissors className="h-3.5 w-3.5" />
+                        {issuing === estimate.id ? "Issuing…" : "Issue invoice"}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

@@ -39,6 +39,9 @@ interface Invoice {
   issuedAt: string;
   dueDate: string | null;
   amountPaid: number;
+  reminderCount: number;
+  remindedAt?: string | null;
+  kind: string;
   payments: Payment[];
   project: { id: string; title: string; jobType?: string | null } | null;
 }
@@ -52,6 +55,19 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const [busy, setBusy] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("E_TRANSFER");
+  const [reminding, setReminding] = useState(false);
+
+  async function sendReminder() {
+    setReminding(true);
+    const res = await fetch(`/api/invoices/${params.id}/remind`, { method: "POST" });
+    const data = await res.json();
+    setReminding(false);
+    // Report what actually happened — a reminder the desk thinks it sent but did not
+    // is worse than none at all.
+    if (data.sent) toast(`Reminder sent — ${data.stage}`);
+    else toast(`Not sent: ${data.reason || data.error}`, "bad");
+    load();
+  }
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/invoices/${params.id}`);
@@ -135,7 +151,13 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       >
         <div className="flex flex-wrap items-start justify-between gap-6 border-b border-line px-6 py-6">
           <div>
-            <div className="eyebrow">Invoice</div>
+            <div className="eyebrow">
+              {invoice.kind === "DEPOSIT"
+                ? "Deposit invoice"
+                : invoice.kind === "BALANCE"
+                  ? "Balance invoice"
+                  : "Invoice"}
+            </div>
             <h1 className="mono mt-2 text-[26px] font-bold leading-none tracking-tight text-ink">
               {invoice.number}
             </h1>
@@ -277,13 +299,26 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
 
       {stage && (
         <div
-          className="no-print flex flex-wrap items-center justify-between gap-3 border border-line bg-sunk px-5 py-3"
-          style={{ borderLeft: "3px solid var(--rose)" }}
+          className="no-print flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4"
+          style={{ borderTopColor: "var(--rose)" }}
         >
-          <span className="text-[13px] text-ink-2">{stage.hint}</span>
-          <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
-            {stage.label}
-          </span>
+          <div>
+            <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
+              {stage.label}
+            </span>
+            <p className="mt-1 text-[13px] text-ink-2">{stage.hint}</p>
+            {invoice.reminderCount > 0 && (
+              <p className="mono mt-1 text-[12px] text-ink-3">
+                {invoice.reminderCount} reminder{invoice.reminderCount === 1 ? "" : "s"} sent
+                {invoice.remindedAt
+                  ? ` · last ${new Date(invoice.remindedAt).toLocaleDateString("en-CA")}`
+                  : ""}
+              </p>
+            )}
+          </div>
+          <button disabled={reminding} onClick={sendReminder} className={buttonClass("ghost")}>
+            {reminding ? "Sending…" : "Send reminder"}
+          </button>
         </div>
       )}
 

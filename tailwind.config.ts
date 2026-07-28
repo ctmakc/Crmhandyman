@@ -44,7 +44,10 @@ const config: Config = {
           DEFAULT: "var(--rose)",
           ink: "var(--rose-ink)",
         },
-        slate: "var(--slate)",
+        slate: {
+          DEFAULT: "var(--slate)",
+          ink: "var(--slate-ink)",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

@@ -10,6 +10,9 @@ export interface LineItem {
   unitPrice: number;
 }
 
+/** Money never leaves this file with more than two decimals. */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 /** Sequential, human-quotable invoice number, scoped per tenant per year. */
 async function nextNumber(tenantId: string) {
   const year = new Date().getFullYear();
@@ -97,22 +100,89 @@ export async function POST(req: NextRequest) {
     ? new Date(body.dueDate)
     : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
+  /**
+   * A deposit split cuts ONE job into TWO independently payable invoices, which is
+   * how an install is actually billed. The deposit is a single percentage line — it
+   * must not repeat the itemisation, or the client is looking at the price twice.
+   * The balance carries the real lines and subtracts what the deposit already covered.
+   */
+  const depositRate = Math.min(Math.max(Number(body.depositRate) || 0, 0), 0.9);
+
+  const base = {
+    tenantId,
+    projectId: project.id,
+    estimateId,
+    clientName: project.clientName,
+    address: project.address,
+    email: project.email,
+    status: "DRAFT" as const,
+  };
+
+  if (depositRate > 0) {
+    const depositSubtotal = round2(subtotal * depositRate);
+    const depositTax = round2(depositSubtotal * taxRate);
+    const balanceSubtotal = round2(subtotal - depositSubtotal);
+    const balanceTax = round2(tax - depositTax);
+
+    const pct = Math.round(depositRate * 100);
+
+    const deposit = await prisma.invoice.create({
+      data: {
+        ...base,
+        kind: "DEPOSIT",
+        number: await nextNumber(tenantId),
+        lineItems: JSON.stringify([
+          {
+            description: `Deposit — ${pct}% of ${project.title}`,
+            qty: 1,
+            unit: "ea",
+            unitPrice: depositSubtotal,
+          },
+        ]),
+        subtotal: depositSubtotal,
+        tax: depositTax,
+        total: round2(depositSubtotal + depositTax),
+        notes: `${pct}% deposit. Work is scheduled once this is settled.`,
+        // A deposit is due before the truck rolls, not on net-14 terms.
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const balance = await prisma.invoice.create({
+      data: {
+        ...base,
+        kind: "BALANCE",
+        number: await nextNumber(tenantId),
+        lineItems: JSON.stringify([
+          ...lineItems,
+          {
+            description: `Less deposit invoice ${deposit.number}`,
+            qty: 1,
+            unit: "ea",
+            unitPrice: -depositSubtotal,
+          },
+        ]),
+        subtotal: balanceSubtotal,
+        tax: balanceTax,
+        total: round2(balanceSubtotal + balanceTax),
+        notes: notes ?? `Balance after the ${pct}% deposit.`,
+        dueDate,
+      },
+    });
+
+    return NextResponse.json({ ...deposit, balance, split: true }, { status: 201 });
+  }
+
   const invoice = await prisma.invoice.create({
     data: {
-      tenantId,
-      projectId: project.id,
-      estimateId,
+      ...base,
       number: await nextNumber(tenantId),
-      clientName: project.clientName,
-      address: project.address,
-      email: project.email,
       lineItems: JSON.stringify(lineItems),
       subtotal,
       tax,
       total,
       notes,
       dueDate,
-      status: "DRAFT",
     },
   });
 

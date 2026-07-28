@@ -268,6 +268,11 @@ enum TaskStatus {
 
 model Invoice {
   id         String        @id @default(cuid())
+  /// A deposit and its balance are two invoices cut from one estimate — that is how
+  /// a shop bills an install, and it keeps each half independently payable.
+  kind       InvoiceKind   @default(FULL)
+  remindedAt DateTime?
+  reminderCount Int        @default(0)
   tenantId   String
   tenant     Tenant        @relation(fields: [tenantId], references: [id])
   project    Project       @relation(fields: [projectId], references: [id])
@@ -292,6 +297,12 @@ model Invoice {
   updatedAt  DateTime      @updatedAt
 
   @@unique([tenantId, number])
+}
+
+enum InvoiceKind {
+  FULL
+  DEPOSIT
+  BALANCE
 }
 
 enum InvoiceStatus {
