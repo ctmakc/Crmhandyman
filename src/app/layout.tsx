@@ -13,7 +13,6 @@ export const metadata: Metadata = {
   description:
     "Contractor CRM and public Canadian home-services network for local pros, project requests, trade jobs and verified business profiles.",
   applicationName: "HandymanPro",
-  alternates: { canonical: "/directory" },
   openGraph: {
     type: "website",
     locale: "en_CA",
@@ -28,7 +27,6 @@ export const metadata: Metadata = {
     title: "HandymanPro contractor network",
     description: "Canadian contractor directory connected to real CRM operations.",
   },
-  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
