@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
-import { slugify } from "@/lib/marketplace";
+import { slugify } from "@/lib/marketplace-config";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +9,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
 
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: `${baseUrl}/directory`, lastModified: now, changeFrequency: "daily", priority: 1 },
+    { url: `${baseUrl}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
+    { url: `${baseUrl}/directory`, lastModified: now, changeFrequency: "daily", priority: 0.95 },
     { url: `${baseUrl}/contractors`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
+    { url: `${baseUrl}/workers`, lastModified: now, changeFrequency: "daily", priority: 0.85 },
     { url: `${baseUrl}/jobs`, lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: `${baseUrl}/hire`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
   ];
 
   try {
-    const [profiles, vacancies] = await Promise.all([
+    const [profiles, vacancies, workers] = await Promise.all([
       prisma.contractorProfile.findMany({
         where: { profileStatus: "PUBLISHED" },
         include: { services: true },
@@ -27,6 +29,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           status: "PUBLISHED",
           OR: [{ validThrough: null }, { validThrough: { gte: now } }],
         },
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.workerProfile.findMany({
+        where: {
+          profileStatus: "PUBLISHED",
+          consentToPublic: true,
+          verificationStatus: { not: "SUSPENDED" },
+        },
+        select: { slug: true, updatedAt: true },
         orderBy: { updatedAt: "desc" },
       }),
     ]);
@@ -65,7 +76,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    return [...staticRoutes, ...profileRoutes, ...geoRoutes, ...vacancyRoutes];
+    const workerRoutes: MetadataRoute.Sitemap = workers.map((worker) => ({
+      url: `${baseUrl}/worker/${worker.slug}`,
+      lastModified: worker.updatedAt,
+      changeFrequency: "weekly",
+      priority: 0.65,
+    }));
+
+    return [
+      ...staticRoutes,
+      ...profileRoutes,
+      ...geoRoutes,
+      ...vacancyRoutes,
+      ...workerRoutes,
+    ];
   } catch (error) {
     console.error("Unable to build dynamic sitemap", error);
     return staticRoutes;
