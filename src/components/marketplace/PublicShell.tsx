@@ -1,12 +1,18 @@
 import Link from "next/link";
-import { BriefcaseBusiness, Hammer, Search, ShieldCheck } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  Hammer,
+  Search,
+  ShieldCheck,
+  UserRoundSearch,
+} from "lucide-react";
 
 export default function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-stone-50 text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link href="/directory" className="flex items-center gap-2 font-black tracking-tight">
+          <Link href="/" className="flex items-center gap-2 font-black tracking-tight">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500 text-white">
               <Hammer className="h-5 w-5" />
             </span>
@@ -16,9 +22,12 @@ export default function PublicShell({ children }: { children: React.ReactNode })
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-6 text-sm font-semibold text-slate-600 md:flex">
+          <nav className="hidden items-center gap-5 text-sm font-semibold text-slate-600 md:flex">
             <Link className="hover:text-slate-950" href="/contractors">
-              Find a pro
+              Contractors
+            </Link>
+            <Link className="hover:text-slate-950" href="/workers">
+              Workers
             </Link>
             <Link className="hover:text-slate-950" href="/jobs">
               Trade jobs
@@ -39,7 +48,7 @@ export default function PublicShell({ children }: { children: React.ReactNode })
               href="/register"
               className="rounded-lg bg-slate-950 px-3.5 py-2 text-sm font-bold text-white hover:bg-slate-800"
             >
-              List your business
+              List business
             </Link>
           </div>
         </div>
@@ -55,21 +64,24 @@ export default function PublicShell({ children }: { children: React.ReactNode })
               HandymanPro Network
             </div>
             <p className="mt-3 max-w-md text-sm leading-6 text-slate-500">
-              A Canadian contractor directory connected directly to the CRM used to manage leads,
-              estimates, projects and crews.
+              A Canadian contractor, worker and jobs network connected directly to the CRM used to
+              manage leads, estimates, projects, recruiting and crews.
             </p>
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Homeowners</h2>
+            <h2 className="text-sm font-bold text-slate-900">Marketplace</h2>
             <div className="mt-3 space-y-2 text-sm text-slate-500">
               <Link className="block hover:text-slate-950" href="/contractors">
                 Search contractors
               </Link>
-              <Link className="block hover:text-slate-950" href="/hire">
-                Post a project
+              <Link className="block hover:text-slate-950" href="/workers">
+                Search worker profiles
               </Link>
               <Link className="block hover:text-slate-950" href="/jobs">
                 Find trade work
+              </Link>
+              <Link className="block hover:text-slate-950" href="/hire">
+                Post a project
               </Link>
             </div>
           </div>
@@ -78,14 +90,18 @@ export default function PublicShell({ children }: { children: React.ReactNode })
             <div className="mt-3 space-y-3 text-sm text-slate-500">
               <p className="flex gap-2">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                Verification and review provenance are shown separately.
+                Verification and source provenance are shown separately.
               </p>
               <p className="flex gap-2">
                 <Search className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
-                Search by trade, city and service area.
+                Search contractors and workers by trade and geography.
               </p>
               <p className="flex gap-2">
-                <BriefcaseBusiness className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                <UserRoundSearch className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                Worker contacts stay private until they choose to reply.
+              </p>
+              <p className="flex gap-2">
+                <BriefcaseBusiness className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
                 Jobs and subcontracting live in the same network.
               </p>
             </div>
