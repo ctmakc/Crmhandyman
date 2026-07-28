@@ -14,7 +14,6 @@ import {
   UserRoundSearch,
   X,
 } from "lucide-react";
-import { titleFromSlug } from "@/lib/marketplace-config";
 
 type Application = {
   id: string;
@@ -23,11 +22,9 @@ type Application = {
   phone: string | null;
   city: string | null;
   address: string | null;
-  jobType: string | null;
   notes: string | null;
   status: string;
   createdAt: string;
-  updatedAt: string;
   vacancy: {
     id: string;
     slug: string;
@@ -68,12 +65,13 @@ export default function ApplicationsManager() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState("");
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (nextQuery = query, nextStatus = status) => {
+  const load = useCallback(async (filters: { query: string; status: string }) => {
     const params = new URLSearchParams();
-    if (nextQuery.trim()) params.set("q", nextQuery.trim());
-    if (nextStatus) params.set("status", nextStatus);
+    if (filters.query.trim()) params.set("q", filters.query.trim());
+    if (filters.status) params.set("status", filters.status);
 
     const response = await fetch(`/api/recruiting/applications?${params.toString()}`, {
       cache: "no-store",
@@ -81,36 +79,39 @@ export default function ApplicationsManager() {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to load applications.");
     setPayload(result);
-  }, [query, status]);
+  }, []);
 
   useEffect(() => {
-    load().catch((reason) => {
+    load({ query: "", status: "" }).catch((reason) => {
       setError(reason instanceof Error ? reason.message : "Unable to load applications.");
     });
   }, [load]);
 
   async function search(event: FormEvent) {
     event.preventDefault();
+    setSearching(true);
     setError("");
     try {
-      await load(query, status);
+      await load({ query, status });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to search applications.");
+    } finally {
+      setSearching(false);
     }
   }
 
-  async function changeStatus(application: Application, nextStatus: string) {
-    setBusy(application.id);
+  async function changeStatus(applicationId: string, nextStatus: string) {
+    setBusy(applicationId);
     setError("");
     try {
-      const response = await fetch(`/api/leads/${application.id}`, {
+      const response = await fetch(`/api/leads/${applicationId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...application, status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to update candidate status.");
-      await load(query, status);
+      await load({ query, status });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update candidate status.");
     } finally {
@@ -167,7 +168,11 @@ export default function ApplicationsManager() {
           <option value="VERIFIED">Shortlisted</option>
           <option value="REJECTED">Rejected</option>
         </select>
-        <button className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white">
+        <button
+          disabled={searching}
+          className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+        >
+          {searching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Search candidates
         </button>
       </form>
@@ -208,13 +213,19 @@ export default function ApplicationsManager() {
 
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-slate-500">
                     {application.email && (
-                      <a href={`mailto:${application.email}`} className="inline-flex items-center gap-1 hover:text-slate-900">
+                      <a
+                        href={`mailto:${application.email}`}
+                        className="inline-flex items-center gap-1 hover:text-slate-900"
+                      >
                         <Mail className="h-3.5 w-3.5" />
                         {application.email}
                       </a>
                     )}
                     {application.phone && (
-                      <a href={`tel:${application.phone}`} className="inline-flex items-center gap-1 hover:text-slate-900">
+                      <a
+                        href={`tel:${application.phone}`}
+                        className="inline-flex items-center gap-1 hover:text-slate-900"
+                      >
                         <Phone className="h-3.5 w-3.5" />
                         {application.phone}
                       </a>
@@ -260,7 +271,7 @@ export default function ApplicationsManager() {
                   {application.status !== "CONTACTED" && (
                     <button
                       disabled={busy === application.id}
-                      onClick={() => changeStatus(application, "CONTACTED")}
+                      onClick={() => changeStatus(application.id, "CONTACTED")}
                       className="inline-flex items-center rounded-lg border border-blue-200 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-50"
                     >
                       <Phone className="mr-1.5 h-3.5 w-3.5" />
@@ -270,27 +281,26 @@ export default function ApplicationsManager() {
                   {application.status !== "VERIFIED" && (
                     <button
                       disabled={busy === application.id}
-                      onClick={() => changeStatus(application, "VERIFIED")}
+                      onClick={() => changeStatus(application.id, "VERIFIED")}
                       className="inline-flex items-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
                     >
                       <BadgeCheck className="mr-1.5 h-3.5 w-3.5" />
                       Shortlist
                     </button>
                   )}
-                  {application.status !== "REJECTED" && (
+                  {application.status !== "REJECTED" ? (
                     <button
                       disabled={busy === application.id}
-                      onClick={() => changeStatus(application, "REJECTED")}
+                      onClick={() => changeStatus(application.id, "REJECTED")}
                       className="inline-flex items-center rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50"
                     >
                       <X className="mr-1.5 h-3.5 w-3.5" />
                       Reject
                     </button>
-                  )}
-                  {application.status === "REJECTED" && (
+                  ) : (
                     <button
                       disabled={busy === application.id}
-                      onClick={() => changeStatus(application, "NEW")}
+                      onClick={() => changeStatus(application.id, "NEW")}
                       className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 disabled:opacity-50"
                     >
                       <Check className="mr-1.5 h-3.5 w-3.5" />
