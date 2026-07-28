@@ -72,7 +72,7 @@ export default function AddressHistory({ projectId }: { projectId: string }) {
                 <div key={eq.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                   <span
                     className="mono text-[11px] tracking-[0.06em]"
-                    style={{ color: covered ? "var(--emerald)" : "var(--ink-3)" }}
+                    style={{ color: covered ? "var(--emerald-ink)" : "var(--ink-3)" }}
                   >
                     {eq.kind.replace(/_/g, " ")}
                   </span>
@@ -86,7 +86,7 @@ export default function AddressHistory({ projectId }: { projectId: string }) {
                   {eq.warrantyUntil && (
                     <span
                       className="mono text-[11px]"
-                      style={{ color: covered ? "var(--emerald)" : "var(--ink-3)" }}
+                      style={{ color: covered ? "var(--emerald-ink)" : "var(--ink-3)" }}
                     >
                       {covered ? "under warranty to " : "warranty expired "}
                       {formatDate(eq.warrantyUntil)}

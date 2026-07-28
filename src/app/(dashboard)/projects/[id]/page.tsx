@@ -260,7 +260,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           <div className="grid grid-cols-3 border border-line bg-plate">
             {[
               { label: "Estimate", value: latestEstimate ? formatCurrency(latestEstimate.total) : "—" },
-              { label: "Received", value: formatCurrency(totalPaid), tone: "var(--emerald)" },
+              { label: "Received", value: formatCurrency(totalPaid), tone: "var(--emerald-ink)" },
               { label: "Expenses", value: formatCurrency(totalExpenses), tone: "var(--rose-ink)" },
             ].map((r) => (
               <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
@@ -443,14 +443,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       {formatDate(p.date)} · {p.method.replace("_", "-")}
                       {p.notes ? ` · ${p.notes}` : ""}
                     </span>
-                    <span className="mono text-[14px] font-medium" style={{ color: "var(--emerald)" }}>
+                    <span className="mono text-[14px] font-medium" style={{ color: "var(--emerald-ink)" }}>
                       {formatCurrency(p.amount)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between bg-sunk px-4 py-2.5">
                   <span className="eyebrow">Total in</span>
-                  <span className="mono text-[15px] font-bold" style={{ color: "var(--emerald)" }}>
+                  <span className="mono text-[15px] font-bold" style={{ color: "var(--emerald-ink)" }}>
                     {formatCurrency(totalPaid)}
                   </span>
                 </div>

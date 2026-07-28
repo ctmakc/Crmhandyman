@@ -93,7 +93,7 @@ function LoginForm() {
           {registered && (
             <p
               className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]"
-              style={{ borderColor: "var(--emerald)", color: "var(--emerald)" }}
+              style={{ borderColor: "var(--emerald)", color: "var(--emerald-ink)" }}
             >
               Account created — sign in to get started.
             </p>

@@ -201,7 +201,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
             value: formatCurrency(client.totals.owing),
             tone: client.totals.owing > 0.005 ? "var(--rose-ink)" : "var(--emerald)",
           },
-          { label: "Lifetime paid", value: formatCurrency(client.totals.lifetime), tone: "var(--emerald)" },
+          { label: "Lifetime paid", value: formatCurrency(client.totals.lifetime), tone: "var(--emerald-ink)" },
           { label: "Our costs", value: formatCurrency(client.totals.costs) },
         ].map((r) => (
           <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
@@ -388,7 +388,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                     className="ticket ticket-hover px-4 py-3"
                     style={
                       {
-                        ["--spine"]: underWarranty ? "var(--emerald)" : "var(--slate)",
+                        ["--spine"]: underWarranty ? "var(--emerald-ink)" : "var(--slate)",
                       } as React.CSSProperties
                     }
                   >
@@ -399,7 +399,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                           <span
                             className="mono text-[11px] tracking-[0.06em]"
                             style={{
-                              color: underWarranty ? "var(--emerald)" : "var(--ink-3)",
+                              color: underWarranty ? "var(--emerald-ink)" : "var(--ink-3)",
                             }}
                           >
                             {underWarranty ? "WARRANTY TO " : "EXPIRED "}

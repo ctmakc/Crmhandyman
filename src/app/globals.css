@@ -29,6 +29,10 @@
   --amber-ink: #7a5200;
   --sky: #2f6be0;
   --emerald: #1b7f55;
+  /* Rows moved off the plate onto the deck, where the spine colours drop just
+     below AA as small text. Every semantic hue now has a text-weight twin. */
+  --sky-ink: #2a61ce;
+  --emerald-ink: #17714b;
   --rose: #c7332f;
   /* Rose as TEXT: the spine colour clears AA on the plate but not on the recessed
      lane, so small labels use the darkened value — same rule as amber-ink. */
@@ -66,8 +70,55 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   THE TICKET PLATE — the signature primitive. Status spine on the left,
-   punched notch on the bottom edge. Used for every record in the product.
+   BORDER DISCIPLINE (revision 2026-07-27)
+   ---------------------------------------
+   A frame is the LAST resort, not the default. v1 wrapped every group in a
+   hairline rectangle, so the deck read as a stack of identical boxes with no
+   dominance. The ladder is now enforced:
+
+     air  →  surface shift  →  a single rule  →  a closed frame
+
+   A closed frame is earned only by things that are literally a piece of paper
+   (invoice, estimate, the header of a record). Lists are RULED ROWS.
+   -------------------------------------------------------------------------- */
+
+/* THE ROW — the default list primitive. A spine, a rule, and air. No frame. */
+.row {
+  position: relative;
+  padding: 13px 16px 13px 20px;
+  border-bottom: 1px solid var(--line);
+  transition: background-color var(--t) var(--ease);
+  display: block;
+}
+
+/* The status spine survives from v1 — it is the one thing that must never go. */
+.row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  background: var(--spine, transparent);
+}
+
+a.row:hover,
+.row-hover:hover {
+  background: var(--plate);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+/* A lane of rows opens with a rule instead of closing in a box. */
+.lane {
+  border-top: 1px solid var(--line);
+}
+
+/* --------------------------------------------------------------------------
+   THE TICKET PLATE — now reserved for documents and record headers, where a
+   closed frame means "this is a piece of paper you could hold".
    -------------------------------------------------------------------------- */
 .plate {
   position: relative;

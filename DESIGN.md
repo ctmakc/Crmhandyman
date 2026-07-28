@@ -55,6 +55,14 @@ good version of that paper, not like a generic CRM.
 --emerald  #1B7F55   won, paid, completed
 --rose     #C7332F   overdue, lost, cancelled
 --slate    #64748B   neutral / archived
+
+Every semantic hue has a text-weight twin, because a colour that clears AA as a 4px spine
+does not clear it as 11px type on the deck:
+--amber-ink   #7A5200
+--rose-ink    #B82B27
+--sky-ink     #2A61CE
+--emerald-ink #17714B
+Use `textToneFor(status)` — never the spine value — for status text.
 ```
 
 Semantic colours carry meaning ONLY. A pill is never blue because blue is pretty.
@@ -66,14 +74,26 @@ Semantic colours carry meaning ONLY. A pill is never blue because blue is pretty
 - **Chivo Mono** — every number, ID, date, money, phone. `tabular-nums` always.
 - No third family. No Inter, no Space Grotesk, no Geist as identity.
 
-Scale: `11/12` mono eyebrows (uppercase, `0.09em` tracking) · `13/14` body · `15` row titles ·
-`20` section heads · `28/34` page heads · `34/44` money readouts.
+Scale (revised — v1 clustered everything between 13 and 28px, so nothing could dominate):
+`10/11` mono eyebrows (uppercase, `0.1em` tracking) · `12` meta · `13/14` body ·
+`15` row titles · `22` day numerals on the week board · `30` money readouts ·
+`34/44` page titles. Real jumps, not 400-vs-600 weight nudges.
 
 ### Shape & depth
 
 - **One radius language: 3px.** Tickets, plates, inputs, buttons. `999px` only for crew avatars.
 - **Zero box-shadows.** Depth comes from the `--line` hairline, the `--sunk` recess, and the
-  4px status spine. This is the single most anti-slop decision in the system.
+  4px status spine.
+- **A frame is the LAST resort** (revision 2026-07-27). v1 banned shadows and then wrapped
+  every group in a hairline rectangle instead — the deck became a stack of identical boxes
+  with nothing dominant. The ladder is now enforced:
+
+      air  →  surface shift  →  a single rule  →  a closed frame
+
+  A closed frame is earned only by things that are literally a piece of paper: the invoice
+  and estimate documents, and the header plate of a record. **Lists are ruled rows** — a
+  3px status spine, a bottom hairline, and air. Sections open with a rule; they do not
+  close in a box.
 
 ## Signature element — the ticket plate
 
@@ -130,3 +150,31 @@ Three cycles. What the pixels caught that no test could:
    list of the days that actually have work.
 3. **Cycle 3** — automated contrast sweep over all seven pages found `--ink-3` eyebrows at
    4.26:1 on the deck. Darkened to `#5D6B82`; sweep now returns zero failures.
+
+### Revision, 2026-07-27 — "everything reads as identical boxes"
+
+The owner's verdict on the shipped v1: *«опять одинаковая оконная вёрстка квадратиками»*.
+Re-scored against the rubric and four items failed:
+
+- **Squint test** — blurred, the deck was six grey bands of equal weight. Nothing dominated.
+- **Card justification ladder** — the ladder was skipped straight to `border` for every group.
+  Shadows were banned in v1 and quietly replaced by hairline rectangles: the same defect.
+- **Type scale** — the working range was 13→15px. No 3× jump anywhere below the page title.
+- **Spacing rhythm** — 28px between sections vs 16px interior. No hierarchy of air.
+
+What changed:
+
+1. **The row replaces the card.** New `.row` primitive: spine + bottom rule + air, no frame.
+   Every list in the product uses it. `.ticket` (plate + notch) is now reserved for documents
+   and record headers, where the frame means "a piece of paper you could hold".
+2. **The desk became asymmetric.** Dispatch is `1fr / 300px`: the week board and the work on
+   the left, the money rail on the right, separated by a single vertical rule. Different
+   widths encode different importance — v1 stacked equal-width panels.
+3. **The week board is the hero.** 188px tall, edge-to-edge in its column, day numerals at
+   22px mono, today filled with `--sunk` and its date in amber-ink. It opens the deck.
+4. **Frames removed** from filter bars, readout strips and empty states — all now ruled.
+5. **Two more text-weight tokens** (`--sky-ink`, `--emerald-ink`) because rows moved off the
+   plate onto the deck, where the spine hues drop below AA as small type.
+
+Two loop cycles. Cycle 1 caught the rail header collapsing into three lines and overflowing
+its 300px column; cycle 2 confirmed desktop and phone. Contrast sweep: zero failures.

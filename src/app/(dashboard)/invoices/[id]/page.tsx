@@ -227,7 +227,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               <>
                 <div className="flex justify-between">
                   <dt className="text-ink-2">Paid</dt>
-                  <dd className="mono" style={{ color: "var(--emerald)" }}>
+                  <dd className="mono" style={{ color: "var(--emerald-ink)" }}>
                     −{formatCurrency(invoice.amountPaid)}
                   </dd>
                 </div>
@@ -333,7 +333,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                   <span className="mono text-[12px] text-ink-3">
                     {new Date(p.date).toLocaleDateString("en-CA")} · {p.method.replace("_", "-")}
                   </span>
-                  <span className="mono text-[13px] font-medium" style={{ color: "var(--emerald)" }}>
+                  <span className="mono text-[13px] font-medium" style={{ color: "var(--emerald-ink)" }}>
                     {formatCurrency(p.amount)}
                   </span>
                 </div>

@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buttonClass } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 interface DueContract {
@@ -46,19 +45,24 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
-        <h2 className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
-          <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ background: "var(--amber)" }}
-          />
-          Service coming due
-          <span className="mono text-[12px] font-normal text-ink-3">
-            {formatCurrency(value)}
-          </span>
-        </h2>
-        <div className="flex items-center gap-4">
-          <button disabled={busy} onClick={bookAll} className={buttonClass("ghost")}>
+      {/* The rail is 300px wide — the header stacks instead of fighting for a row. */}
+      <div className="pb-2.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+            <span
+              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ background: "var(--amber)" }}
+            />
+            Service due
+          </h2>
+          <span className="mono text-[12px] text-ink-3">{formatCurrency(value)}</span>
+        </div>
+        <div className="mt-1.5 flex items-baseline gap-4">
+          <button
+            disabled={busy}
+            onClick={bookAll}
+            className="eyebrow underline underline-offset-4 hover:text-ink disabled:opacity-50"
+          >
             {busy ? "Booking…" : "Book all"}
           </button>
           <Link href="/contracts" className="eyebrow hover:text-ink">
@@ -67,13 +71,13 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="lane">
         {contracts.map((c) => {
           const late = c.daysUntil < 0;
           return (
             <div
               key={c.id}
-              className="ticket ticket-hover px-4 py-3"
+              className="row row-hover"
               style={
                 {
                   ["--spine"]: late ? "var(--rose)" : "var(--amber)",
@@ -91,20 +95,15 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
                   {late ? `${Math.abs(c.daysUntil)}D LATE` : `IN ${c.daysUntil}D`}
                 </span>
               </div>
-              <div className="mt-1.5 flex items-end justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-[15px] font-bold leading-tight text-ink">
-                    {c.clientName}
-                  </p>
-                  <p className="truncate text-[13px] text-ink-2">
-                    {c.name}
-                    {c.address ? ` · ${c.address}` : ""}
-                  </p>
-                </div>
+              <div className="mt-1 flex items-baseline justify-between gap-3">
+                <p className="truncate text-[14px] font-bold leading-tight text-ink">
+                  {c.clientName}
+                </p>
                 <span className="mono shrink-0 text-[15px] text-ink">
                   {formatCurrency(c.pricePerVisit)}
                 </span>
               </div>
+              <p className="mt-0.5 truncate text-[12px] text-ink-2">{c.name}</p>
             </div>
           );
         })}

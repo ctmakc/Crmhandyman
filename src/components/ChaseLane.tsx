@@ -23,20 +23,20 @@ export default function ChaseLane({ invoices }: { invoices: ChaseInvoice[] }) {
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
-        <h2 className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
+      <div className="flex items-baseline justify-between gap-3 pb-2.5">
+        <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
           <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
             style={{ background: "var(--rose)" }}
           />
           Chase list
         </h2>
         <Link href="/invoices?status=overdue" className="eyebrow hover:text-ink">
-          All invoices →
+          All →
         </Link>
       </div>
 
-      <div className="space-y-3">
+      <div className="lane">
         {invoices.map((inv) => {
           const stage = chaseStage({ ...inv, dueDate: inv.dueDate });
           const days = daysOverdue({ ...inv, dueDate: inv.dueDate });
@@ -45,7 +45,7 @@ export default function ChaseLane({ invoices }: { invoices: ChaseInvoice[] }) {
             <Link
               key={inv.id}
               href={`/invoices/${inv.id}`}
-              className="ticket block px-4 py-3"
+              className="row"
               style={{ ["--spine" as string]: "var(--rose)" } as React.CSSProperties}
             >
               <div className="flex items-baseline justify-between gap-3">
@@ -56,20 +56,15 @@ export default function ChaseLane({ invoices }: { invoices: ChaseInvoice[] }) {
                   {days} {days === 1 ? "DAY" : "DAYS"} LATE
                 </span>
               </div>
-              <div className="mt-1.5 flex items-end justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-[15px] font-bold leading-tight text-ink">
-                    {inv.clientName}
-                  </p>
-                  <p className="text-[13px] text-ink-2">{stage?.hint}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <span className="mono text-[17px] font-medium" style={{ color: "var(--rose-ink)" }}>
-                    {formatCurrency(owing)}
-                  </span>
-                  <span className="eyebrow mt-0.5 block">{stage?.label}</span>
-                </div>
+              <div className="mt-1 flex items-baseline justify-between gap-3">
+                <p className="truncate text-[14px] font-bold leading-tight text-ink">
+                  {inv.clientName}
+                </p>
+                <span className="mono shrink-0 text-[15px] font-medium" style={{ color: "var(--rose-ink)" }}>
+                  {formatCurrency(owing)}
+                </span>
               </div>
+              <p className="mt-0.5 truncate text-[12px] text-ink-2">{stage?.hint}</p>
             </Link>
           );
         })}

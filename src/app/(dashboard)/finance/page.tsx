@@ -118,7 +118,7 @@ export default function FinancePage() {
   const net = data?.netProfit || 0;
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
+    <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="Books"
         title="Finance"
@@ -153,9 +153,9 @@ export default function FinancePage() {
       />
 
       {/* The P&L readout — a ruled row of tabular figures, not four cards. */}
-      <div className="grid grid-cols-2 border border-line bg-plate md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-8 border-b border-line pb-6 md:grid-cols-4">
         {[
-          { label: "Revenue", value: formatCurrency(data?.totalRevenue || 0), tone: "var(--emerald)" },
+          { label: "Revenue", value: formatCurrency(data?.totalRevenue || 0), tone: "var(--emerald-ink)" },
           { label: "Expenses", value: formatCurrency(data?.totalExpenses || 0), tone: "var(--rose-ink)" },
           {
             label: "Net",
@@ -164,10 +164,10 @@ export default function FinancePage() {
           },
           { label: "Jobs closed", value: String(data?.projectCount || 0) },
         ].map((r) => (
-          <div key={r.label} className="border-b border-r border-line px-4 py-4 last:border-r-0">
+          <div key={r.label}>
             <div className="eyebrow">{r.label}</div>
             <p
-              className="mono mt-3 text-[24px] font-bold leading-none"
+              className="mono mt-2 text-[28px] font-bold leading-none"
               style={{ color: r.tone || "var(--ink)" }}
             >
               {r.value}
@@ -380,7 +380,7 @@ export default function FinancePage() {
                 </div>
                 <span
                   className="mono shrink-0 text-[15px] font-medium"
-                  style={{ color: "var(--emerald)" }}
+                  style={{ color: "var(--emerald-ink)" }}
                 >
                   {formatCurrency(p.amount)}
                 </span>

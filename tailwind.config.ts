@@ -32,8 +32,14 @@ const config: Config = {
           DEFAULT: "var(--amber)",
           ink: "var(--amber-ink)",
         },
-        sky: "var(--sky)",
-        emerald: "var(--emerald)",
+        sky: {
+          DEFAULT: "var(--sky)",
+          ink: "var(--sky-ink)",
+        },
+        emerald: {
+          DEFAULT: "var(--emerald)",
+          ink: "var(--emerald-ink)",
+        },
         rose: {
           DEFAULT: "var(--rose)",
           ink: "var(--rose-ink)",

@@ -140,7 +140,7 @@ export default function ContractsPage() {
         }
       />
 
-      <div className="grid grid-cols-3 border border-line bg-plate">
+      <div className="grid grid-cols-3 gap-6 border-b border-line pb-6">
         {[
           { label: "Active plans", value: String(rows.filter((r) => r.active).length) },
           {
@@ -151,10 +151,10 @@ export default function ContractsPage() {
           {
             label: "Booked value / yr",
             value: formatCurrency(annualValue),
-            tone: "var(--emerald)",
+            tone: "var(--emerald-ink)",
           },
         ].map((r) => (
-          <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
+          <div key={r.label}>
             <div className="eyebrow">{r.label}</div>
             <p
               className="mono mt-2.5 text-[20px] font-bold leading-none md:text-[24px]"

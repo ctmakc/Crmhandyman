@@ -36,13 +36,16 @@ export default function DayRail({
 
   const todayKey = new Date().toDateString();
 
+  const booked = jobs.length;
+
   return (
-    <section className="border border-line bg-plate">
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
+    <section>
+      <div className="flex items-baseline justify-between gap-4 pb-2.5">
+        <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
           The week
         </h2>
         <span className="eyebrow">
+          {booked} booked ·{" "}
           {days[0].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })} —{" "}
           {days[6].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })}
         </span>
@@ -50,7 +53,7 @@ export default function DayRail({
 
       {/* Seven columns is a desk view. On a phone the same data becomes a list
           of the days that actually have work on them. */}
-      <div className="hidden grid-cols-7 md:grid">
+      <div className="hidden grid-cols-7 border-y border-line md:grid">
         {days.map((day) => {
           const isToday = day.toDateString() === todayKey;
           const dayJobs = jobs.filter(
@@ -59,18 +62,20 @@ export default function DayRail({
           return (
             <div
               key={day.toISOString()}
-              className="min-h-[132px] border-r border-line px-2 py-2.5 last:border-r-0"
+              className="min-h-[188px] border-r border-line px-2.5 pb-3 pt-3 last:border-r-0"
               style={{ background: isToday ? "var(--sunk)" : undefined }}
             >
-              <div className="flex items-baseline justify-between px-1">
+              {/* The date is the biggest thing in the cell — the week has to read
+                  as a calendar at a glance, not as seven equal boxes. */}
+              <div className="flex items-baseline justify-between px-0.5">
                 <span
-                  className="mono text-[10px] uppercase tracking-[0.1em]"
-                  style={{ color: isToday ? "var(--ink)" : "var(--ink-3)" }}
+                  className="mono text-[10px] uppercase tracking-[0.12em]"
+                  style={{ color: isToday ? "var(--ink-2)" : "var(--ink-3)" }}
                 >
                   {day.toLocaleDateString("en-CA", { weekday: "short" })}
                 </span>
                 <span
-                  className="mono text-[13px] font-bold"
+                  className="mono text-[22px] font-bold leading-none"
                   style={{ color: isToday ? "var(--amber-ink)" : "var(--ink-3)" }}
                 >
                   {String(day.getDate()).padStart(2, "0")}
@@ -80,7 +85,7 @@ export default function DayRail({
               {/* Booked vs able-to-go. Over capacity is a double-booked truck. */}
               {crewSize > 0 && dayJobs.length > 0 && (
                 <div
-                  className="mono mt-1.5 px-1 text-[10px] tracking-[0.08em]"
+                  className="mono mt-2 px-0.5 text-[10px] tracking-[0.08em]"
                   style={{
                     color:
                       dayJobs.length > crewSize ? "var(--rose-ink)" : "var(--ink-3)",
@@ -96,7 +101,7 @@ export default function DayRail({
                   <Link
                     key={job.id}
                     href={`/projects/${job.id}`}
-                    className="block border border-line bg-plate px-2 py-1.5 transition-colors duration-[140ms] ease-instrument hover:border-ink-3"
+                    className="block bg-plate px-2 py-1.5 transition-colors duration-[140ms] ease-instrument hover:bg-sunk"
                     style={{ borderLeft: `3px solid ${spineFor(job.status)}` }}
                   >
                     <p className="truncate text-[12px] font-bold leading-tight text-ink">
@@ -112,7 +117,7 @@ export default function DayRail({
       </div>
 
       {/* Phone: only the days with work, stacked. */}
-      <div className="md:hidden">
+      <div className="border-t border-line md:hidden">
         {days
           .map((day) => ({
             day,

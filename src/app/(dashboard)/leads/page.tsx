@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
 import {
   PageHead,
-  Ticket,
+  Row,
+  Lane,
   WoNumber,
   Empty,
   Plate,
@@ -99,7 +100,7 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
+    <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="Intake"
         title="Leads"
@@ -113,7 +114,7 @@ export default function LeadsPage() {
       />
 
       {/* Filter bar — a recessed lane, one hairline, no floating card. */}
-      <div className="flex flex-col gap-2 border border-line bg-sunk p-2 sm:flex-row">
+      <div className="flex flex-col gap-2 border-t border-line pt-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
@@ -239,14 +240,14 @@ export default function LeadsPage() {
         </Plate>
       )}
 
-      <div className="space-y-2.5">
+      <Lane>
         {loading ? (
           <Skeleton lines={4} />
         ) : leads.length === 0 ? (
           <Empty>No leads match this filter</Empty>
         ) : (
           leads.map((lead) => (
-            <Ticket key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
+            <Row key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
               <div className="flex items-baseline justify-between gap-3">
                 <WoNumber id={lead.id} prefix="LD" date={lead.createdAt} />
                 <span className="mono text-[11px] text-ink-3">
@@ -264,10 +265,10 @@ export default function LeadsPage() {
                 {[lead.jobType, lead.city, lead.phone].filter(Boolean).join(" · ") ||
                   "No details captured"}
               </p>
-            </Ticket>
+            </Row>
           ))
         )}
-      </div>
+      </Lane>
     </div>
   );
 }

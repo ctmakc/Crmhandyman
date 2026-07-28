@@ -5,11 +5,11 @@ import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
 import {
   PageHead,
-  Plate,
-  Ticket,
+  LaneHead,
+  Lane,
+  Row,
   WoNumber,
   Empty,
-  Money,
   textToneFor,
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
@@ -142,7 +142,7 @@ export default async function DashboardPage() {
             label: "Collected · MTD",
             value: formatCurrency(monthRevenue?._sum.amount || 0),
             href: "/finance",
-            tone: "var(--emerald)",
+            tone: "var(--emerald-ink)",
           },
           {
             label: `Outstanding · ${outstanding?._count || 0}`,
@@ -155,135 +155,131 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="space-y-7 pb-24 md:pb-0">
+    <div className="pb-24 md:pb-0">
       <PageHead
         eyebrow={`Shift desk · ${session?.user?.name ?? ""}`}
         title="Dispatch"
         sub="Everything booked, quoted and owed — on one deck."
       />
 
-      {/* Readout strip: ruled lanes, not a card grid. */}
-      <div className="grid grid-cols-2 divide-line border border-line bg-plate md:grid-cols-3 lg:grid-cols-5 lg:divide-x">
-        {readouts.map((r) => (
-          <Link
-            key={r.label}
-            href={r.href}
-            className="group border-b border-line px-4 py-4 transition-colors duration-[140ms] ease-instrument last:border-b-0 hover:bg-sunk lg:border-b-0"
-          >
-            <div className="flex items-center gap-2">
-              {"lamp" in r && r.lamp && (
-                <span
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: "var(--amber)" }}
-                />
-              )}
-              <span className="eyebrow">{r.label}</span>
-            </div>
-            <div
-              className="mono mt-3 text-[22px] font-bold leading-none tracking-tight md:text-[28px]"
-              style={{ color: r.tone || "var(--ink)" }}
-            >
-              {r.value}
-            </div>
-          </Link>
-        ))}
-      </div>
+      {/*
+        An asymmetric desk, not a stack of equal panels. The board is the work;
+        the money rail is the consequence. Different widths = different weight.
+      */}
+      <div className="mt-10 grid gap-x-10 gap-y-12 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-12">
+          {/* The week is the hero: it opens the deck with no frame around it. */}
+          <DayRail
+            jobs={weekJobs.map((j) => ({
+              id: j.id,
+              title: j.title,
+              client: j.clientName,
+              status: j.status,
+              date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
+            }))}
+            crewSize={crewSize}
+          />
 
-      {/* The day rail — the shape of the week before anything else. */}
-      <DayRail
-        jobs={weekJobs.map((j) => ({
-          id: j.id,
-          title: j.title,
-          client: j.clientName,
-          status: j.status,
-          date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
-        }))}
-        crewSize={crewSize}
-      />
-
-      {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}
-
-      {chase.length > 0 && <ChaseLane invoices={chase} />}
-
-      {/* Tickets sit directly on the deck — the notch reads as a bite only when
-          the surface behind it is the deck itself. No nested plates. */}
-      <div className="grid gap-8 lg:grid-cols-2">
-        <section>
-          <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
-            <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
-              Incoming leads
-            </h2>
-            <Link href="/leads" className="eyebrow hover:text-ink">
-              All leads →
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {recentLeads.length === 0 && <Empty>No leads on the desk</Empty>}
-            {recentLeads.map((lead) => (
-              <Ticket key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <WoNumber id={lead.id} prefix="LD" date={lead.createdAt} />
-                  <span className="eyebrow">{lead.source}</span>
-                </div>
-                <p className="mt-1.5 text-[15px] font-bold leading-tight text-ink">{lead.name}</p>
-                <p className="mt-0.5 text-[13px] text-ink-2">
-                  {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
-                </p>
-              </Ticket>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
-            <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
-              Jobs in the yard
-            </h2>
-            <Link href="/projects" className="eyebrow hover:text-ink">
-              All jobs →
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {recentProjects.length === 0 && <Empty>Nothing scheduled</Empty>}
-            {recentProjects.map((project) => (
-              <Ticket key={project.id} href={`/projects/${project.id}`} status={project.status}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <WoNumber id={project.id} date={project.createdAt} />
-                  <span className="eyebrow" style={{ color: textToneFor(project.status) }}>
-                    {project.status.replace("_", " ")}
-                  </span>
-                </div>
-                <p className="mt-1.5 text-[15px] font-bold leading-tight text-ink">{project.title}</p>
-                <p className="mt-0.5 text-[13px] text-ink-2">
-                  {project.clientName}
-                  {project.address ? ` · ${project.address}` : ""}
-                </p>
-              </Ticket>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      {isAdmin && (
-        <Plate className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div className="eyebrow">Money on the street</div>
-            <p className="mt-1 text-[13px] text-ink-2">
-              Unpaid invoices already issued to clients.
-            </p>
-          </div>
-          <div className="flex items-baseline gap-3">
-            <Money
-              value={outstanding?._sum.total || 0}
-              className="text-[26px]"
-              tone={(outstanding?._sum.total || 0) > 0 ? "var(--rose-ink)" : "var(--emerald)"}
+          <section>
+            <LaneHead
+              title="Jobs in the yard"
+              right={
+                <Link href="/projects" className="eyebrow hover:text-ink">
+                  All jobs →
+                </Link>
+              }
             />
-            <Link href="/invoices" className="eyebrow hover:text-ink">
-              Chase →
-            </Link>
+            <Lane>
+              {recentProjects.length === 0 && <Empty>Nothing scheduled</Empty>}
+              {recentProjects.map((project) => (
+                <Row key={project.id} href={`/projects/${project.id}`} status={project.status}>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-bold leading-tight text-ink">
+                        {project.title}
+                      </p>
+                      <p className="mt-0.5 truncate text-[13px] text-ink-2">
+                        {project.clientName}
+                        {project.address ? ` · ${project.address}` : ""}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span
+                        className="mono text-[11px] tracking-[0.08em]"
+                        style={{ color: textToneFor(project.status) }}
+                      >
+                        {project.status.replace("_", " ")}
+                      </span>
+                      <span className="mt-0.5 block">
+                        <WoNumber id={project.id} date={project.createdAt} />
+                      </span>
+                    </div>
+                  </div>
+                </Row>
+              ))}
+            </Lane>
+          </section>
+
+          <section>
+            <LaneHead
+              title="Incoming leads"
+              lamp={newLeadsCount > 0 ? "var(--amber)" : undefined}
+              right={
+                <Link href="/leads" className="eyebrow hover:text-ink">
+                  All leads →
+                </Link>
+              }
+            />
+            <Lane>
+              {recentLeads.length === 0 && <Empty>No leads on the desk</Empty>}
+              {recentLeads.map((lead) => (
+                <Row key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-bold leading-tight text-ink">
+                        {lead.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-[13px] text-ink-2">
+                        {[lead.jobType, lead.city].filter(Boolean).join(" · ") ||
+                          "General inquiry"}
+                      </p>
+                    </div>
+                    <span className="eyebrow shrink-0">{lead.source}</span>
+                  </div>
+                </Row>
+              ))}
+            </Lane>
+          </section>
+        </div>
+
+        {/* The money rail: narrow, dense, quiet. Read after the board, not before. */}
+        <aside className="space-y-10 lg:border-l lg:border-line lg:pl-8">
+          <div className="space-y-6">
+            {readouts.map((r) => (
+              <Link key={r.label} href={r.href} className="group block">
+                <div className="flex items-center gap-2">
+                  {"lamp" in r && r.lamp && (
+                    <span
+                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: "var(--amber)" }}
+                    />
+                  )}
+                  <span className="eyebrow group-hover:text-ink">{r.label}</span>
+                </div>
+                <div
+                  className="mono mt-1.5 text-[30px] font-bold leading-none tracking-tight"
+                  style={{ color: r.tone || "var(--ink)" }}
+                >
+                  {r.value}
+                </div>
+              </Link>
+            ))}
           </div>
-        </Plate>
-      )}
+
+          {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}
+          {chase.length > 0 && <ChaseLane invoices={chase} />}
+        </aside>
+      </div>
     </div>
   );
 }

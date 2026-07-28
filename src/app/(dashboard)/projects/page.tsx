@@ -6,7 +6,8 @@ import { Plus, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   PageHead,
-  Ticket,
+  Row,
+  Lane,
   WoNumber,
   Empty,
   Plate,
@@ -137,7 +138,7 @@ export default function ProjectsPage() {
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
+    <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="Work orders"
         title="Jobs"
@@ -150,7 +151,7 @@ export default function ProjectsPage() {
         }
       />
 
-      <div className="flex flex-col gap-2 border border-line bg-sunk p-2 sm:flex-row">
+      <div className="flex flex-col gap-2 border-t border-line pt-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
@@ -258,22 +259,18 @@ export default function ProjectsPage() {
         </Plate>
       )}
 
-      <div className="grid gap-2.5 lg:grid-cols-2">
+      <Lane>
         {loading ? (
-          <div className="lg:col-span-2">
-            <Skeleton lines={4} />
-          </div>
+          <Skeleton lines={4} />
         ) : projects.length === 0 ? (
-          <div className="lg:col-span-2">
-            <Empty>No jobs match this filter</Empty>
-          </div>
+          <Empty>No jobs match this filter</Empty>
         ) : (
           projects.map((project) => {
             const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
             const latestEstimate = project.estimates[0];
             const doneTasks = project.tasks.filter((t) => t.status === "DONE").length;
             return (
-              <Ticket key={project.id} href={`/projects/${project.id}`} status={project.status}>
+              <Row key={project.id} href={`/projects/${project.id}`} status={project.status}>
                 <div className="flex items-baseline justify-between gap-3">
                   <WoNumber id={project.id} date={project.createdAt} />
                   <span className="eyebrow">{project.status.replace("_", " ")}</span>
@@ -291,7 +288,7 @@ export default function ProjectsPage() {
                     </span>
                   )}
                   {totalPaid > 0 && (
-                    <span className="mono text-[12px]" style={{ color: "var(--emerald)" }}>
+                    <span className="mono text-[12px]" style={{ color: "var(--emerald-ink)" }}>
                       PAID {formatCurrency(totalPaid)}
                     </span>
                   )}
@@ -306,11 +303,11 @@ export default function ProjectsPage() {
                     </span>
                   )}
                 </div>
-              </Ticket>
+              </Row>
             );
           })
         )}
-      </div>
+      </Lane>
     </div>
   );
 }

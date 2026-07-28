@@ -5,7 +5,8 @@ import { Plus, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   PageHead,
-  Ticket,
+  Row,
+  Lane,
   Empty,
   Plate,
   buttonClass,
@@ -78,7 +79,7 @@ export default function ClientsPage() {
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
+    <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="The book"
         title="Clients"
@@ -91,7 +92,7 @@ export default function ClientsPage() {
         }
       />
 
-      <div className="grid grid-cols-3 border border-line bg-plate">
+      <div className="grid grid-cols-3 gap-6 border-b border-line pb-6">
         {[
           { label: "On the book", value: String(clients.length) },
           { label: "With equipment", value: String(withIron) },
@@ -101,7 +102,7 @@ export default function ClientsPage() {
             tone: owingTotal > 0 ? "var(--rose-ink)" : "var(--emerald)",
           },
         ].map((r) => (
-          <div key={r.label} className="border-r border-line px-4 py-4 last:border-r-0">
+          <div key={r.label}>
             <div className="eyebrow">{r.label}</div>
             <p
               className="mono mt-2.5 text-[20px] font-bold leading-none md:text-[24px]"
@@ -113,7 +114,7 @@ export default function ClientsPage() {
         ))}
       </div>
 
-      <div className="border border-line bg-sunk p-2">
+      <div className="border-t border-line pt-3">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
@@ -199,18 +200,14 @@ export default function ClientsPage() {
         </Plate>
       )}
 
-      <div className="grid gap-2.5 lg:grid-cols-2">
+      <Lane>
         {loading ? (
-          <div className="lg:col-span-2">
-            <Skeleton lines={4} />
-          </div>
+          <Skeleton lines={4} />
         ) : clients.length === 0 ? (
-          <div className="lg:col-span-2">
-            <Empty>No clients match this search</Empty>
-          </div>
+          <Empty>No clients match this search</Empty>
         ) : (
           clients.map((c) => (
-            <Ticket
+            <Row
               key={c.id}
               href={`/clients/${c.id}`}
               // Green means "worked for, settled up" — a name with no jobs yet is neutral.
@@ -262,10 +259,10 @@ export default function ClientsPage() {
                   </span>
                 )}
               </div>
-            </Ticket>
+            </Row>
           ))
         )}
-      </div>
+      </Lane>
     </div>
   );
 }

@@ -45,10 +45,15 @@ export function textToneFor(status?: string | null) {
   const tone = spineFor(status);
   if (tone === "var(--amber)") return "var(--amber-ink)";
   if (tone === "var(--rose)") return "var(--rose-ink)";
+  if (tone === "var(--sky)") return "var(--sky-ink)";
+  if (tone === "var(--emerald)") return "var(--emerald-ink)";
   return tone;
 }
 
-/** Page header: mono eyebrow over a heavy display line. No decorative badge. */
+/**
+ * Page header. The display size carries the hierarchy the old 28px could not —
+ * the title has to outweigh every number on the deck, or nothing dominates.
+ */
 export function PageHead({
   eyebrow,
   title,
@@ -61,15 +66,41 @@ export function PageHead({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-line pb-4">
+    <div className="flex items-end justify-between gap-6">
       <div>
         <div className="eyebrow">{eyebrow}</div>
-        <h1 className="mt-2 text-[28px] font-black leading-none tracking-tight text-ink md:text-[34px]">
+        <h1 className="mt-2.5 text-[34px] font-black leading-[0.92] tracking-[-0.025em] text-ink md:text-[44px]">
           {title}
         </h1>
-        {sub && <p className="mt-2 text-sm text-ink-2">{sub}</p>}
+        {sub && <p className="mt-3 max-w-[54ch] text-[14px] text-ink-2">{sub}</p>}
       </div>
-      {action && <div className="shrink-0 pt-1">{action}</div>}
+      {action && <div className="shrink-0 pb-1.5">{action}</div>}
+    </div>
+  );
+}
+
+/** A section opener: mono label on a rule. Replaces the boxed panel header. */
+export function LaneHead({
+  title,
+  right,
+  lamp,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  lamp?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 pb-2.5">
+      <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+        {lamp && (
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: lamp }}
+          />
+        )}
+        {title}
+      </h2>
+      {right}
     </div>
   );
 }
@@ -138,8 +169,50 @@ export function PlateHead({
 }
 
 /**
- * THE TICKET — the signature primitive. Status spine on the left edge, punched
- * notch on the bottom, mono work-order number. Renders as a link when href given.
+ * THE ROW — the default list primitive. Spine + rule + air, no frame.
+ *
+ * v1 gave every list item a closed border and the deck read as a stack of
+ * identical boxes. The spine survives because it is the one carrier of state;
+ * the rectangle does not.
+ */
+export function Row({
+  href,
+  status,
+  className,
+  children,
+}: {
+  href?: string;
+  status?: string | null;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const style = { ["--spine" as string]: spineFor(status) } as React.CSSProperties;
+  const cls = cn("row", className);
+  return href ? (
+    <Link href={href} className={cls} style={style}>
+      {children}
+    </Link>
+  ) : (
+    <div className={cn(cls, "row-hover")} style={style}>
+      {children}
+    </div>
+  );
+}
+
+/** A ruled lane of rows. Opens with a rule instead of closing in a box. */
+export function Lane({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("lane", className)}>{children}</div>;
+}
+
+/**
+ * THE TICKET PLATE — reserved for documents and record headers, where the closed
+ * frame means "a piece of paper you could hold". Not for list items.
  */
 export function Ticket({
   href,
@@ -225,9 +298,9 @@ export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary")
  */
 export function Skeleton({ lines = 4 }: { lines?: number }) {
   return (
-    <div className="space-y-2.5" aria-busy="true" aria-label="Loading">
+    <div className="lane" aria-busy="true" aria-label="Loading">
       {Array.from({ length: lines }).map((_, i) => (
-        <div key={i} className="plate px-4 py-3">
+        <div key={i} className="row">
           <div className="h-2 w-[86px] animate-pulse bg-sunk" />
           <div className="mt-2.5 h-3.5 w-[45%] animate-pulse bg-sunk" />
           <div className="mt-2 h-2.5 w-[62%] animate-pulse bg-sunk" />
@@ -237,10 +310,10 @@ export function Skeleton({ lines = 4 }: { lines?: number }) {
   );
 }
 
-/** Empty state — a recessed lane, not an illustration. */
+/** Empty state — a quiet line on the deck, not a dashed box. */
 export function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border border-dashed border-line bg-sunk px-4 py-10 text-center">
+    <div className="border-t border-line py-9 text-center">
       <p className="eyebrow">{children}</p>
     </div>
   );

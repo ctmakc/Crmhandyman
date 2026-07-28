@@ -7,7 +7,8 @@ import { formatCurrency } from "@/lib/utils";
 import { isOverdue, daysOverdue } from "@/lib/invoice-state";
 import {
   PageHead,
-  Ticket,
+  Row,
+  Lane,
   Empty,
   Money,
   Skeleton,
@@ -59,7 +60,7 @@ export default function InvoicesPage() {
 
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
+    <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="Billing"
         title="Invoices"
@@ -67,26 +68,26 @@ export default function InvoicesPage() {
       />
 
       {/* Two readouts only: what is owed, what landed. */}
-      <div className="grid grid-cols-2 border border-line bg-plate sm:divide-x sm:divide-line">
-        <div className="border-r border-line px-4 py-4">
+      <div className="grid grid-cols-2 gap-8 border-b border-line pb-6">
+        <div>
           <div className="eyebrow">Outstanding</div>
           <Money
             value={outstanding}
-            className="mt-3 block text-[28px] leading-none"
-            tone={outstanding > 0 ? "var(--rose)" : "var(--emerald)"}
+            className="mt-2 block text-[30px] leading-none"
+            tone={outstanding > 0 ? "var(--rose)" : "var(--emerald-ink)"}
           />
         </div>
-        <div className="px-4 py-4">
+        <div>
           <div className="eyebrow">Collected</div>
           <Money
             value={collected}
-            className="mt-3 block text-[28px] leading-none"
-            tone="var(--emerald)"
+            className="mt-2 block text-[30px] leading-none"
+            tone="var(--emerald-ink)"
           />
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 border border-line bg-sunk p-2 sm:flex-row">
+      <div className="flex flex-col gap-2 border-t border-line pt-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
@@ -114,7 +115,7 @@ export default function InvoicesPage() {
         </select>
       </div>
 
-      <div className="space-y-2.5">
+      <Lane>
         {loading ? (
           <Skeleton lines={3} />
         ) : shown.length === 0 ? (
@@ -128,7 +129,7 @@ export default function InvoicesPage() {
             const owing = inv.total - inv.amountPaid;
             const overdue = isOverdue(inv);
             return (
-              <Ticket
+              <Row
                 key={inv.id}
                 href={`/invoices/${inv.id}`}
                 status={overdue ? "OVERDUE" : inv.status}
@@ -167,11 +168,11 @@ export default function InvoicesPage() {
                     )}
                   </div>
                 </div>
-              </Ticket>
+              </Row>
             );
           })
         )}
-      </div>
+      </Lane>
     </div>
   );
 }

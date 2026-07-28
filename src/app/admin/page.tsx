@@ -90,7 +90,7 @@ export default function SuperAdminPage() {
                         style={{
                           color:
                             t.plan === "PAID"
-                              ? "var(--emerald)"
+                              ? "var(--emerald-ink)"
                               : expired
                                 ? "var(--rose)"
                                 : "var(--amber)",
