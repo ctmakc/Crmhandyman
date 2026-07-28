@@ -24,9 +24,7 @@ const PUBLIC_PATHS = [
 const RESERVED_SUBDOMAINS = new Set(["www", "app", "admin", "api", "static", "assets"]);
 
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`) || pathname.startsWith(path)
-  );
+  return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 const tenantCache = new Map<
@@ -77,9 +75,7 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const { pathname } = url;
 
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
+  if (isPublicPath(pathname)) return NextResponse.next();
 
   const slug = resolveSlug(req);
   const baseUrl = `${req.nextUrl.protocol}//${req.headers.get("host")}`;
