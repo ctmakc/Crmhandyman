@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BriefcaseBusiness, MapPin, Search, ShieldCheck } from "lucide-react";
-import {
-  SERVICE_CATALOG,
-  formatCompensation,
-  getPublicVacancies,
-  titleFromSlug,
-} from "@/lib/marketplace";
+import { formatCompensation, getPublicVacancies } from "@/lib/marketplace";
+import { SERVICE_CATALOG, titleFromSlug } from "@/lib/marketplace-config";
 
 type SearchParams = { service?: string; city?: string; province?: string };
 
@@ -81,7 +77,7 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
             <div>
               <h2 className="text-2xl font-black">Open opportunities</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {vacancies.length} published vacancy{vacancies.length === 1 ? "" : "ies"}
+                {vacancies.length} published {vacancies.length === 1 ? "vacancy" : "vacancies"}
               </p>
             </div>
           </div>
