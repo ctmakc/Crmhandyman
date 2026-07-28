@@ -25,6 +25,7 @@ model Tenant {
   marketplaceJobs   MarketplaceJob[]     @relation("MarketplaceJobSourceTenant")
   leadListings      LeadListing[]
   claimedLeads      LeadClaim[]          @relation("ClaimedByTenant")
+  creditWallet      CreditWallet?
 }
 
 enum TenantPlan {
@@ -402,33 +403,33 @@ model Vacancy {
 }
 
 model WorkerProfile {
-  id                  String             @id @default(cuid())
-  slug                String             @unique
-  email               String             @unique
-  fullName            String
-  publicName          String
-  phone               String?
-  city                String
-  province            String
-  country             String             @default("Canada")
-  headline            String
-  summary             String
-  yearsExperience     Int?
-  employmentTypes     String             @default("FULL_TIME,CONTRACT,GIG,SUBCONTRACT")
-  hourlyRateMin       Float?
-  hourlyRateMax       Float?
-  hasVehicle          Boolean            @default(false)
-  hasTools            Boolean            @default(false)
-  languages           String             @default("English")
-  availability        String?
-  resumeUrl           String?
-  consentToContact    Boolean            @default(false)
-  consentToPublic     Boolean            @default(false)
-  profileStatus       ProfileStatus      @default(DRAFT)
-  verificationStatus  VerificationStatus @default(UNVERIFIED)
-  skills              WorkerSkill[]
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  id                 String             @id @default(cuid())
+  slug               String             @unique
+  email              String             @unique
+  fullName           String
+  publicName         String
+  phone              String?
+  city               String
+  province           String
+  country            String             @default("Canada")
+  headline           String
+  summary            String
+  yearsExperience    Int?
+  employmentTypes    String             @default("FULL_TIME,CONTRACT,GIG,SUBCONTRACT")
+  hourlyRateMin      Float?
+  hourlyRateMax      Float?
+  hasVehicle         Boolean            @default(false)
+  hasTools           Boolean            @default(false)
+  languages          String             @default("English")
+  availability       String?
+  resumeUrl          String?
+  consentToContact   Boolean            @default(false)
+  consentToPublic    Boolean            @default(false)
+  profileStatus      ProfileStatus      @default(DRAFT)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  skills             WorkerSkill[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([city, province, profileStatus])
   @@index([verificationStatus, updatedAt])
@@ -445,6 +446,35 @@ model WorkerSkill {
 
   @@unique([profileId, slug])
   @@index([slug])
+}
+
+model CreditWallet {
+  id                String              @id @default(cuid())
+  tenantId          String              @unique
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  balance           Int                 @default(10)
+  lifetimePurchased Int                 @default(0)
+  lifetimeSpent     Int                 @default(0)
+  transactions      CreditTransaction[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model CreditTransaction {
+  id             String                @id @default(cuid())
+  walletId       String
+  wallet         CreditWallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type           CreditTransactionType
+  amount         Int
+  balanceAfter   Int
+  referenceType  String?
+  referenceId    String?
+  description    String
+  idempotencyKey String                @unique
+  createdAt      DateTime              @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
 }
 
 model LeadListing {
@@ -546,6 +576,14 @@ enum VacancyStatus {
   PAUSED
   CLOSED
   EXPIRED
+}
+
+enum CreditTransactionType {
+  WELCOME
+  CREDIT_PURCHASE
+  LEAD_UNLOCK
+  REFUND
+  ADJUSTMENT
 }
 
 enum LeadListingStatus {
