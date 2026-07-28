@@ -24,6 +24,7 @@ const PUBLIC_PATHS = [
 const RESERVED_SUBDOMAINS = new Set(["www", "app", "admin", "api", "static", "assets"]);
 
 function isPublicPath(pathname: string) {
+  if (pathname === "/") return true;
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
