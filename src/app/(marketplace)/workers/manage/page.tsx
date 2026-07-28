@@ -8,6 +8,7 @@ import { verifySignedToken } from "@/lib/signed-token";
 export const metadata: Metadata = {
   title: "Manage worker profile",
   robots: { index: false, follow: false, noarchive: true },
+  referrer: "no-referrer",
 };
 
 export const dynamic = "force-dynamic";
