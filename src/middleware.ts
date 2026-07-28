@@ -8,6 +8,8 @@ const PUBLIC_PATHS = [
   "/directory",
   "/contractors",
   "/pro",
+  "/workers",
+  "/worker",
   "/jobs",
   "/hire",
   "/api/auth",
