@@ -1,6 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Filter, MapPin, Search, ShieldCheck, UserRoundSearch } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Filter,
+  KeyRound,
+  MapPin,
+  Search,
+  ShieldCheck,
+  UserRoundPlus,
+  UserRoundSearch,
+} from "lucide-react";
 import WorkerCard from "@/components/marketplace/WorkerCard";
 import { SERVICE_CATALOG } from "@/lib/marketplace-config";
 import { getPublicWorkers } from "@/lib/workers";
@@ -11,6 +21,7 @@ type SearchParams = {
   province?: string;
   skill?: string;
   employmentType?: string;
+  verification?: string;
 };
 
 export function generateMetadata({ searchParams }: { searchParams: SearchParams }): Metadata {
@@ -19,7 +30,8 @@ export function generateMetadata({ searchParams }: { searchParams: SearchParams 
       searchParams.city ||
       searchParams.province ||
       searchParams.skill ||
-      searchParams.employmentType
+      searchParams.employmentType ||
+      searchParams.verification
   );
 
   return {
@@ -33,6 +45,31 @@ export function generateMetadata({ searchParams }: { searchParams: SearchParams 
 
 export const dynamic = "force-dynamic";
 
+function verificationMessage(value: string | undefined) {
+  switch (value) {
+    case "invalid":
+      return {
+        tone: "error" as const,
+        title: "Verification link is invalid or expired.",
+        text: "Create a new draft or request a management link for an existing profile.",
+      };
+    case "stale":
+      return {
+        tone: "error" as const,
+        title: "This verification link is stale.",
+        text: "The draft changed after the email was issued. Request a fresh link before publishing.",
+      };
+    case "blocked":
+      return {
+        tone: "error" as const,
+        title: "This profile cannot be published from that link.",
+        text: "Use the private management workflow to review its current visibility status.",
+      };
+    default:
+      return null;
+  }
+}
+
 export default async function WorkersPage({ searchParams }: { searchParams: SearchParams }) {
   const workers = await getPublicWorkers({
     query: searchParams.q,
@@ -41,9 +78,20 @@ export default async function WorkersPage({ searchParams }: { searchParams: Sear
     skill: searchParams.skill,
     employmentType: searchParams.employmentType,
   });
+  const verification = verificationMessage(searchParams.verification);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+      {verification && (
+        <div className="mb-6 flex gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <h2 className="font-black">{verification.title}</h2>
+            <p className="mt-1 text-sm leading-6">{verification.text}</p>
+          </div>
+        </div>
+      )}
+
       <section className="overflow-hidden rounded-3xl bg-blue-700 text-white">
         <div className="grid gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[1fr_360px] lg:items-center">
           <div>
@@ -57,6 +105,22 @@ export default async function WorkersPage({ searchParams }: { searchParams: Sear
               Search self-published profiles by skill and location. Public pages never expose legal
               names, email, phone or private resume links.
             </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/workers/join"
+                className="inline-flex items-center rounded-xl bg-white px-4 py-3 text-sm font-black text-blue-800"
+              >
+                <UserRoundPlus className="mr-2 h-4 w-4" />
+                Create worker profile
+              </Link>
+              <Link
+                href="/workers/manage"
+                className="inline-flex items-center rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-black text-white"
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                Manage existing profile
+              </Link>
+            </div>
           </div>
           <div className="rounded-2xl border border-white/15 bg-white/10 p-5">
             <ShieldCheck className="h-7 w-7 text-emerald-300" />
@@ -64,6 +128,10 @@ export default async function WorkersPage({ searchParams }: { searchParams: Sear
             <p className="mt-2 text-sm leading-6 text-blue-100">
               The public API selects only approved profile fields. Contact data is not merely hidden
               in CSS; it is excluded at the database query layer.
+            </p>
+            <p className="mt-4 flex gap-2 text-xs leading-5 text-blue-100">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+              Email verification is required before a draft enters the directory.
             </p>
           </div>
         </div>
@@ -181,12 +249,20 @@ export default async function WorkersPage({ searchParams }: { searchParams: Sear
                 {workers.length} opt-in worker profile{workers.length === 1 ? "" : "s"}
               </h2>
             </div>
-            <Link
-              href="/jobs"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black"
-            >
-              Browse open jobs
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/workers/join"
+                className="inline-flex items-center justify-center rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white"
+              >
+                Add my profile
+              </Link>
+              <Link
+                href="/jobs"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black"
+              >
+                Browse open jobs
+              </Link>
+            </div>
           </div>
 
           {workers.length > 0 ? (
@@ -200,15 +276,24 @@ export default async function WorkersPage({ searchParams }: { searchParams: Sear
               <UserRoundSearch className="mx-auto h-10 w-10 text-slate-300" />
               <h2 className="mt-4 text-xl font-black">No public worker profiles match this search.</h2>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                Profiles appear only after a worker explicitly chooses public visibility. The
-                platform does not scrape or republish private applications as resumes.
+                Profiles appear only after a worker explicitly chooses public visibility and verifies
+                the private email. The platform does not scrape or republish private applications as
+                resumes.
               </p>
-              <Link
-                href="/jobs"
-                className="mt-6 inline-flex rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white"
-              >
-                Apply to a job and opt in
-              </Link>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <Link
+                  href="/workers/join"
+                  className="inline-flex rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white"
+                >
+                  Create worker profile
+                </Link>
+                <Link
+                  href="/jobs"
+                  className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-800"
+                >
+                  Apply to a job
+                </Link>
+              </div>
             </div>
           )}
         </section>
