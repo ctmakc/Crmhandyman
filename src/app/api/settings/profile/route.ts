@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { SERVICE_CATALOG, slugify } from "@/lib/marketplace";
+import { SERVICE_CATALOG, slugify } from "@/lib/marketplace-config";
+
+type SessionUser = {
+  tenantId?: string;
+  role?: string;
+};
 
 function text(value: unknown, maxLength: number): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -19,13 +24,11 @@ function optionalNumber(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER):
   return parsed;
 }
 
-function sessionTenantId(session: Awaited<ReturnType<typeof getServerSession>>) {
-  return (session?.user as { tenantId?: string } | undefined)?.tenantId;
-}
-
 export async function GET() {
   const session = await getServerSession(authOptions);
-  const tenantId = sessionTenantId(session);
+  const user = session?.user as SessionUser | undefined;
+  const tenantId = user?.tenantId;
+
   if (!session || !tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -47,12 +50,10 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  const tenantId = sessionTenantId(session);
-  if (
-    !session ||
-    !tenantId ||
-    (session.user as { role?: string } | undefined)?.role !== "ADMIN"
-  ) {
+  const user = session?.user as SessionUser | undefined;
+  const tenantId = user?.tenantId;
+
+  if (!session || !tenantId || user?.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
