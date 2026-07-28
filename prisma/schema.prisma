@@ -242,7 +242,7 @@ model ContractorProfile {
   headline            String?
   description         String?
   logoUrl             String?
-  coverUrl            String?
+  coverUrl             String?
   phone               String?
   publicEmail         String?
   website             String?
@@ -399,6 +399,52 @@ model Vacancy {
   updatedAt        DateTime           @updatedAt
 
   @@index([serviceSlug, city, province, status])
+}
+
+model WorkerProfile {
+  id                  String             @id @default(cuid())
+  slug                String             @unique
+  email               String             @unique
+  fullName            String
+  publicName          String
+  phone               String?
+  city                String
+  province            String
+  country             String             @default("Canada")
+  headline            String
+  summary             String
+  yearsExperience     Int?
+  employmentTypes     String             @default("FULL_TIME,CONTRACT,GIG,SUBCONTRACT")
+  hourlyRateMin       Float?
+  hourlyRateMax       Float?
+  hasVehicle          Boolean            @default(false)
+  hasTools            Boolean            @default(false)
+  languages           String             @default("English")
+  availability        String?
+  resumeUrl           String?
+  consentToContact    Boolean            @default(false)
+  consentToPublic     Boolean            @default(false)
+  profileStatus       ProfileStatus      @default(DRAFT)
+  verificationStatus  VerificationStatus @default(UNVERIFIED)
+  skills              WorkerSkill[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([city, province, profileStatus])
+  @@index([verificationStatus, updatedAt])
+}
+
+model WorkerSkill {
+  id              String        @id @default(cuid())
+  profileId       String
+  profile         WorkerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  slug            String
+  name            String
+  yearsExperience Int?
+  createdAt       DateTime      @default(now())
+
+  @@unique([profileId, slug])
+  @@index([slug])
 }
 
 model LeadListing {
