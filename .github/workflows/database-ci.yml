@@ -1,0 +1,46 @@
+name: Database migration CI
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: file:./migration-ci.db
+      NEXTAUTH_SECRET: ci-only-secret-not-for-production
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      SUPER_ADMIN_EMAILS: admin@example.test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Apply all migrations to an empty database
+        run: npx prisma migrate deploy
+
+      - name: Build application against migrated schema
+        run: npm run build
