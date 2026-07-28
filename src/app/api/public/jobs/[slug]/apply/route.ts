@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { SERVICE_CATALOG, slugify } from "@/lib/marketplace-config";
+import { prisma } from "@/lib/prisma";
+import { createSignedToken } from "@/lib/signed-token";
 
 const applicationLog = new Map<string, number[]>();
 const WINDOW_MS = 60 * 60 * 1000;
@@ -195,9 +197,24 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   const existingWorker = publishProfile
     ? await prisma.workerProfile.findUnique({
         where: { email },
-        select: { id: true, slug: true },
+        select: {
+          id: true,
+          slug: true,
+          profileStatus: true,
+          verificationStatus: true,
+        },
       })
     : null;
+
+  if (existingWorker?.verificationStatus === "SUSPENDED") {
+    return NextResponse.json(
+      { error: "This worker profile is suspended and cannot be changed through an application." },
+      { status: 403 }
+    );
+  }
+
+  const mayWriteDraft =
+    publishProfile && (!existingWorker || existingWorker.profileStatus === "DRAFT");
   const workerSlug =
     existingWorker?.slug ||
     `${slugify(`${publicName}-${city}`) || "worker"}-${Date.now().toString(36)}`.slice(0, 100);
@@ -211,7 +228,11 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     `VEHICLE: ${hasVehicle ? "Yes" : "No"}`,
     `OWN TOOLS: ${hasTools ? "Yes" : "No"}`,
     resumeUrl ? `RESUME: ${resumeUrl}` : null,
-    publishProfile ? `PUBLIC WORKER PROFILE: /worker/${workerSlug}` : null,
+    publishProfile
+      ? mayWriteDraft
+        ? "WORKER DIRECTORY: Email verification requested; profile remains private until verified."
+        : "WORKER DIRECTORY: An existing profile was detected and was not modified."
+      : null,
     `APPLICATION NOTE: ${coverNote}`,
   ]
     .filter(Boolean)
@@ -238,9 +259,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       },
     });
 
-    let workerProfile: { id: string; slug: string } | null = null;
-    if (publishProfile) {
-      workerProfile = await tx.workerProfile.upsert({
+    let workerProfile: { id: string; slug: string; needsVerification: boolean } | null = null;
+    if (mayWriteDraft) {
+      const saved = await tx.workerProfile.upsert({
         where: { email },
         update: {
           fullName: name,
@@ -261,7 +282,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
           resumeUrl: resumeUrl || null,
           consentToContact: true,
           consentToPublic: true,
-          profileStatus: "PUBLISHED",
+          profileStatus: "DRAFT",
         },
         create: {
           slug: workerSlug,
@@ -284,24 +305,77 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
           resumeUrl: resumeUrl || null,
           consentToContact: true,
           consentToPublic: true,
-          profileStatus: "PUBLISHED",
+          profileStatus: "DRAFT",
         },
         select: { id: true, slug: true },
       });
 
-      await tx.workerSkill.deleteMany({ where: { profileId: workerProfile.id } });
+      await tx.workerSkill.deleteMany({ where: { profileId: saved.id } });
       await tx.workerSkill.createMany({
         data: parsedSkills.map((skill) => ({
-          profileId: workerProfile!.id,
+          profileId: saved.id,
           slug: skill.slug,
           name: skill.name,
           yearsExperience: yearsExperience == null ? null : Math.round(yearsExperience),
         })),
       });
+
+      workerProfile = { ...saved, needsVerification: true };
     }
 
     return { lead, workerProfile };
   });
+
+  let verificationSent = false;
+  if (result.workerProfile?.needsVerification) {
+    const token = createSignedToken(
+      {
+        purpose: "worker-profile-verification",
+        profileId: result.workerProfile.id,
+        email,
+      },
+      24 * 60 * 60
+    );
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://handymanpro.ca";
+    const verificationUrl = `${baseUrl}/api/public/workers/verify?token=${encodeURIComponent(token)}`;
+
+    try {
+      const delivery = await sendOutboundEmail({
+        to: email,
+        subject: "Verify your HandymanPro worker profile",
+        text: [
+          `Hello ${name},`,
+          "",
+          "You requested an opt-in public worker profile while applying for a trade job.",
+          `Public name: ${publicName}`,
+          `Headline: ${headline}`,
+          `Location: ${city}, ${province}`,
+          `Skills: ${parsedSkills.map((skill) => skill.name).join(", ")}`,
+          "",
+          "Verify and publish the profile using this 24-hour link:",
+          verificationUrl,
+          "",
+          "If you did not request this profile, ignore this email. Nothing will be published.",
+        ].join("\n"),
+        html: `
+          <p>Hello ${escapeHtml(name)},</p>
+          <p>You requested an opt-in public worker profile while applying for a trade job.</p>
+          <p><strong>Public name:</strong> ${escapeHtml(publicName)}<br>
+          <strong>Headline:</strong> ${escapeHtml(headline)}<br>
+          <strong>Location:</strong> ${escapeHtml(`${city}, ${province}`)}<br>
+          <strong>Skills:</strong> ${escapeHtml(parsedSkills.map((skill) => skill.name).join(", "))}</p>
+          <p><a href="${escapeHtml(verificationUrl)}">Verify and publish worker profile</a></p>
+          <p><small>This link expires in 24 hours. If you did not request this profile, ignore this email; nothing will be published.</small></p>
+        `,
+      });
+      verificationSent = delivery.sent;
+    } catch (error) {
+      console.error("Worker verification email failed", error);
+    }
+  }
+
+  const existingProfileUntouched =
+    publishProfile && existingWorker != null && existingWorker.profileStatus !== "DRAFT";
 
   return NextResponse.json(
     {
@@ -309,9 +383,23 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       applicationId: result.lead.id,
       createdAt: result.lead.createdAt,
       workerProfile: result.workerProfile
-        ? { slug: result.workerProfile.slug, published: true }
-        : null,
-      message: `Application sent privately to ${vacancy.profile.displayName}.`,
+        ? {
+            published: false,
+            verificationSent,
+          }
+        : existingProfileUntouched
+          ? {
+              published: existingWorker?.profileStatus === "PUBLISHED",
+              unchanged: true,
+            }
+          : null,
+      message: result.workerProfile
+        ? verificationSent
+          ? `Application sent privately to ${vacancy.profile.displayName}. Check your email to verify the worker profile.`
+          : `Application sent privately to ${vacancy.profile.displayName}. The worker profile remains draft because verification email delivery is unavailable.`
+        : existingProfileUntouched
+          ? `Application sent privately to ${vacancy.profile.displayName}. Your existing worker profile was not modified.`
+          : `Application sent privately to ${vacancy.profile.displayName}.`,
     },
     { status: 201 }
   );
