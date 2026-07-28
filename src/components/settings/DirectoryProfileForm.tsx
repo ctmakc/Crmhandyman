@@ -1,77 +1,94 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ExternalLink, Loader2, Save, Send } from "lucide-react";
-import { SERVICE_CATALOG } from "@/lib/marketplace";
+import { SERVICE_CATALOG } from "@/lib/marketplace-config";
 
-type ProfilePayload = {
-  tenant: { businessName: string; slug: string } | null;
-  profile: {
-    slug: string;
-    displayName: string;
-    headline: string | null;
-    description: string | null;
-    phone: string | null;
-    publicEmail: string | null;
-    website: string | null;
-    city: string;
-    province: string;
-    postalCode: string | null;
-    serviceRadiusKm: number;
-    yearsInBusiness: number | null;
-    emergencyService: boolean;
-    minimumJobValue: number | null;
-    languages: string;
-    profileStatus: string;
-    services: Array<{ slug: string }>;
-    serviceAreas: Array<{
-      city: string;
-      province: string;
-      postalPrefix: string | null;
-      radiusKm: number;
-    }>;
-  } | null;
+type ServiceArea = {
+  city: string;
+  province: string;
+  postalPrefix: string | null;
+  radiusKm: number;
 };
 
+type Profile = {
+  slug: string;
+  displayName: string;
+  headline: string | null;
+  description: string | null;
+  phone: string | null;
+  publicEmail: string | null;
+  website: string | null;
+  city: string;
+  province: string;
+  postalCode: string | null;
+  serviceRadiusKm: number;
+  yearsInBusiness: number | null;
+  emergencyService: boolean;
+  minimumJobValue: number | null;
+  languages: string;
+  profileStatus: string;
+  services: Array<{ slug: string }>;
+  serviceAreas: ServiceArea[];
+};
+
+type Payload = {
+  tenant: { businessName: string; slug: string } | null;
+  profile: Profile | null;
+};
+
+function serializeAreas(areas: ServiceArea[]) {
+  return areas
+    .map((area) => `${area.city} | ${area.province} | ${area.postalPrefix ?? ""} | ${area.radiusKm}`)
+    .join("\n");
+}
+
+function parseAreas(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [city = "", province = "", postalPrefix = "", radiusKm = ""] = line
+        .split("|")
+        .map((part) => part.trim());
+      return { city, province, postalPrefix, radiusKm };
+    });
+}
+
 export default function DirectoryProfileForm() {
-  const [data, setData] = useState<ProfilePayload | null>(null);
+  const [data, setData] = useState<Payload | null>(null);
   const [services, setServices] = useState<string[]>([]);
   const [areas, setAreas] = useState("");
-  const [state, setState] = useState<"loading" | "ready" | "saving" | "saved" | "error">(
-    "loading"
-  );
+  const [state, setState] = useState<"loading" | "ready" | "saving" | "saved" | "error">("loading");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch("/api/settings/profile")
       .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to load profile.");
-        return response.json();
+        if (!response.ok) throw new Error("Unable to load directory profile.");
+        return response.json() as Promise<Payload>;
       })
-      .then((payload: ProfilePayload) => {
+      .then((payload) => {
+        if (cancelled) return;
         setData(payload);
         setServices(payload.profile?.services.map((service) => service.slug) ?? []);
-        setAreas(
-          payload.profile?.serviceAreas
-            .map(
-              (area) =>
-                `${area.city} | ${area.province} | ${area.postalPrefix ?? ""} | ${area.radiusKm}`
-            )
-            .join("\n") ?? ""
-        );
+        setAreas(serializeAreas(payload.profile?.serviceAreas ?? []));
         setState("ready");
       })
       .catch((error) => {
-        setMessage(error instanceof Error ? error.message : "Unable to load profile.");
+        if (cancelled) return;
+        setMessage(error instanceof Error ? error.message : "Unable to load directory profile.");
         setState("error");
       });
-  }, []);
 
-  const publicUrl = useMemo(
-    () => (data?.profile?.slug ? `/pro/${data.profile.slug}` : null),
-    [data]
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function toggleService(slug: string) {
     setServices((current) =>
@@ -86,38 +103,16 @@ export default function DirectoryProfileForm() {
     setState("saving");
     setMessage("");
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const profileStatus = submitter?.value === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
-    const serviceAreas = areas
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [city, province, postalPrefix, radiusKm] = line
-          .split("|")
-          .map((part) => part.trim());
-        return { city, province, postalPrefix, radiusKm };
-      });
 
     const payload = {
-      displayName: form.get("displayName"),
-      slug: form.get("slug"),
-      headline: form.get("headline"),
-      description: form.get("description"),
-      phone: form.get("phone"),
-      publicEmail: form.get("publicEmail"),
-      website: form.get("website"),
-      city: form.get("city"),
-      province: form.get("province"),
-      postalCode: form.get("postalCode"),
-      serviceRadiusKm: form.get("serviceRadiusKm"),
-      yearsInBusiness: form.get("yearsInBusiness"),
-      minimumJobValue: form.get("minimumJobValue"),
-      languages: form.get("languages"),
+      ...Object.fromEntries(form.entries()),
       emergencyService: form.get("emergencyService") === "on",
       serviceSlugs: services,
-      serviceAreas,
+      serviceAreas: parseAreas(areas),
       profileStatus,
     };
 
@@ -128,21 +123,22 @@ export default function DirectoryProfileForm() {
         body: JSON.stringify(payload),
       });
       const result = await response.json();
-
       if (!response.ok) {
         const details = Array.isArray(result.details) ? result.details.join(" ") : result.error;
-        throw new Error(details || "Unable to save profile.");
+        throw new Error(details || "Unable to save directory profile.");
       }
 
       setData((current) =>
-        current ? { ...current, profile: result.profile } : { tenant: null, profile: result.profile }
+        current ? { ...current, profile: result.profile as Profile } : { tenant: null, profile: result.profile as Profile }
       );
-      setMessage(profileStatus === "PUBLISHED" ? "Profile published." : "Draft saved.");
+      setServices((result.profile as Profile).services.map((service) => service.slug));
+      setAreas(serializeAreas((result.profile as Profile).serviceAreas));
       setState("saved");
+      setMessage(profileStatus === "PUBLISHED" ? "Profile published." : "Draft saved.");
       window.setTimeout(() => setState("ready"), 1800);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to save profile.");
       setState("error");
+      setMessage(error instanceof Error ? error.message : "Unable to save directory profile.");
     }
   }
 
@@ -173,13 +169,11 @@ export default function DirectoryProfileForm() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-black">Public identity</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              This data appears on the public contractor page.
-            </p>
+            <p className="mt-1 text-sm text-slate-500">Controls the indexed contractor profile.</p>
           </div>
-          {publicUrl && profile?.profileStatus === "PUBLISHED" && (
+          {profile?.profileStatus === "PUBLISHED" && (
             <Link
-              href={publicUrl}
+              href={`/pro/${profile.slug}`}
               target="_blank"
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
             >
@@ -187,7 +181,6 @@ export default function DirectoryProfileForm() {
             </Link>
           )}
         </div>
-
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <label>
             <span className="text-sm font-bold">Business name</span>
@@ -209,32 +202,18 @@ export default function DirectoryProfileForm() {
           </label>
           <label className="sm:col-span-2">
             <span className="text-sm font-bold">Headline</span>
-            <input
-              name="headline"
-              maxLength={180}
-              defaultValue={profile?.headline ?? ""}
-              className={inputClass}
-              placeholder="Reliable repairs and renovations across Ottawa West"
-            />
+            <input name="headline" maxLength={180} defaultValue={profile?.headline ?? ""} className={inputClass} />
           </label>
           <label className="sm:col-span-2">
             <span className="text-sm font-bold">Description</span>
-            <textarea
-              name="description"
-              rows={7}
-              maxLength={5000}
-              defaultValue={profile?.description ?? ""}
-              className={inputClass}
-            />
+            <textarea name="description" rows={7} maxLength={5000} defaultValue={profile?.description ?? ""} className={inputClass} />
           </label>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-black">Services</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          The first selected service becomes the primary category.
-        </p>
+        <p className="mt-1 text-sm text-slate-500">At least one service is required to publish.</p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {SERVICE_CATALOG.map((service) => {
             const selected = services.includes(service.slug);
@@ -242,9 +221,7 @@ export default function DirectoryProfileForm() {
               <label
                 key={service.slug}
                 className={`cursor-pointer rounded-xl border p-4 ${
-                  selected
-                    ? "border-orange-400 bg-orange-50"
-                    : "border-slate-200 bg-white hover:border-slate-300"
+                  selected ? "border-orange-400 bg-orange-50" : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <input
@@ -262,7 +239,7 @@ export default function DirectoryProfileForm() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black">Primary location and coverage</h2>
+        <h2 className="text-lg font-black">Location and coverage</h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
           <label>
             <span className="text-sm font-bold">City</span>
@@ -270,53 +247,23 @@ export default function DirectoryProfileForm() {
           </label>
           <label>
             <span className="text-sm font-bold">Province</span>
-            <input
-              name="province"
-              required
-              defaultValue={profile?.province ?? ""}
-              className={inputClass}
-            />
+            <input name="province" required defaultValue={profile?.province ?? ""} className={inputClass} />
           </label>
           <label>
             <span className="text-sm font-bold">Postal code</span>
-            <input
-              name="postalCode"
-              defaultValue={profile?.postalCode ?? ""}
-              className={inputClass}
-            />
+            <input name="postalCode" defaultValue={profile?.postalCode ?? ""} className={inputClass} />
           </label>
           <label>
             <span className="text-sm font-bold">Default radius, km</span>
-            <input
-              name="serviceRadiusKm"
-              type="number"
-              min="1"
-              max="500"
-              defaultValue={profile?.serviceRadiusKm ?? 30}
-              className={inputClass}
-            />
+            <input name="serviceRadiusKm" type="number" min="1" max="500" defaultValue={profile?.serviceRadiusKm ?? 30} className={inputClass} />
           </label>
           <label>
             <span className="text-sm font-bold">Years in business</span>
-            <input
-              name="yearsInBusiness"
-              type="number"
-              min="0"
-              max="150"
-              defaultValue={profile?.yearsInBusiness ?? ""}
-              className={inputClass}
-            />
+            <input name="yearsInBusiness" type="number" min="0" max="150" defaultValue={profile?.yearsInBusiness ?? ""} className={inputClass} />
           </label>
           <label>
-            <span className="text-sm font-bold">Minimum job value, CAD</span>
-            <input
-              name="minimumJobValue"
-              type="number"
-              min="0"
-              step="50"
-              defaultValue={profile?.minimumJobValue ?? ""}
-              className={inputClass}
-            />
+            <span className="text-sm font-bold">Minimum job, CAD</span>
+            <input name="minimumJobValue" type="number" min="0" step="50" defaultValue={profile?.minimumJobValue ?? ""} className={inputClass} />
           </label>
           <label className="sm:col-span-3">
             <span className="text-sm font-bold">Additional service areas</span>
@@ -327,15 +274,13 @@ export default function DirectoryProfileForm() {
               className={inputClass}
               placeholder={"Kanata | Ontario | K2K | 25\nNepean | Ontario | K2G | 20"}
             />
-            <span className="mt-1 block text-xs text-slate-500">
-              One area per line: City | Province | Postal prefix | Radius km
-            </span>
+            <span className="mt-1 block text-xs text-slate-500">City | Province | Postal prefix | Radius km</span>
           </label>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black">Public contact and operating details</h2>
+        <h2 className="text-lg font-black">Public contact</h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <label>
             <span className="text-sm font-bold">Phone</span>
@@ -343,12 +288,7 @@ export default function DirectoryProfileForm() {
           </label>
           <label>
             <span className="text-sm font-bold">Public email</span>
-            <input
-              name="publicEmail"
-              type="email"
-              defaultValue={profile?.publicEmail ?? ""}
-              className={inputClass}
-            />
+            <input name="publicEmail" type="email" defaultValue={profile?.publicEmail ?? ""} className={inputClass} />
           </label>
           <label>
             <span className="text-sm font-bold">Website</span>
@@ -356,20 +296,11 @@ export default function DirectoryProfileForm() {
           </label>
           <label>
             <span className="text-sm font-bold">Languages</span>
-            <input
-              name="languages"
-              defaultValue={profile?.languages ?? "English"}
-              className={inputClass}
-            />
+            <input name="languages" defaultValue={profile?.languages ?? "English"} className={inputClass} />
           </label>
           <label className="flex items-center gap-3 rounded-xl bg-slate-50 p-4 sm:col-span-2">
-            <input
-              name="emergencyService"
-              type="checkbox"
-              defaultChecked={profile?.emergencyService ?? false}
-              className="h-4 w-4"
-            />
-            <span className="text-sm font-bold">Accept emergency project requests</span>
+            <input name="emergencyService" type="checkbox" defaultChecked={profile?.emergencyService ?? false} className="h-4 w-4" />
+            <span className="text-sm font-bold">Accept emergency requests</span>
           </label>
         </div>
       </section>
@@ -403,11 +334,7 @@ export default function DirectoryProfileForm() {
           disabled={state === "saving"}
           className="inline-flex items-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-black text-white hover:bg-orange-600 disabled:opacity-60"
         >
-          {state === "saving" ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="mr-2 h-4 w-4" />
-          )}
+          {state === "saving" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
           Publish profile
         </button>
       </div>
