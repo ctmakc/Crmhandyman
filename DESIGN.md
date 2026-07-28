@@ -110,15 +110,34 @@ Every lead, job, task, estimate and invoice renders as the same primitive:
 The notch is a 10px semicircle cut from the bottom edge in `--deck`. It is what makes the
 plate read as a torn ticket instead of a card. It appears on every ticket, nowhere else.
 
-Second device: **the day rail** on the dashboard — a ruled horizontal day scale where today's
-jobs sit as stubs, so the first thing the dispatcher sees is the shape of the day.
+Second device: **the week board as a measuring rule.** The board is edged with tick marks —
+five per day column, a taller amber tick at today's boundary — because the thing is an
+instrument for measuring a week. Today's column is lit from the top by an amber gradient
+(`rgb(255 176 32 / .16)` → transparent at 62%): the accent behaves as a **light source**,
+not as paint, and today's numeral steps up to 28px/700 while the rest sit at 22px/500.
 
 Third device: **the tear-off stub** — an estimate document ends in a perforated edge; issuing
 an invoice from it tears the stub (the perforation animates apart, 260ms).
 
+## Material
+
+The deck is a **shop drawing sheet**, not blank grey: a 44px square grid in `--grid`
+(`#E3E9F0`, weaker than `--line` — it is ground, not structure) on the scrolling surface.
+A contractor reads drawings all day; the ground says so. It must stay felt rather than
+seen — if it competes with type it is too strong.
+
+The navy rail carries a **machined edge**: hairline ticks down its right side at 30%
+opacity, the way a gauge bezel is knurled. Material only — it carries no data and never
+moves.
+
 ## Motion
 
 Instrument-functional. `--ease: cubic-bezier(.32,.72,0,1)`, `--t-fast: 140ms`, `--t: 180ms`.
+
+**The arming sequence** — the one orchestrated moment. On entering Dispatch the desk boots
+like an instrument: the seven day columns tick in left→right (260ms each, 45ms stagger),
+then the rail readouts settle top→bottom (220ms, 60ms stagger, starting at 340ms). Once per
+page entrance, never on scroll, never re-triggered. `prefers-reduced-motion` collapses it.
 
 - Signature: **ticket snap** — a status change slides the spine colour and the plate snaps
   `translateX(8px) → 0` over 160ms.
@@ -134,6 +153,8 @@ Instrument-functional. `--ease: cubic-bezier(.32,.72,0,1)`, `--t-fast: 140ms`, `
 - No pastel `bg-*-100 text-*-700` pill soup — status is a spine and a mono label.
 - No purple→blue gradient, no glass, no neon.
 - Numbers are mono and tabular everywhere; money never sits in a proportional face.
+- Money is a **gauge readout**: the currency symbol is a unit mark at 62% size and 45%
+  opacity so the digits carry the weight, the way a dial reads `12.4` and prints `PSI` small.
 
 ## Screenshot-critique log (design-engine loop)
 
@@ -178,3 +199,25 @@ What changed:
 
 Two loop cycles. Cycle 1 caught the rail header collapsing into three lines and overflowing
 its 300px column; cycle 2 confirmed desktop and phone. Contrast sweep: zero failures.
+
+### Revision 2, 2026-07-28 — "make it more interesting"
+
+The row revision fixed the boxes and left the deck austere: correct, quiet, and without a
+face. Stripping the frames had also stripped the signature — the punched notch retreated to
+documents, so most screens carried no device at all. This pass gives the character back
+without giving the rectangles back.
+
+1. **Material** — the drawing grid on the deck. First attempt was invisible: the app shell
+   paints its own opaque `bg-deck` over anything set on `<body>`, so the grid had to move to
+   the scrolling `<main>`. Then it was too strong at `#DEE5ED` and competed with the rows;
+   softened to `#E3E9F0`.
+2. **The week board became a measuring rule** — tick-edged, today lit from above by amber
+   and stepped up in size. This is now the page's dominant device, and it belongs to the
+   subject rather than to a design trend.
+3. **Gauge readouts** — the currency symbol recedes so the digits read as an instrument.
+4. **The arming sequence** — verified from a frame burst at 90/180/300/460/700ms: at 180ms
+   the board is in and the rail is still empty; at 700ms the readouts are visibly mid-settle.
+   The orchestration the direction always claimed but never had.
+
+Budget respected: one signature effect (the rule + arming), three structural (grid, gauge
+numerals, machined rail edge), micro-interactions unchanged. Contrast: zero failures.

@@ -121,6 +121,35 @@ export function Status({ value, tone }: { value: string; tone?: string }) {
   );
 }
 
+/**
+ * A gauge readout. The currency symbol is a unit mark — it recedes so the digits
+ * carry the weight, the way a dial reads "12.4" and prints "PSI" small.
+ */
+export function Readout({
+  value,
+  size = 30,
+  tone,
+  className,
+}: {
+  value: string;
+  size?: number;
+  tone?: string;
+  className?: string;
+}) {
+  const m = value.match(/^([^\d\-]*)(.*)$/);
+  const unit = m?.[1] ?? "";
+  const digits = m?.[2] ?? value;
+  return (
+    <span
+      className={cn("mono font-bold leading-none", className)}
+      style={{ color: tone || "var(--ink)", fontSize: size, letterSpacing: "-0.03em" }}
+    >
+      {unit && <span style={{ opacity: 0.45, fontSize: size * 0.62 }}>{unit}</span>}
+      {digits}
+    </span>
+  );
+}
+
 /** Money is always Chivo Mono, tabular, right-aligned. */
 export function Money({
   value,

@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar user={session.user} />
         <DemoBanner />
-        <main className="flex-1 overflow-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="deck-grid flex-1 overflow-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
       <QuickJump />
       <Toaster />

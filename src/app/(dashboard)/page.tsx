@@ -10,6 +10,7 @@ import {
   Row,
   WoNumber,
   Empty,
+  Readout,
   textToneFor,
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
@@ -255,8 +256,13 @@ export default async function DashboardPage() {
         {/* The money rail: narrow, dense, quiet. Read after the board, not before. */}
         <aside className="space-y-10 lg:border-l lg:border-line lg:pl-8">
           <div className="space-y-6">
-            {readouts.map((r) => (
-              <Link key={r.label} href={r.href} className="group block">
+            {readouts.map((r, i) => (
+              <Link
+                key={r.label}
+                href={r.href}
+                className="arm-readout group block"
+                style={{ ["--i" as string]: i } as React.CSSProperties}
+              >
                 <div className="flex items-center gap-2">
                   {"lamp" in r && r.lamp && (
                     <span
@@ -266,12 +272,7 @@ export default async function DashboardPage() {
                   )}
                   <span className="eyebrow group-hover:text-ink">{r.label}</span>
                 </div>
-                <div
-                  className="mono mt-1.5 text-[30px] font-bold leading-none tracking-tight"
-                  style={{ color: r.tone || "var(--ink)" }}
-                >
-                  {r.value}
-                </div>
+                <Readout value={r.value} tone={r.tone} className="mt-1.5 block" />
               </Link>
             ))}
           </div>

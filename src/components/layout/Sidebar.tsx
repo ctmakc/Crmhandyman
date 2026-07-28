@@ -38,7 +38,17 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop rail — navy chrome against the cool work deck. */}
-      <aside className="hidden w-[228px] shrink-0 flex-col bg-navy-900 md:flex">
+      <aside className="relative hidden w-[228px] shrink-0 flex-col bg-navy-900 md:flex">
+        {/* A machined edge: hairline ticks down the rail, the way a gauge bezel is
+            knurled. Purely material — it carries no data and never moves. */}
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-[3px] opacity-30"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(to bottom, var(--rail-ink) 0 1px, transparent 1px 7px)",
+          }}
+          aria-hidden
+        />
         <div className="border-b border-navy-700 px-5 py-5">
           <span className="text-[19px] font-black leading-none tracking-tight text-plate">
             HANDYMAN<span className="text-amber">PRO</span>

@@ -51,10 +51,20 @@ export default function DayRail({
         </span>
       </div>
 
-      {/* Seven columns is a desk view. On a phone the same data becomes a list
-          of the days that actually have work on them. */}
-      <div className="hidden grid-cols-7 border-y border-line md:grid">
-        {days.map((day) => {
+      {/* The board is edged like a measuring rule — ticks per day, a taller one
+          on today. This is the device the product is named for. */}
+      <div className="relative hidden border-y border-line md:block">
+        <div className="ruleband absolute inset-x-0 top-0" aria-hidden />
+        <div
+          className="absolute top-0 h-[9px] w-[2px]"
+          style={{
+            left: `calc(${days.findIndex((d) => d.toDateString() === todayKey)} * 100% / 7)`,
+            background: "var(--amber)",
+          }}
+          aria-hidden
+        />
+        <div className="grid grid-cols-7">
+        {days.map((day, i) => {
           const isToday = day.toDateString() === todayKey;
           const dayJobs = jobs.filter(
             (j) => j.date && new Date(j.date).toDateString() === day.toDateString()
@@ -62,8 +72,10 @@ export default function DayRail({
           return (
             <div
               key={day.toISOString()}
-              className="min-h-[188px] border-r border-line px-2.5 pb-3 pt-3 last:border-r-0"
-              style={{ background: isToday ? "var(--sunk)" : undefined }}
+              className={`arm-col min-h-[188px] border-r border-line px-2.5 pb-3 pt-4 last:border-r-0 ${
+                isToday ? "today-glow" : ""
+              }`}
+              style={{ ["--i" as string]: i } as React.CSSProperties}
             >
               {/* The date is the biggest thing in the cell — the week has to read
                   as a calendar at a glance, not as seven equal boxes. */}
@@ -75,8 +87,13 @@ export default function DayRail({
                   {day.toLocaleDateString("en-CA", { weekday: "short" })}
                 </span>
                 <span
-                  className="mono text-[22px] font-bold leading-none"
-                  style={{ color: isToday ? "var(--amber-ink)" : "var(--ink-3)" }}
+                  className="mono leading-none"
+                  style={{
+                    color: isToday ? "var(--amber-ink)" : "var(--ink-3)",
+                    fontSize: isToday ? "28px" : "22px",
+                    fontWeight: isToday ? 700 : 500,
+                    letterSpacing: "-0.02em",
+                  }}
                 >
                   {String(day.getDate()).padStart(2, "0")}
                 </span>
@@ -114,6 +131,7 @@ export default function DayRail({
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* Phone: only the days with work, stacked. */}

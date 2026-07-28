@@ -17,6 +17,8 @@
   --sunk: #e1e7ee;
   --plate: #fbfcfd;
   --line: #d3dbe4;
+  /* The drawing grid. Deliberately weaker than --line: it is ground, not structure. */
+  --grid: #e3e9f0;
 
   --ink: #131a26;
   --ink-2: #45536c;
@@ -51,6 +53,20 @@ body {
   background: var(--deck);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------
+   MATERIAL — the deck is a shop drawing sheet, not blank grey.
+   A contractor reads drawings all day; the ground says so. Applied to the
+   scrolling surface rather than <body>, because the app shell paints its own
+   opaque deck colour over anything on the body.
+   -------------------------------------------------------------------------- */
+.deck-grid {
+  background-color: var(--deck);
+  background-image:
+    repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(to bottom, var(--grid) 0 1px, transparent 1px 44px);
+  background-position: -1px -1px;
 }
 
 /* Every number in this product is a mono tabular readout. */
@@ -163,6 +179,67 @@ a.ticket:hover,
   border-right-color: var(--ink-3);
   border-bottom-color: var(--ink-3);
   transform: translateY(-1px);
+}
+
+/* --------------------------------------------------------------------------
+   THE ARMING SEQUENCE — the one orchestrated moment.
+   The desk boots like an instrument: the week ticks in left to right, then the
+   readouts settle. Once per load, never on scroll, never re-triggered.
+   -------------------------------------------------------------------------- */
+@keyframes arm-column {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes arm-readout {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.arm-col {
+  animation: arm-column 260ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+.arm-readout {
+  animation: arm-readout 220ms var(--ease) both;
+  animation-delay: calc(340ms + var(--i, 0) * 60ms);
+}
+
+/* THE RULE — tick marks along the top edge of the week board. The board is a
+   measuring instrument, so it is edged like one. */
+.ruleband {
+  height: 9px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--ink-3) 0 1px,
+    transparent 1px calc(100% / 5)
+  );
+  background-size: calc(100% / 7) 4px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  opacity: 0.45;
+}
+
+/* Amber is a light source here, not paint: today glows from the top edge down. */
+.today-glow {
+  background-image: linear-gradient(
+    to bottom,
+    rgb(255 176 32 / 0.16),
+    rgb(255 176 32 / 0) 62%
+  );
 }
 
 /* Signature motion: a record that just changed state snaps into place. */
