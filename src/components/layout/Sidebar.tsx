@@ -4,17 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
-  Users,
   Briefcase,
   CheckSquare,
   DollarSign,
+  Globe2,
+  LayoutDashboard,
   Settings,
+  Users,
   Wrench,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/projects", label: "Projects", icon: Briefcase },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
@@ -27,28 +28,27 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 bg-gray-900 text-white flex-col">
-        <div className="p-5 border-b border-gray-700">
+      <aside className="hidden w-60 flex-col bg-gray-900 text-white md:flex">
+        <div className="border-b border-gray-700 p-5">
           <div className="flex items-center gap-2">
-            <Wrench className="h-6 w-6 text-blue-400" />
-            <span className="font-bold text-lg">HandymanPro</span>
+            <Wrench className="h-6 w-6 text-orange-400" />
+            <span className="text-lg font-bold">HandymanPro</span>
           </div>
-          <p className="text-xs text-gray-400 mt-1">CRM System</p>
+          <p className="mt-1 text-xs text-gray-400">CRM + Contractor Network</p>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 space-y-1 p-3">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-blue-600 text-white"
+                    ? "bg-orange-600 text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 )}
               >
@@ -58,20 +58,29 @@ export default function Sidebar() {
             );
           })}
         </nav>
+
+        <div className="border-t border-gray-800 p-3">
+          <Link
+            href="/directory"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-300 hover:bg-gray-800 hover:text-white"
+          >
+            <Globe2 className="h-5 w-5 text-orange-400" />
+            Public network
+          </Link>
+        </div>
       </aside>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 text-white z-50 flex border-t border-gray-700">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-gray-700 bg-gray-900 text-white md:hidden">
         {navItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
-          const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex-1 flex flex-col items-center py-2 gap-0.5 text-xs transition-colors",
-                isActive ? "text-blue-400" : "text-gray-400"
+                "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs transition-colors",
+                isActive ? "text-orange-400" : "text-gray-400"
               )}
             >
               <Icon className="h-5 w-5" />
