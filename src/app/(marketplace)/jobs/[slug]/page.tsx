@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BadgeCheck, BriefcaseBusiness, CalendarDays, MapPin } from "lucide-react";
-import { formatCompensation, getPublicVacancy, titleFromSlug } from "@/lib/marketplace";
+import { formatCompensation, getPublicVacancy } from "@/lib/marketplace";
+import { titleFromSlug } from "@/lib/marketplace-config";
 
 type Params = { slug: string };
 
@@ -76,8 +77,8 @@ export default async function JobPage({ params }: { params: Params }) {
             currency: "CAD",
             value: {
               "@type": "QuantitativeValue",
-              minValue: vacancy.compensationMin || undefined,
-              maxValue: vacancy.compensationMax || undefined,
+              minValue: vacancy.compensationMin ?? undefined,
+              maxValue: vacancy.compensationMax ?? undefined,
               unitText: vacancy.compensationUnit,
             },
           }
