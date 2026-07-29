@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { SERVICE_CATALOG, slugify } from "@/lib/marketplace";
-
-const requestLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_REQUESTS = 5;
+import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 
 const allowedUrgencies = new Set([
   "EMERGENCY",
@@ -23,30 +20,11 @@ function readOptionalNumber(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const recent = (requestLog.get(ip) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_REQUESTS) {
-    requestLog.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  requestLog.set(ip, recent);
-  return false;
-}
-
 export async function POST(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
-
-  if (isRateLimited(ip)) {
-    return NextResponse.json(
-      { error: "Too many project requests. Please try again later." },
-      { status: 429 }
-    );
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -93,6 +71,40 @@ export async function POST(req: NextRequest) {
 
   if (errors.length > 0) {
     return NextResponse.json({ error: "Validation failed.", details: errors }, { status: 422 });
+  }
+
+  try {
+    const ipLimit = await consumeRateLimit({
+      scope: "project-request-ip",
+      identifier: ip,
+      limit: 5,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many project requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(ipLimit) }
+      );
+    }
+
+    const emailLimit = await consumeRateLimit({
+      scope: "project-request-email",
+      identifier: customerEmail,
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!emailLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many project requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(emailLimit) }
+      );
+    }
+  } catch (error) {
+    console.error("Project request rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Request protection is temporarily unavailable." },
+      { status: 503 }
+    );
   }
 
   const slugBase = slugify(`${title}-${city}`) || "project";
