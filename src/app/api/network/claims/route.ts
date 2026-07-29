@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
+
+function sqliteTriggerMessage(error: unknown) {
+  if (!error || typeof error !== "object") return "";
+  const candidate = error as {
+    meta?: { driverAdapterError?: { cause?: { originalMessage?: string } } };
+  };
+  return candidate.meta?.driverAdapterError?.cause?.originalMessage ?? "";
+}
 
 export async function POST(req: NextRequest) {
   const user = await getAppSessionUser();
@@ -38,23 +47,60 @@ export async function POST(req: NextRequest) {
       const existing = listing.claims.find((item) => item.tenantId === user.tenantId);
       if (existing) throw new Error("DUPLICATE");
 
-      const activeClaims = listing.claims.filter((item) => item.status !== "REJECTED").length;
+      const activeClaims = listing.claims.filter((item) =>
+        ["REQUESTED", "APPROVED", "CONTACT_UNLOCKED", "WON", "LOST"].includes(item.status)
+      ).length;
       if (listing.exclusive && activeClaims > 0) throw new Error("FULL");
       if (activeClaims >= listing.maxClaims) throw new Error("FULL");
 
-      return tx.leadClaim.create({
+      const created = await tx.leadClaim.create({
         data: {
           listingId,
           tenantId: user.tenantId,
           status: "REQUESTED",
         },
       });
+
+      await recordAuditEvent(
+        {
+          actor: { type: "USER", id: user.id, email: user.email },
+          tenantId: user.tenantId,
+          action: "LEAD_CLAIM_REQUESTED",
+          targetType: "LEAD_CLAIM",
+          targetId: created.id,
+          metadata: {
+            listingId,
+            ownerTenantId: listing.tenantId,
+            exclusive: listing.exclusive,
+            maxClaims: listing.maxClaims,
+            activeClaimsBefore: activeClaims,
+          },
+          ipAddress: requestIp(req.headers),
+        },
+        tx
+      );
+
+      return created;
     });
 
     return NextResponse.json({ claim }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json({ error: "You already requested this lead." }, { status: 409 });
+    }
+
+    const triggerMessage = sqliteTriggerMessage(error);
+    if (triggerMessage.includes("cannot claim its own")) {
+      return NextResponse.json({ error: "You cannot claim your own lead." }, { status: 409 });
+    }
+    if (triggerMessage.includes("not open")) {
+      return NextResponse.json({ error: "This lead is no longer open." }, { status: 409 });
+    }
+    if (triggerMessage.includes("expired")) {
+      return NextResponse.json({ error: "This lead has expired." }, { status: 409 });
+    }
+    if (triggerMessage.includes("claim limit") || triggerMessage.includes("already has a claim")) {
+      return NextResponse.json({ error: "This listing has reached its claim limit." }, { status: 409 });
     }
 
     const code = error instanceof Error ? error.message : "";
@@ -67,6 +113,7 @@ export async function POST(req: NextRequest) {
       FULL: ["This listing has reached its claim limit.", 409],
     };
     const [message, status] = responses[code] ?? ["Unable to request lead.", 500];
+    if (status === 500) console.error("Lead claim request failed", error);
     return NextResponse.json({ error: message }, { status });
   }
 }
