@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { adjustCredits } from "@/lib/credit-adjustments";
 import { InsufficientCreditsError } from "@/lib/credits";
 import { prisma } from "@/lib/prisma";
@@ -90,8 +91,8 @@ export async function POST(req: NextRequest) {
   if (!tenant) return NextResponse.json({ error: "Tenant not found." }, { status: 404 });
 
   try {
-    const result = await prisma.$transaction((tx) =>
-      adjustCredits(tx, {
+    const result = await prisma.$transaction(async (tx) => {
+      const adjustment = await adjustCredits(tx, {
         tenantId: tenant.id,
         amount,
         type: type as "CREDIT_PURCHASE" | "ADJUSTMENT",
@@ -99,8 +100,32 @@ export async function POST(req: NextRequest) {
         description,
         referenceType: type === "CREDIT_PURCHASE" ? "PAYMENT" : "ADMIN",
         referenceId,
-      })
-    );
+      });
+
+      if (!adjustment.replayed) {
+        await recordAuditEvent(
+          {
+            actor: { type: "USER", id: admin.id, email: admin.email },
+            tenantId: tenant.id,
+            action: type === "CREDIT_PURCHASE" ? "ADMIN_CREDIT_PURCHASE" : "ADMIN_CREDIT_ADJUSTMENT",
+            targetType: "CREDIT_WALLET",
+            targetId: adjustment.wallet.id,
+            metadata: {
+              amount,
+              description,
+              idempotencyKey,
+              referenceId,
+              transactionId: adjustment.transaction.id,
+              balanceAfter: adjustment.wallet.balance,
+            },
+            ipAddress: requestIp(req.headers),
+          },
+          tx
+        );
+      }
+
+      return adjustment;
+    });
 
     return NextResponse.json({
       tenant: { id: tenant.id, businessName: tenant.businessName },
