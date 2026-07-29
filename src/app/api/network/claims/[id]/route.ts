@@ -1,12 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { InsufficientCreditsError, debitCredits, refundCredits } from "@/lib/credits";
+import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
 
 const OWNER_ACTIONS = new Set(["APPROVE", "REJECT", "REFUND"]);
 const CLAIMANT_ACTIONS = new Set(["UNLOCK", "WON", "LOST"]);
 const ACTIVE_CLAIM_STATUSES = ["APPROVED", "CONTACT_UNLOCKED", "WON", "LOST"] as const;
+
+function actionMessage(input: {
+  action: string;
+  listingTitle: string;
+  ownerBusinessName: string;
+  claimantBusinessName: string;
+  credits: number;
+  city: string;
+  province: string;
+}) {
+  const location = `${input.city}, ${input.province}`;
+  const messages: Record<string, { subject: string; text: string }> = {
+    APPROVE: {
+      subject: `Claim approved: ${input.listingTitle}`,
+      text: `${input.ownerBusinessName} approved your request. You can now unlock the customer contact for ${input.credits} credits.`,
+    },
+    REJECT: {
+      subject: `Claim declined: ${input.listingTitle}`,
+      text: `${input.ownerBusinessName} declined your request for this lead listing.`,
+    },
+    UNLOCK: {
+      subject: `Lead contact unlocked: ${input.listingTitle}`,
+      text: `${input.claimantBusinessName} unlocked the customer contact for ${input.credits} credits.`,
+    },
+    WON: {
+      subject: `Lead marked won: ${input.listingTitle}`,
+      text: `${input.claimantBusinessName} marked this lead as won.`,
+    },
+    LOST: {
+      subject: `Lead marked lost: ${input.listingTitle}`,
+      text: `${input.claimantBusinessName} marked this lead as lost.`,
+    },
+    REFUND: {
+      subject: `Lead credits refunded: ${input.listingTitle}`,
+      text: `${input.ownerBusinessName} refunded ${input.credits} credits for this lead claim.`,
+    },
+  };
+  const selected = messages[input.action];
+  return selected ? { ...selected, location } : null;
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAppSessionUser();
@@ -31,8 +72,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const claim = await tx.leadClaim.findUnique({
         where: { id: params.id },
         include: {
+          claimedBy: {
+            select: { id: true, businessName: true, ownerEmail: true },
+          },
           listing: {
             include: {
+              tenant: {
+                select: { id: true, businessName: true, ownerEmail: true },
+              },
               lead: {
                 select: {
                   name: true,
@@ -60,6 +107,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       let walletBalance: number | null = null;
       let creditTransactionId: string | null = null;
       let creditReplayed = false;
+      const creditsBefore = claim.creditsPaid;
 
       if (action === "APPROVE") {
         if (claim.status !== "REQUESTED") throw new Error("APPROVE_STATE");
@@ -193,15 +241,59 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const contactVisible = ["CONTACT_UNLOCKED", "WON", "LOST", "REFUNDED"].includes(
         updated.status
       );
+      const notifyClaimant = ["APPROVE", "REJECT", "REFUND"].includes(action);
 
       return {
         claim: updated,
         contact: contactVisible ? claim.listing.lead : null,
         walletBalance,
+        notification: {
+          to: notifyClaimant ? claim.claimedBy.ownerEmail : claim.listing.tenant.ownerEmail,
+          ownerBusinessName: claim.listing.tenant.businessName,
+          claimantBusinessName: claim.claimedBy.businessName,
+          listingTitle: claim.listing.title,
+          city: claim.listing.city,
+          province: claim.listing.province,
+          credits:
+            action === "REFUND"
+              ? creditsBefore
+              : claim.listing.contactUnlockPriceCredits,
+        },
       };
     });
 
-    return NextResponse.json(result);
+    const notification = actionMessage({ action, ...result.notification });
+    if (notification) {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://handymanpro.ca";
+      try {
+        await sendOutboundEmail({
+          to: result.notification.to,
+          subject: notification.subject,
+          idempotencyKey: `lead-claim-action:${result.claim.id}:${action}`,
+          text: [
+            notification.text,
+            `Lead: ${result.notification.listingTitle}`,
+            `Location: ${notification.location}`,
+            "",
+            `Open the lead network: ${baseUrl}/network`,
+          ].join("\n"),
+          html: `
+            <p>${escapeHtml(notification.text)}</p>
+            <p><strong>Lead:</strong> ${escapeHtml(result.notification.listingTitle)}<br>
+            <strong>Location:</strong> ${escapeHtml(notification.location)}</p>
+            <p><a href="${escapeHtml(`${baseUrl}/network`)}">Open the lead network</a></p>
+          `,
+        });
+      } catch (emailError) {
+        console.error("Lead claim action notification failed", emailError);
+      }
+    }
+
+    return NextResponse.json({
+      claim: result.claim,
+      contact: result.contact,
+      walletBalance: result.walletBalance,
+    });
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
       return NextResponse.json(
