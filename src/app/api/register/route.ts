@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { getCreditWalletSnapshot } from "@/lib/credits";
 import { seedDemoData } from "@/lib/demo-seed";
 import { slugify } from "@/lib/marketplace-config";
-
-const signupLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_SIGNUPS_PER_HOUR = 3;
-
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const recent = (signupLog.get(ip) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_SIGNUPS_PER_HOUR) {
-    signupLog.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  signupLog.set(ip, recent);
-  return false;
-}
+import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 
 async function uniqueSlug(base: string) {
   const normalized = slugify(base).slice(0, 40) || "contractor";
@@ -38,10 +24,25 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-real-ip") ||
     "unknown";
 
-  if (rateLimited(ip)) {
+  let rateLimit;
+  try {
+    rateLimit = await consumeRateLimit({
+      scope: "tenant-registration",
+      identifier: ip,
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    });
+  } catch (error) {
+    console.error("Registration rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Registration protection is temporarily unavailable." },
+      { status: 503 }
+    );
+  }
+  if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many registration attempts. Please try again later." },
-      { status: 429 }
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
     );
   }
 
@@ -56,8 +57,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true }, { status: 202 });
   }
 
-  const businessName = typeof body.businessName === "string" ? body.businessName.trim().slice(0, 120) : "";
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 160) : "";
+  const businessName =
+    typeof body.businessName === "string" ? body.businessName.trim().slice(0, 120) : "";
+  const email =
+    typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 160) : "";
   const password = typeof body.password === "string" ? body.password : "";
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -105,8 +108,9 @@ export async function POST(req: NextRequest) {
 
       try {
         await seedDemoData(result.tenant.id, result.admin.id);
-      } catch (seedError) {
-        console.error("Unable to seed demo data", seedError);
+        await getCreditWalletSnapshot(result.tenant.id);
+      } catch (bootstrapError) {
+        console.error("Unable to bootstrap trial workspace", bootstrapError);
       }
 
       return NextResponse.json(
