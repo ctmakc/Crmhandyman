@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { SERVICE_CATALOG, slugify } from "@/lib/marketplace-config";
 import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { createSignedToken } from "@/lib/signed-token";
 
-const requestLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_REQUESTS_PER_HOUR = 5;
 const EMPLOYMENT_TYPES = new Set([
   "FULL_TIME",
   "PART_TIME",
@@ -24,18 +22,6 @@ function optionalNumber(value: unknown, min: number, max: number) {
   if (value === "" || value == null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
-}
-
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const recent = (requestLog.get(ip) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_REQUESTS_PER_HOUR) {
-    requestLog.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  requestLog.set(ip, recent);
-  return false;
 }
 
 function parseEmploymentTypes(value: unknown) {
@@ -80,9 +66,6 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
-  if (rateLimited(ip)) {
-    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -139,6 +122,39 @@ export async function POST(req: NextRequest) {
 
   if (errors.length > 0) {
     return NextResponse.json({ error: "Validation failed.", details: errors }, { status: 422 });
+  }
+
+  try {
+    const ipLimit = await consumeRateLimit({
+      scope: "worker-profile-create-ip",
+      identifier: ip,
+      limit: 5,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(ipLimit) }
+      );
+    }
+    const emailLimit = await consumeRateLimit({
+      scope: "worker-profile-create-email",
+      identifier: email,
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!emailLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(emailLimit) }
+      );
+    }
+  } catch (error) {
+    console.error("Worker profile rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Request protection is temporarily unavailable." },
+      { status: 503 }
+    );
   }
 
   const existing = await prisma.workerProfile.findUnique({
