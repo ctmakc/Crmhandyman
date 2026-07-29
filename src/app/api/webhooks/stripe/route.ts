@@ -19,6 +19,7 @@ type StripeCheckoutSession = {
   object?: string;
   payment_status?: string;
   customer_email?: string | null;
+  client_reference_id?: string | null;
   metadata?: Record<string, string> | null;
   amount_total?: number | null;
   currency?: string | null;
@@ -81,17 +82,42 @@ export async function POST(req: NextRequest) {
   const tenantId = session.metadata?.tenantId?.trim() || "";
   const packId = session.metadata?.creditPackId?.trim() || "";
   const metadataCredits = Number(session.metadata?.credits);
+  const metadataAmountCents = Number(session.metadata?.amountCents);
+  const metadataCurrency = session.metadata?.currency?.trim().toUpperCase() || "";
+  const checkoutRequestId = session.metadata?.checkoutRequestId?.trim() || "";
+  const actualCurrency = session.currency?.trim().toUpperCase() || "";
   const pack = getCreditPack(packId);
 
-  if (!tenantId || !pack || !Number.isInteger(metadataCredits) || metadataCredits !== pack.credits) {
-    console.error("Stripe credit checkout metadata failed validation", {
+  const metadataValid =
+    tenantId.length > 0 &&
+    checkoutRequestId.length > 0 &&
+    Boolean(pack) &&
+    Number.isInteger(metadataCredits) &&
+    metadataCredits === pack?.credits &&
+    Number.isInteger(metadataAmountCents) &&
+    metadataAmountCents === pack?.amountCents &&
+    metadataCurrency === pack?.currency;
+  const paymentValid =
+    session.client_reference_id === tenantId &&
+    Number.isInteger(session.amount_total) &&
+    session.amount_total === pack?.amountCents &&
+    actualCurrency === pack?.currency;
+
+  if (!metadataValid || !paymentValid || !pack) {
+    console.error("Stripe credit checkout reconciliation failed", {
       eventId: event.id,
       sessionId: session.id,
       tenantId,
+      clientReferenceId: session.client_reference_id,
       packId,
       metadataCredits,
+      metadataAmountCents,
+      metadataCurrency,
+      amountTotal: session.amount_total,
+      actualCurrency,
+      checkoutRequestId,
     });
-    return NextResponse.json({ error: "Invalid credit purchase metadata." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid credit purchase reconciliation data." }, { status: 400 });
   }
 
   const tenant = await prisma.tenant.findUnique({
@@ -117,18 +143,24 @@ export async function POST(req: NextRequest) {
 
     if (!result.replayed) {
       try {
+        const formattedAmount = new Intl.NumberFormat("en-CA", {
+          style: "currency",
+          currency: pack.currency,
+        }).format(pack.amountCents / 100);
         await sendOutboundEmail({
           to: tenant.ownerEmail,
           subject: `${pack.credits} HandymanPro credits added`,
           text: [
             `Payment received for ${pack.label}.`,
+            `Payment amount: ${formattedAmount}`,
             `Credits added: ${pack.credits}`,
             `New wallet balance: ${result.wallet.balance}`,
             `Stripe Checkout Session: ${session.id}`,
           ].join("\n"),
           html: `
             <p>Payment received for <strong>${escapeHtml(pack.label)}</strong>.</p>
-            <p><strong>Credits added:</strong> ${pack.credits}<br>
+            <p><strong>Payment amount:</strong> ${escapeHtml(formattedAmount)}<br>
+            <strong>Credits added:</strong> ${pack.credits}<br>
             <strong>New wallet balance:</strong> ${result.wallet.balance}<br>
             <strong>Stripe Checkout Session:</strong> ${escapeHtml(session.id)}</p>
           `,
