@@ -3,6 +3,7 @@ import { adjustCredits } from "@/lib/credit-adjustments";
 import { getCreditPack } from "@/lib/credit-packs";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { validateStripeCreditSession } from "@/lib/stripe-credit-reconciliation.js";
 import { verifyStripeWebhookSignature } from "@/lib/stripe-webhook.js";
 
 export const runtime = "nodejs";
@@ -79,49 +80,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, processed: false, reason: "PAYMENT_NOT_PAID" });
   }
 
-  const tenantId = session.metadata?.tenantId?.trim() || "";
   const packId = session.metadata?.creditPackId?.trim() || "";
-  const metadataCredits = Number(session.metadata?.credits);
-  const metadataAmountCents = Number(session.metadata?.amountCents);
-  const metadataCurrency = session.metadata?.currency?.trim().toUpperCase() || "";
-  const checkoutRequestId = session.metadata?.checkoutRequestId?.trim() || "";
-  const actualCurrency = session.currency?.trim().toUpperCase() || "";
   const pack = getCreditPack(packId);
-
-  const metadataValid =
-    tenantId.length > 0 &&
-    checkoutRequestId.length > 0 &&
-    Boolean(pack) &&
-    Number.isInteger(metadataCredits) &&
-    metadataCredits === pack?.credits &&
-    Number.isInteger(metadataAmountCents) &&
-    metadataAmountCents === pack?.amountCents &&
-    metadataCurrency === pack?.currency;
-  const paymentValid =
-    session.client_reference_id === tenantId &&
-    Number.isInteger(session.amount_total) &&
-    session.amount_total === pack?.amountCents &&
-    actualCurrency === pack?.currency;
-
-  if (!metadataValid || !paymentValid || !pack) {
+  const reconciliation = validateStripeCreditSession(session, pack);
+  if (!reconciliation.valid || !pack) {
     console.error("Stripe credit checkout reconciliation failed", {
       eventId: event.id,
       sessionId: session.id,
-      tenantId,
+      reason: reconciliation.reason,
       clientReferenceId: session.client_reference_id,
-      packId,
-      metadataCredits,
-      metadataAmountCents,
-      metadataCurrency,
+      metadata: session.metadata,
       amountTotal: session.amount_total,
-      actualCurrency,
-      checkoutRequestId,
+      currency: session.currency,
     });
     return NextResponse.json({ error: "Invalid credit purchase reconciliation data." }, { status: 400 });
   }
 
   const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
+    where: { id: reconciliation.tenantId },
     select: { id: true, businessName: true, ownerEmail: true },
   });
   if (!tenant) {
