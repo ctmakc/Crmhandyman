@@ -44,5 +44,8 @@ jobs:
       - name: Apply all migrations to an empty database
         run: npx prisma migrate deploy
 
+      - name: Exercise migrated database constraints
+        run: node scripts/ci-database-smoke.mjs
+
       - name: Build application against migrated schema
         run: npm run build
