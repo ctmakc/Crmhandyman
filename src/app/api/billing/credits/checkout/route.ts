@@ -2,26 +2,11 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getCreditPack } from "@/lib/credit-packs";
 import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { getAppSessionUser } from "@/lib/session";
-
-const checkoutLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_CHECKOUTS_PER_HOUR = 10;
 
 function text(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function rateLimited(tenantId: string) {
-  const now = Date.now();
-  const recent = (checkoutLog.get(tenantId) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_CHECKOUTS_PER_HOUR) {
-    checkoutLog.set(tenantId, recent);
-    return true;
-  }
-  recent.push(now);
-  checkoutLog.set(tenantId, recent);
-  return false;
 }
 
 export async function POST(req: NextRequest) {
@@ -29,10 +14,26 @@ export async function POST(req: NextRequest) {
   if (!user || user.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
-  if (rateLimited(user.tenantId)) {
+
+  let rateLimit;
+  try {
+    rateLimit = await consumeRateLimit({
+      scope: "stripe-credit-checkout",
+      identifier: user.tenantId,
+      limit: 10,
+      windowMs: 60 * 60 * 1000,
+    });
+  } catch (error) {
+    console.error("Stripe checkout rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Checkout protection is temporarily unavailable." },
+      { status: 503 }
+    );
+  }
+  if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many checkout sessions. Please try again later." },
-      { status: 429 }
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
     );
   }
 
