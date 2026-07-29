@@ -14,7 +14,7 @@ export async function GET() {
     meta: {
       count: packs.length,
       configured: packs.length > 0,
-      currency: process.env.STRIPE_CREDIT_CURRENCY?.toUpperCase() || "CAD",
+      currencies: Array.from(new Set(packs.map((pack) => pack.currency))),
     },
   });
 }
