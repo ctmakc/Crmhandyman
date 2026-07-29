@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, Coins, Mail, Scale, ShieldCheck } from "lucide-react";
+import { Activity, Building2, Coins, Mail, Scale, ShieldCheck } from "lucide-react";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, noarchive: true },
@@ -45,6 +45,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               <Mail className="mr-2 h-4 w-4" />
               Email
+            </Link>
+            <Link
+              href="/admin/audit"
+              className="inline-flex items-center rounded-lg px-3 py-2 hover:bg-white/10 hover:text-white"
+            >
+              <Activity className="mr-2 h-4 w-4" />
+              Audit
             </Link>
             <Link
               href="/app"
