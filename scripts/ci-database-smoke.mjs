@@ -10,6 +10,19 @@ const prisma = new PrismaClient({
   adapter: new PrismaBetterSqlite3({ url: databaseUrl }),
 });
 
+function sqliteTriggerError(expectedMessage) {
+  return (error) => {
+    const nestedMessage =
+      error?.meta?.driverAdapterError?.cause?.originalMessage ||
+      error?.cause?.originalMessage ||
+      "";
+    return (
+      String(error).toLowerCase().includes(expectedMessage.toLowerCase()) ||
+      String(nestedMessage).toLowerCase().includes(expectedMessage.toLowerCase())
+    );
+  };
+}
+
 async function main() {
   const suffix = randomUUID().slice(0, 8);
   const owner = await prisma.tenant.create({
@@ -66,11 +79,11 @@ async function main() {
       where: { id: welcomeTransaction.id },
       data: { description: "Mutated ledger entry" },
     }),
-    /Credit transactions are immutable/i
+    sqliteTriggerError("Credit transactions are immutable")
   );
   await assert.rejects(
     prisma.creditTransaction.delete({ where: { id: welcomeTransaction.id } }),
-    /Credit transactions are immutable/i
+    sqliteTriggerError("Credit transactions are immutable")
   );
 
   const bucketKey = `ci-rate-limit:${suffix}`;
@@ -153,11 +166,11 @@ async function main() {
       `UPDATE AuditEvent SET "action" = 'MUTATED' WHERE "id" = ?`,
       auditId
     ),
-    /Audit events are immutable/i
+    sqliteTriggerError("Audit events are immutable")
   );
   await assert.rejects(
     prisma.$executeRawUnsafe(`DELETE FROM AuditEvent WHERE "id" = ?`, auditId),
-    /Audit events are immutable/i
+    sqliteTriggerError("Audit events are immutable")
   );
 
   const webhookId = randomUUID();
@@ -245,7 +258,7 @@ async function main() {
       createdAt,
       createdAt
     ),
-    /unresolved dispute already exists/i
+    sqliteTriggerError("unresolved dispute already exists")
   );
 
   console.log(
