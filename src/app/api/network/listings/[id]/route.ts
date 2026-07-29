@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
 
@@ -31,10 +32,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   if (!listing) return NextResponse.json({ error: "Listing not found." }, { status: 404 });
 
+  const activeClaims = listing.claims.filter((claim) =>
+    ["APPROVED", "CONTACT_UNLOCKED", "WON", "LOST"].includes(claim.status)
+  ).length;
+
   if (action === "REOPEN") {
-    const activeClaims = listing.claims.filter((claim) =>
-      ["APPROVED", "CONTACT_UNLOCKED", "WON", "LOST"].includes(claim.status)
-    ).length;
     if (activeClaims >= listing.maxClaims || (listing.exclusive && activeClaims > 0)) {
       return NextResponse.json(
         { error: "The listing cannot reopen while its approved claim limit is reached." },
@@ -46,9 +48,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const updated = await prisma.leadListing.update({
-    where: { id: listing.id },
-    data: { status: action === "CLOSE" ? "CLOSED" : "OPEN" },
+  const nextStatus = action === "CLOSE" ? "CLOSED" : "OPEN";
+  const updated = await prisma.$transaction(async (tx) => {
+    const saved = await tx.leadListing.update({
+      where: { id: listing.id },
+      data: { status: nextStatus },
+    });
+    await recordAuditEvent(
+      {
+        actor: { type: "USER", id: user.id, email: user.email },
+        tenantId: user.tenantId,
+        action: `LEAD_LISTING_${action}`,
+        targetType: "LEAD_LISTING",
+        targetId: listing.id,
+        metadata: {
+          previousStatus: listing.status,
+          nextStatus,
+          activeClaims,
+          maxClaims: listing.maxClaims,
+          exclusive: listing.exclusive,
+          expiresAt: listing.expiresAt?.toISOString() ?? null,
+        },
+        ipAddress: requestIp(req.headers),
+      },
+      tx
+    );
+    return saved;
   });
 
   return NextResponse.json({ listing: updated });
