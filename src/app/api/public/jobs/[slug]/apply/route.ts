@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { SERVICE_CATALOG, slugify } from "@/lib/marketplace-config";
 import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { createSignedToken } from "@/lib/signed-token";
 
-const applicationLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_APPLICATIONS_PER_HOUR = 8;
 const EMPLOYMENT_TYPES = new Set([
   "FULL_TIME",
   "PART_TIME",
@@ -24,18 +22,6 @@ function optionalNumber(value: unknown, min: number, max: number) {
   if (value === "" || value == null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
-}
-
-function isRateLimited(ip: string) {
-  const now = Date.now();
-  const recent = (applicationLog.get(ip) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_APPLICATIONS_PER_HOUR) {
-    applicationLog.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  applicationLog.set(ip, recent);
-  return false;
 }
 
 function parseEmploymentTypes(value: unknown) {
@@ -81,13 +67,6 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
-
-  if (isRateLimited(ip)) {
-    return NextResponse.json(
-      { error: "Too many applications. Please try again later." },
-      { status: 429 }
-    );
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -175,6 +154,40 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
   if (errors.length > 0) {
     return NextResponse.json({ error: "Validation failed.", details: errors }, { status: 422 });
+  }
+
+  try {
+    const ipLimit = await consumeRateLimit({
+      scope: "job-application-ip",
+      identifier: ip,
+      limit: 8,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many applications. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(ipLimit) }
+      );
+    }
+
+    const applicantLimit = await consumeRateLimit({
+      scope: "job-application-email-vacancy",
+      identifier: `${vacancy.id}:${email}`,
+      limit: 3,
+      windowMs: 24 * 60 * 60 * 1000,
+    });
+    if (!applicantLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many applications for this vacancy. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(applicantLimit) }
+      );
+    }
+  } catch (error) {
+    console.error("Job application rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Application protection is temporarily unavailable." },
+      { status: 503 }
+    );
   }
 
   const sourceLeadId = `vacancy:${vacancy.id}:${email}`;
