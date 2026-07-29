@@ -108,20 +108,41 @@ export default function AdminEmailOutbox() {
 
   const messages = useMemo(() => payload?.data ?? [], [payload]);
   const counts = payload?.meta.counts ?? { pending: 0, sending: 0, sent: 0, failed: 0 };
+  const metricCards = [
+    {
+      label: "Pending",
+      count: counts.pending,
+      Icon: Clock3,
+      classes: "border-amber-200 bg-amber-50 text-amber-950",
+    },
+    {
+      label: "Sending",
+      count: counts.sending,
+      Icon: Send,
+      classes: "border-blue-200 bg-blue-50 text-blue-950",
+    },
+    {
+      label: "Sent",
+      count: counts.sent,
+      Icon: CheckCircle2,
+      classes: "border-emerald-200 bg-emerald-50 text-emerald-950",
+    },
+    {
+      label: "Failed",
+      count: counts.failed,
+      Icon: AlertTriangle,
+      classes: "border-red-200 bg-red-50 text-red-950",
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          ["Pending", counts.pending, Clock3, "border-amber-200 bg-amber-50 text-amber-950"],
-          ["Sending", counts.sending, Send, "border-blue-200 bg-blue-50 text-blue-950"],
-          ["Sent", counts.sent, CheckCircle2, "border-emerald-200 bg-emerald-50 text-emerald-950"],
-          ["Failed", counts.failed, AlertTriangle, "border-red-200 bg-red-50 text-red-950"],
-        ].map(([label, count, Icon, classes]) => (
-          <div key={String(label)} className={`rounded-2xl border p-5 shadow-sm ${classes}`}>
+        {metricCards.map(({ label, count, Icon, classes }) => (
+          <div key={label} className={`rounded-2xl border p-5 shadow-sm ${classes}`}>
             <Icon className="h-5 w-5" />
-            <div className="mt-4 text-3xl font-black">{String(count)}</div>
-            <div className="mt-1 text-sm font-bold">{String(label)}</div>
+            <div className="mt-4 text-3xl font-black">{count}</div>
+            <div className="mt-1 text-sm font-bold">{label}</div>
           </div>
         ))}
       </section>
