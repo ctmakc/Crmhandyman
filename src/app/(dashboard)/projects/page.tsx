@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -28,6 +28,7 @@ const statusColors: Record<string, string> = {
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -36,28 +37,49 @@ export default function ProjectsPage() {
     title: "", description: "", jobType: "", scheduledDate: ""
   });
 
-  async function fetchProjects() {
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    setError("");
     const params = new URLSearchParams();
-    if (search) params.set("q", search);
+    if (search.trim()) params.set("q", search.trim());
     if (statusFilter) params.set("status", statusFilter);
-    const res = await fetch(`/api/projects?${params}`);
-    const data = await res.json();
-    setProjects(data);
-    setLoading(false);
-  }
 
-  useEffect(() => { fetchProjects(); }, [search, statusFilter]);
+    try {
+      const res = await fetch(`/api/projects?${params.toString()}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Unable to load projects.");
+      setProjects(Array.isArray(data) ? data : []);
+    } catch (reason) {
+      setProjects([]);
+      setError(reason instanceof Error ? reason.message : "Unable to load projects.");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchProjects();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [fetchProjects]);
 
   async function handleAddProject(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/projects", {
+    setError("");
+    const response = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "Unable to add project.");
+      return;
+    }
     setShowAddForm(false);
     setForm({ clientName: "", phone: "", email: "", address: "", title: "", description: "", jobType: "", scheduledDate: "" });
-    fetchProjects();
+    await fetchProjects();
   }
 
   return (
@@ -85,6 +107,12 @@ export default function ProjectsPage() {
           ))}
         </select>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
 
       {showAddForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -149,7 +177,7 @@ export default function ProjectsPage() {
                     <p className="text-sm text-gray-500">{project.clientName}</p>
                     <p className="text-xs text-gray-400 mt-0.5 truncate">{project.address}</p>
                   </div>
-                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[project.status]}`}>
+                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[project.status] ?? "bg-gray-100 text-gray-700"}`}>
                     {project.status.replace("_", " ")}
                   </span>
                 </div>

@@ -7,20 +7,25 @@ datasource db {
 }
 
 model Tenant {
-  id           String      @id @default(cuid())
-  slug         String      @unique
-  businessName String
-  ownerEmail   String
-  plan         TenantPlan  @default(DEMO)
-  expiresAt    DateTime?
-  createdAt    DateTime    @default(now())
-  users        User[]
-  leads        Lead[]
-  projects     Project[]
-  tasks        Task[]
-  payments     Payment[]
-  expenses     Expense[]
-  integrations ChannelIntegration[]
+  id                String               @id @default(cuid())
+  slug              String               @unique
+  businessName      String
+  ownerEmail        String
+  plan              TenantPlan           @default(DEMO)
+  expiresAt         DateTime?
+  createdAt         DateTime             @default(now())
+  users             User[]
+  leads             Lead[]
+  projects          Project[]
+  tasks             Task[]
+  payments          Payment[]
+  expenses          Expense[]
+  integrations      ChannelIntegration[]
+  contractorProfile ContractorProfile?
+  marketplaceJobs   MarketplaceJob[]     @relation("MarketplaceJobSourceTenant")
+  leadListings      LeadListing[]
+  claimedLeads      LeadClaim[]          @relation("ClaimedByTenant")
+  creditWallet      CreditWallet?
 }
 
 enum TenantPlan {
@@ -29,17 +34,17 @@ enum TenantPlan {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  name         String
-  email        String
-  password     String
-  role         Role      @default(WORKER)
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String
+  email         String
+  password      String
+  role          Role     @default(WORKER)
   assignedLeads Lead[]
   assignedTasks Task[]   @relation("assignedTasks")
   createdTasks  Task[]   @relation("createdTasks")
-  createdAt    DateTime  @default(now())
+  createdAt     DateTime @default(now())
 
   @@unique([email, tenantId])
 }
@@ -50,24 +55,26 @@ enum Role {
 }
 
 model Lead {
-  id           String     @id @default(cuid())
-  tenantId     String
-  tenant       Tenant     @relation(fields: [tenantId], references: [id])
-  name         String
-  phone        String?
-  email        String?
-  address      String?
-  city         String?
-  source       LeadSource @default(MANUAL)
-  sourceLeadId String?
-  jobType      String?
-  notes        String?
-  status       LeadStatus @default(NEW)
-  assignedTo   User?      @relation(fields: [assignedToId], references: [id])
-  assignedToId String?
-  project      Project?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  city           String?
+  source         LeadSource      @default(MANUAL)
+  sourceLeadId   String?
+  jobType        String?
+  notes          String?
+  status         LeadStatus      @default(NEW)
+  assignedTo     User?           @relation(fields: [assignedToId], references: [id])
+  assignedToId   String?
+  project        Project?
+  marketplaceJob MarketplaceJob? @relation("MarketplaceJobConvertedLead")
+  leadListing    LeadListing?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
 enum LeadSource {
@@ -78,6 +85,12 @@ enum LeadSource {
   KIJIJI
   EMAIL
   MANUAL
+  MARKETPLACE
+  DIRECTORY
+  REFERRAL
+  LEAD_EXCHANGE
+  SUBCONTRACT
+  JOB_BOARD
   OTHER
 }
 
@@ -219,4 +232,374 @@ model ChannelIntegration {
   lastSyncAt    DateTime?
 
   @@unique([tenantId, channel])
+}
+
+model ContractorProfile {
+  id                  String             @id @default(cuid())
+  tenantId            String             @unique
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  slug                String             @unique
+  displayName         String
+  headline            String?
+  description         String?
+  logoUrl             String?
+  coverUrl             String?
+  phone               String?
+  publicEmail         String?
+  website             String?
+  address             String?
+  city                String
+  province            String
+  postalCode          String?
+  country             String             @default("Canada")
+  latitude            Float?
+  longitude           Float?
+  serviceRadiusKm     Int                @default(30)
+  yearsInBusiness     Int?
+  emergencyService    Boolean            @default(false)
+  minimumJobValue     Float?
+  languages           String             @default("English")
+  insuranceVerified   Boolean            @default(false)
+  licenceVerified     Boolean            @default(false)
+  identityVerified    Boolean            @default(false)
+  verificationStatus  VerificationStatus @default(UNVERIFIED)
+  profileStatus       ProfileStatus      @default(DRAFT)
+  averageRating       Float              @default(0)
+  reviewCount         Int                @default(0)
+  responseTimeMinutes Int?
+  completedJobs       Int                @default(0)
+  seoTitle            String?
+  seoDescription      String?
+  services            ContractorService[]
+  serviceAreas        ServiceArea[]
+  reviews             Review[]
+  portfolio           PortfolioItem[]
+  vacancies           Vacancy[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([city, province])
+  @@index([profileStatus, verificationStatus])
+}
+
+model ContractorService {
+  id          String            @id @default(cuid())
+  profileId   String
+  profile     ContractorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  slug        String
+  name        String
+  category    String
+  description String?
+  priceFrom   Float?
+  isPrimary   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+
+  @@unique([profileId, slug])
+  @@index([slug, category])
+}
+
+model ServiceArea {
+  id           String            @id @default(cuid())
+  profileId    String
+  profile      ContractorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  city         String
+  province     String
+  country      String            @default("Canada")
+  postalPrefix String?
+  latitude     Float?
+  longitude    Float?
+  radiusKm     Int               @default(30)
+  createdAt    DateTime          @default(now())
+
+  @@index([city, province])
+  @@index([postalPrefix])
+}
+
+model Review {
+  id         String            @id @default(cuid())
+  profileId  String
+  profile    ContractorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  authorName String
+  rating     Int
+  title      String?
+  body       String
+  source     ReviewSource      @default(UNVERIFIED)
+  sourceUrl  String?
+  isVisible  Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([profileId, isVisible])
+}
+
+model PortfolioItem {
+  id          String            @id @default(cuid())
+  profileId   String
+  profile     ContractorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  imageUrl    String
+  city        String?
+  serviceSlug String?
+  completedAt DateTime?
+  isPublished Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+
+  @@index([profileId, isPublished])
+}
+
+model MarketplaceJob {
+  id              String               @id @default(cuid())
+  slug            String               @unique
+  customerName    String
+  customerEmail   String
+  customerPhone   String?
+  title           String
+  description     String
+  serviceSlug     String
+  city            String
+  province        String
+  postalCode      String?
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  budgetMin       Float?
+  budgetMax       Float?
+  urgency         JobUrgency           @default(FLEXIBLE)
+  status          MarketplaceJobStatus @default(OPEN)
+  consentToShare  Boolean              @default(false)
+  sourceTenantId  String?
+  sourceTenant    Tenant?              @relation("MarketplaceJobSourceTenant", fields: [sourceTenantId], references: [id], onDelete: SetNull)
+  convertedLeadId String?              @unique
+  convertedLead   Lead?                @relation("MarketplaceJobConvertedLead", fields: [convertedLeadId], references: [id], onDelete: SetNull)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([serviceSlug, city, province, status])
+  @@index([createdAt])
+}
+
+model Vacancy {
+  id               String            @id @default(cuid())
+  profileId        String
+  profile          ContractorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  slug             String            @unique
+  title            String
+  description      String
+  serviceSlug      String
+  employmentType   EmploymentType
+  city             String
+  province         String
+  compensationMin  Float?
+  compensationMax  Float?
+  compensationUnit CompensationUnit   @default(HOUR)
+  isRemote         Boolean            @default(false)
+  status           VacancyStatus      @default(DRAFT)
+  validThrough     DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([serviceSlug, city, province, status])
+}
+
+model WorkerProfile {
+  id                 String             @id @default(cuid())
+  slug               String             @unique
+  email              String             @unique
+  fullName           String
+  publicName         String
+  phone              String?
+  city               String
+  province           String
+  country            String             @default("Canada")
+  headline           String
+  summary            String
+  yearsExperience    Int?
+  employmentTypes    String             @default("FULL_TIME,CONTRACT,GIG,SUBCONTRACT")
+  hourlyRateMin      Float?
+  hourlyRateMax      Float?
+  hasVehicle         Boolean            @default(false)
+  hasTools           Boolean            @default(false)
+  languages          String             @default("English")
+  availability       String?
+  resumeUrl          String?
+  consentToContact   Boolean            @default(false)
+  consentToPublic    Boolean            @default(false)
+  profileStatus      ProfileStatus      @default(DRAFT)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  skills             WorkerSkill[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([city, province, profileStatus])
+  @@index([verificationStatus, updatedAt])
+}
+
+model WorkerSkill {
+  id              String        @id @default(cuid())
+  profileId       String
+  profile         WorkerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  slug            String
+  name            String
+  yearsExperience Int?
+  createdAt       DateTime      @default(now())
+
+  @@unique([profileId, slug])
+  @@index([slug])
+}
+
+model CreditWallet {
+  id                String              @id @default(cuid())
+  tenantId          String              @unique
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  balance           Int                 @default(10)
+  lifetimePurchased Int                 @default(0)
+  lifetimeSpent     Int                 @default(0)
+  transactions      CreditTransaction[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model CreditTransaction {
+  id             String                @id @default(cuid())
+  walletId       String
+  wallet         CreditWallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type           CreditTransactionType
+  amount         Int
+  balanceAfter   Int
+  referenceType  String?
+  referenceId    String?
+  description    String
+  idempotencyKey String                @unique
+  createdAt      DateTime              @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model LeadListing {
+  id                        String            @id @default(cuid())
+  tenantId                  String
+  tenant                    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId                    String            @unique
+  lead                      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  title                     String
+  summary                   String
+  serviceSlug               String
+  city                      String
+  province                  String
+  budgetMin                 Float?
+  budgetMax                 Float?
+  status                    LeadListingStatus @default(OPEN)
+  maxClaims                 Int               @default(3)
+  exclusive                 Boolean           @default(false)
+  contactUnlockPriceCredits Int               @default(1)
+  expiresAt                 DateTime?
+  claims                    LeadClaim[]
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  @@index([serviceSlug, city, province, status])
+}
+
+model LeadClaim {
+  id          String          @id @default(cuid())
+  listingId   String
+  listing     LeadListing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  tenantId    String
+  claimedBy   Tenant          @relation("ClaimedByTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  status      LeadClaimStatus @default(REQUESTED)
+  creditsPaid Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([listingId, tenantId])
+  @@index([tenantId, status])
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  SUSPENDED
+}
+
+enum ProfileStatus {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+  SUSPENDED
+}
+
+enum ReviewSource {
+  VERIFIED_PROJECT
+  VERIFIED_CUSTOMER
+  IMPORTED
+  UNVERIFIED
+}
+
+enum JobUrgency {
+  EMERGENCY
+  WITHIN_48_HOURS
+  THIS_WEEK
+  FLEXIBLE
+}
+
+enum MarketplaceJobStatus {
+  OPEN
+  MATCHING
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  GIG
+  SUBCONTRACT
+}
+
+enum CompensationUnit {
+  HOUR
+  DAY
+  PROJECT
+  YEAR
+}
+
+enum VacancyStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  CLOSED
+  EXPIRED
+}
+
+enum CreditTransactionType {
+  WELCOME
+  CREDIT_PURCHASE
+  LEAD_UNLOCK
+  REFUND
+  ADJUSTMENT
+}
+
+enum LeadListingStatus {
+  OPEN
+  MATCHED
+  CLOSED
+  EXPIRED
+  DISPUTED
+}
+
+enum LeadClaimStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CONTACT_UNLOCKED
+  WON
+  LOST
+  REFUNDED
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, FileText } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -72,63 +72,109 @@ const taskStatusColors: Record<string, string> = {
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const [project, setProject] = useState<Project | null>(null);
+  const [error, setError] = useState("");
   const [tab, setTab] = useState<"overview" | "tasks" | "payments" | "expenses">("overview");
   const [paymentForm, setPaymentForm] = useState({ amount: "", method: "CASH", notes: "", date: "" });
   const [expenseForm, setExpenseForm] = useState({ amount: "", category: "MATERIALS", description: "", date: "" });
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
-  async function fetchProject() {
-    const res = await fetch(`/api/projects/${params.id}`);
-    const data = await res.json();
-    setProject(data);
-  }
+  const fetchProject = useCallback(async () => {
+    setError("");
+    try {
+      const res = await fetch(`/api/projects/${params.id}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Unable to load project.");
+      setProject(data);
+    } catch (reason) {
+      setProject(null);
+      setError(reason instanceof Error ? reason.message : "Unable to load project.");
+    }
+  }, [params.id]);
 
-  useEffect(() => { fetchProject(); }, []);
+  useEffect(() => {
+    void fetchProject();
+  }, [fetchProject]);
 
   async function handleStatusChange(status: string) {
-    await fetch(`/api/projects/${params.id}`, {
+    setError("");
+    const response = await fetch(`/api/projects/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...project, status }),
     });
-    fetchProject();
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "Unable to update project status.");
+      return;
+    }
+    await fetchProject();
   }
 
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/finance/payments", {
+    setError("");
+    const response = await fetch("/api/finance/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...paymentForm, projectId: params.id }),
     });
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "Unable to add payment.");
+      return;
+    }
     setPaymentForm({ amount: "", method: "CASH", notes: "", date: "" });
     setShowPaymentForm(false);
-    fetchProject();
+    await fetchProject();
   }
 
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/finance/expenses", {
+    setError("");
+    const response = await fetch("/api/finance/expenses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...expenseForm, projectId: params.id }),
     });
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "Unable to add expense.");
+      return;
+    }
     setExpenseForm({ amount: "", category: "MATERIALS", description: "", date: "" });
     setShowExpenseForm(false);
-    fetchProject();
+    await fetchProject();
   }
 
   async function handleTaskStatusChange(taskId: string, status: string) {
-    await fetch(`/api/tasks/${taskId}`, {
+    setError("");
+    const response = await fetch(`/api/tasks/${taskId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    fetchProject();
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "Unable to update task status.");
+      return;
+    }
+    await fetchProject();
   }
 
-  if (!project) return <div className="p-4 text-gray-500">Loading...</div>;
+  if (!project) {
+    return (
+      <div className="p-4">
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : (
+          <div className="text-gray-500">Loading...</div>
+        )}
+      </div>
+    );
+  }
 
   const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
@@ -144,21 +190,26 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           <h1 className="text-xl font-bold text-gray-900 truncate">{project.title}</h1>
           <p className="text-sm text-gray-500">{project.clientName}</p>
         </div>
-        <span className={`shrink-0 text-xs px-2 py-1 rounded-full font-medium ${statusColors[project.status]}`}>
+        <span className={`shrink-0 text-xs px-2 py-1 rounded-full font-medium ${statusColors[project.status] ?? "bg-gray-100 text-gray-700"}`}>
           {project.status.replace("_", " ")}
         </span>
       </div>
 
-      {/* Status Actions */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {project.status === "SCHEDULED" && (
-          <button onClick={() => handleStatusChange("IN_PROGRESS")}
+          <button onClick={() => void handleStatusChange("IN_PROGRESS")}
             className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             Start Job
           </button>
         )}
         {project.status === "IN_PROGRESS" && (
-          <button onClick={() => handleStatusChange("COMPLETED")}
+          <button onClick={() => void handleStatusChange("COMPLETED")}
             className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
             Mark Complete
           </button>
@@ -170,7 +221,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         </Link>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-gray-200 gap-1">
         {(["overview", "tasks", "payments", "expenses"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -182,7 +232,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         ))}
       </div>
 
-      {/* Overview Tab */}
       {tab === "overview" && (
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-2 text-sm">
@@ -194,7 +243,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             {project.description && <p className="text-gray-600 bg-gray-50 p-2 rounded">{project.description}</p>}
           </div>
 
-          {/* Finance Summary */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 text-center">
               <p className="text-xs text-gray-500">Estimate</p>
@@ -212,7 +260,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         </div>
       )}
 
-      {/* Tasks Tab */}
       {tab === "tasks" && (
         <div className="space-y-3">
           {project.tasks.length === 0 ? (
@@ -225,8 +272,8 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                   <p className="text-xs text-gray-500">{task.assignedTo.name}{task.dueDate ? ` · Due: ${formatDate(task.dueDate)}` : ""}</p>
                 </div>
                 <select value={task.status}
-                  onChange={e => handleTaskStatusChange(task.id, e.target.value)}
-                  className={`text-xs px-2 py-1 rounded-full font-medium border-0 ${taskStatusColors[task.status]}`}>
+                  onChange={e => void handleTaskStatusChange(task.id, e.target.value)}
+                  className={`text-xs px-2 py-1 rounded-full font-medium border-0 ${taskStatusColors[task.status] ?? "bg-gray-100 text-gray-600"}`}>
                   <option value="TODO">TODO</option>
                   <option value="IN_PROGRESS">IN PROGRESS</option>
                   <option value="DONE">DONE</option>
@@ -237,7 +284,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         </div>
       )}
 
-      {/* Payments Tab */}
       {tab === "payments" && (
         <div className="space-y-3">
           <button onClick={() => setShowPaymentForm(!showPaymentForm)}
@@ -296,7 +342,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         </div>
       )}
 
-      {/* Expenses Tab */}
       {tab === "expenses" && (
         <div className="space-y-3">
           <button onClick={() => setShowExpenseForm(!showExpenseForm)}
