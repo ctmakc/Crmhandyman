@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { processDueOutboundEmails } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { getSuperAdminUser } from "@/lib/super-admin";
@@ -100,11 +101,22 @@ export async function POST(req: NextRequest) {
 
   const action = text(body.action, 40).toUpperCase();
   const id = text(body.id, 100);
+  const auditBase = {
+    actor: { type: "USER" as const, id: admin.id, email: admin.email },
+    tenantId: admin.tenantId,
+    ipAddress: requestIp(req.headers),
+  };
 
   if (action === "PROCESS_DUE") {
     const limit = Math.min(Math.max(Math.trunc(Number(body.limit) || 25), 1), 100);
     try {
       const result = await processDueOutboundEmails(limit);
+      await recordAuditEvent({
+        ...auditBase,
+        action: "EMAIL_OUTBOX_PROCESS_DUE",
+        targetType: "EMAIL_OUTBOX",
+        metadata: { limit, ...result },
+      });
       return NextResponse.json({ ok: true, action, ...result });
     } catch (error) {
       console.error("Super-admin outbox processing failed", error);
@@ -113,23 +125,49 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "REQUEUE_FAILED") {
-    const updated = await prisma.$executeRaw(Prisma.sql`
-      UPDATE EmailOutbox
-      SET "status" = 'PENDING', "lockedAt" = NULL, "nextAttemptAt" = CURRENT_TIMESTAMP,
-          "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "status" = 'FAILED'
-    `);
+    const updated = await prisma.$transaction(async (tx) => {
+      const count = await tx.$executeRaw(Prisma.sql`
+        UPDATE EmailOutbox
+        SET "status" = 'PENDING', "lockedAt" = NULL, "nextAttemptAt" = CURRENT_TIMESTAMP,
+            "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "status" = 'FAILED'
+      `);
+      await recordAuditEvent(
+        {
+          ...auditBase,
+          action: "EMAIL_OUTBOX_REQUEUE_FAILED",
+          targetType: "EMAIL_OUTBOX",
+          metadata: { updated: count },
+        },
+        tx
+      );
+      return count;
+    });
     return NextResponse.json({ ok: true, action, updated });
   }
 
   if (action === "RETRY") {
     if (!id) return NextResponse.json({ error: "Outbox message ID is required." }, { status: 422 });
-    const updated = await prisma.$executeRaw(Prisma.sql`
-      UPDATE EmailOutbox
-      SET "status" = 'PENDING', "lockedAt" = NULL, "nextAttemptAt" = CURRENT_TIMESTAMP,
-          "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = ${id} AND "status" != 'SENT'
-    `);
+    const updated = await prisma.$transaction(async (tx) => {
+      const count = await tx.$executeRaw(Prisma.sql`
+        UPDATE EmailOutbox
+        SET "status" = 'PENDING', "lockedAt" = NULL, "nextAttemptAt" = CURRENT_TIMESTAMP,
+            "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${id} AND "status" != 'SENT'
+      `);
+      if (count === 1) {
+        await recordAuditEvent(
+          {
+            ...auditBase,
+            action: "EMAIL_OUTBOX_RETRY",
+            targetType: "EMAIL_OUTBOX_MESSAGE",
+            targetId: id,
+          },
+          tx
+        );
+      }
+      return count;
+    });
     if (updated !== 1) {
       return NextResponse.json(
         { error: "Message was not found or is already sent." },
