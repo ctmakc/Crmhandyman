@@ -1,26 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
+import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { getAppSessionUser } from "@/lib/session";
-
-const inquiryLog = new Map<string, number[]>();
-const WINDOW_MS = 24 * 60 * 60 * 1000;
-const MAX_INQUIRIES_PER_DAY = 15;
 
 function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function isRateLimited(tenantId: string) {
-  const now = Date.now();
-  const recent = (inquiryLog.get(tenantId) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_INQUIRIES_PER_DAY) {
-    inquiryLog.set(tenantId, recent);
-    return true;
-  }
-  recent.push(now);
-  inquiryLog.set(tenantId, recent);
-  return false;
 }
 
 export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
@@ -29,10 +14,24 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     return NextResponse.json({ error: "A contractor admin account is required." }, { status: 403 });
   }
 
-  if (isRateLimited(user.tenantId)) {
+  try {
+    const limit = await consumeRateLimit({
+      scope: "worker-introduction-tenant",
+      identifier: user.tenantId,
+      limit: 15,
+      windowMs: 24 * 60 * 60 * 1000,
+    });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Daily worker introduction limit reached." },
+        { status: 429, headers: rateLimitHeaders(limit) }
+      );
+    }
+  } catch (error) {
+    console.error("Worker introduction rate limiter failed", error);
     return NextResponse.json(
-      { error: "Daily worker introduction limit reached." },
-      { status: 429 }
+      { error: "Introduction protection is temporarily unavailable." },
+      { status: 503 }
     );
   }
 
@@ -138,12 +137,13 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     select: { id: true },
   });
 
-  let delivery: { sent: boolean; reason?: string } = { sent: false };
+  let delivery: { sent: boolean; queued?: boolean; reason?: string } = { sent: false };
   try {
     const sent = await sendOutboundEmail({
       to: worker.email,
       replyTo: contactEmail,
       subject: `${employerName} would like to discuss: ${opportunityTitle}`,
+      idempotencyKey: `worker-introduction:${lead.id}`,
       text: [
         `Hello ${worker.publicName},`,
         "",
@@ -173,7 +173,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         <p><small>Replying to this email sends your response directly to the employer. HandymanPro did not disclose your private email address to them.</small></p>
       `,
     });
-    delivery = sent.sent ? { sent: true } : { sent: false, reason: sent.reason };
+    delivery = sent.sent
+      ? { sent: true }
+      : { sent: false, queued: sent.queued, reason: sent.reason };
   } catch (error) {
     console.error("Worker introduction email failed", error);
     delivery = { sent: false, reason: "DELIVERY_FAILED" };
@@ -186,7 +188,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       delivery,
       message: delivery.sent
         ? "Introduction sent privately to the worker."
-        : "Introduction saved in CRM, but SMTP delivery is not currently available.",
+        : delivery.queued
+          ? "Introduction saved in CRM and queued for email delivery."
+          : "Introduction saved in CRM, but email delivery is not currently available.",
     },
     { status: delivery.sent ? 201 : 202 }
   );
