@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { recordAuditEvent, requestIp } from "@/lib/audit";
+import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
 
@@ -29,17 +30,27 @@ export async function POST(req: NextRequest) {
   if (!listingId) return NextResponse.json({ error: "Listing ID is required." }, { status: 422 });
 
   try {
-    const claim = await prisma.$transaction(async (tx) => {
-      const listing = await tx.leadListing.findUnique({
-        where: { id: listingId },
-        include: {
-          claims: {
-            select: { tenantId: true, status: true },
+    const result = await prisma.$transaction(async (tx) => {
+      const [listing, claimant] = await Promise.all([
+        tx.leadListing.findUnique({
+          where: { id: listingId },
+          include: {
+            tenant: {
+              select: { id: true, businessName: true, ownerEmail: true },
+            },
+            claims: {
+              select: { tenantId: true, status: true },
+            },
           },
-        },
-      });
+        }),
+        tx.tenant.findUnique({
+          where: { id: user.tenantId },
+          select: { id: true, businessName: true },
+        }),
+      ]);
 
       if (!listing) throw new Error("NOT_FOUND");
+      if (!claimant) throw new Error("CLAIMANT_NOT_FOUND");
       if (listing.tenantId === user.tenantId) throw new Error("OWN_LISTING");
       if (listing.status !== "OPEN") throw new Error("NOT_OPEN");
       if (listing.expiresAt && listing.expiresAt <= new Date()) throw new Error("EXPIRED");
@@ -80,10 +91,47 @@ export async function POST(req: NextRequest) {
         tx
       );
 
-      return created;
+      return {
+        claim: created,
+        notification: {
+          ownerEmail: listing.tenant.ownerEmail,
+          ownerBusinessName: listing.tenant.businessName,
+          claimantBusinessName: claimant.businessName,
+          listingTitle: listing.title,
+          city: listing.city,
+          province: listing.province,
+          unlockPrice: listing.contactUnlockPriceCredits,
+        },
+      };
     });
 
-    return NextResponse.json({ claim }, { status: 201 });
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://handymanpro.ca";
+    try {
+      await sendOutboundEmail({
+        to: result.notification.ownerEmail,
+        subject: `New claim request: ${result.notification.listingTitle}`,
+        idempotencyKey: `lead-claim-requested:${result.claim.id}:owner`,
+        text: [
+          `${result.notification.claimantBusinessName} requested your lead listing.`,
+          `Lead: ${result.notification.listingTitle}`,
+          `Location: ${result.notification.city}, ${result.notification.province}`,
+          `Contact unlock price: ${result.notification.unlockPrice} credits`,
+          "",
+          `Review the request: ${baseUrl}/network`,
+        ].join("\n"),
+        html: `
+          <p><strong>${escapeHtml(result.notification.claimantBusinessName)}</strong> requested your lead listing.</p>
+          <p><strong>Lead:</strong> ${escapeHtml(result.notification.listingTitle)}<br>
+          <strong>Location:</strong> ${escapeHtml(`${result.notification.city}, ${result.notification.province}`)}<br>
+          <strong>Contact unlock price:</strong> ${result.notification.unlockPrice} credits</p>
+          <p><a href="${escapeHtml(`${baseUrl}/network`)}">Review the request</a></p>
+        `,
+      });
+    } catch (error) {
+      console.error("Lead claim request notification failed", error);
+    }
+
+    return NextResponse.json({ claim: result.claim }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json({ error: "You already requested this lead." }, { status: 409 });
@@ -106,6 +154,7 @@ export async function POST(req: NextRequest) {
     const code = error instanceof Error ? error.message : "";
     const responses: Record<string, [string, number]> = {
       NOT_FOUND: ["Listing not found.", 404],
+      CLAIMANT_NOT_FOUND: ["Claimant workspace not found.", 404],
       OWN_LISTING: ["You cannot claim your own lead.", 409],
       NOT_OPEN: ["This lead is no longer open.", 409],
       EXPIRED: ["This lead has expired.", 409],
