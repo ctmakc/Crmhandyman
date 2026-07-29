@@ -23,11 +23,19 @@ export function isOverdue(inv: InvoiceLike, now: Date = new Date()) {
   return new Date(inv.dueDate) < now && owingOf(inv) > 0.005;
 }
 
-/** Whole days past the due date. Negative before it, 0 on the day. */
+/**
+ * Whole days past the due date. Negative before it, 0 on the day.
+ *
+ * Compared as calendar days, not raw milliseconds: a DST change inside the window
+ * shifts a millisecond difference by an hour and can report 6 days where the shop
+ * counts 7 — and the chase escalation is keyed off this number.
+ */
 export function daysOverdue(inv: InvoiceLike, now: Date = new Date()) {
   if (!inv.dueDate) return 0;
-  const ms = now.getTime() - new Date(inv.dueDate).getTime();
-  return Math.floor(ms / 86_400_000);
+  const d = new Date(inv.dueDate);
+  const due = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today.getTime() - due.getTime()) / 86_400_000);
 }
 
 /** What the desk should display — the derived state, not the stored one. */

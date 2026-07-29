@@ -13,6 +13,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     where: { id: params.id, tenantId },
     include: {
       lead: { select: { id: true, name: true, source: true } },
+      assignedTo: { select: { id: true, name: true } },
       estimates: { orderBy: { createdAt: "desc" } },
       tasks: {
         include: { assignedTo: { select: { id: true, name: true } } },

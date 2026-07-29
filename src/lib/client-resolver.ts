@@ -22,17 +22,11 @@ const street = (s?: string | null) => norm(s).split(",")[0];
 export async function resolveClient(tenantId: string, details: ClientDetails) {
   const phone = digits(details.phone);
   if (phone.length >= 7) {
-    const byPhone = await prisma.client.findFirst({
-      where: { tenantId, phone: { not: null } },
-      // SQLite has no digit-normalising function, so the comparison happens in JS below.
-      select: { id: true, phone: true },
-      orderBy: { createdAt: "asc" },
-    });
-    if (byPhone && digits(byPhone.phone) === phone) return byPhone.id;
-
+    // SQLite cannot strip punctuation in SQL, so the digit comparison happens here.
     const candidates = await prisma.client.findMany({
       where: { tenantId, phone: { not: null } },
       select: { id: true, phone: true },
+      orderBy: { createdAt: "asc" },
     });
     const hit = candidates.find((c) => digits(c.phone) === phone);
     if (hit) return hit.id;

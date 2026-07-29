@@ -37,6 +37,8 @@ interface Project {
   payments: Payment[];
   expenses: Expense[];
   lead?: { id: string; name: string; source: string };
+  assignedToId?: string | null;
+  assignedTo?: { id: string; name: string } | null;
 }
 
 interface Estimate {
@@ -94,6 +96,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     description: "",
     date: "",
   });
+  const [crew, setCrew] = useState<Array<{ id: string; name: string }>>([]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
@@ -105,8 +108,22 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
   useEffect(() => {
     fetchProject();
+    fetch("/api/settings/users")
+      .then((r) => r.json())
+      .then((d) => setCrew(Array.isArray(d) ? d : []))
+      .catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function assignTo(userId: string) {
+    await fetch(`/api/projects/${params.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...project, assignedToId: userId || null }),
+    });
+    toast(userId ? "Job assigned" : "Assignment cleared");
+    fetchProject();
+  }
 
   async function handleStatusChange(status: string) {
     await fetch(`/api/projects/${params.id}`, {
@@ -221,6 +238,24 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               <Scissors className="h-4 w-4" /> Issue invoice
             </Link>
           )}
+
+          {/* The tech who owns this job. Field mode and the crew-load readout both
+              read this — until it is set, a worker's Today is empty. */}
+          <label className="ml-auto flex items-center gap-2">
+            <span className="eyebrow">Crew</span>
+            <select
+              value={project.assignedToId || ""}
+              onChange={(e) => assignTo(e.target.value)}
+              className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
+            >
+              <option value="">— Unassigned —</option>
+              {crew.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 

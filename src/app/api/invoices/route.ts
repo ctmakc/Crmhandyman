@@ -13,13 +13,47 @@ export interface LineItem {
 /** Money never leaves this file with more than two decimals. */
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Sequential, human-quotable invoice number, scoped per tenant per year. */
+/**
+ * Sequential, human-quotable invoice number, scoped per tenant per year.
+ *
+ * Derived from the highest number already issued rather than from a count, so a
+ * voided or manually removed row cannot make the sequence reuse a number. Callers
+ * must go through `createInvoice`, which retries on the unique-constraint race.
+ */
 async function nextNumber(tenantId: string) {
   const year = new Date().getFullYear();
-  const count = await prisma.invoice.count({
+  const last = await prisma.invoice.findFirst({
     where: { tenantId, number: { startsWith: `INV-${year}-` } },
+    orderBy: { number: "desc" },
+    select: { number: true },
   });
-  return `INV-${year}-${String(count + 1).padStart(4, "0")}`;
+  const seq = last ? Number(last.number.slice(-4)) || 0 : 0;
+  return `INV-${year}-${String(seq + 1).padStart(4, "0")}`;
+}
+
+/** Prisma's unique-constraint violation. */
+const isDuplicateNumber = (e: unknown) =>
+  typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
+
+/**
+ * Two invoices created in the same instant compute the same number and the second
+ * insert violates `@@unique([tenantId, number])`. Rather than 500, take the next
+ * number and try again.
+ */
+async function createInvoice(
+  tenantId: string,
+  data: Omit<Parameters<typeof prisma.invoice.create>[0]["data"], "number" | "tenantId">
+) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await prisma.invoice.create({
+        data: { ...data, tenantId, number: await nextNumber(tenantId) } as never,
+      });
+    } catch (e) {
+      if (!isDuplicateNumber(e) || attempt === 4) throw e;
+    }
+  }
+  throw new Error("Could not allocate an invoice number");
 }
 
 export async function GET(req: NextRequest) {
@@ -109,7 +143,6 @@ export async function POST(req: NextRequest) {
   const depositRate = Math.min(Math.max(Number(body.depositRate) || 0, 0), 0.9);
 
   const base = {
-    tenantId,
     projectId: project.id,
     estimateId,
     clientName: project.clientName,
@@ -126,11 +159,9 @@ export async function POST(req: NextRequest) {
 
     const pct = Math.round(depositRate * 100);
 
-    const deposit = await prisma.invoice.create({
-      data: {
-        ...base,
+    const deposit = await createInvoice(tenantId, {
+      ...base,
         kind: "DEPOSIT",
-        number: await nextNumber(tenantId),
         lineItems: JSON.stringify([
           {
             description: `Deposit — ${pct}% of ${project.title}`,
@@ -145,14 +176,11 @@ export async function POST(req: NextRequest) {
         notes: `${pct}% deposit. Work is scheduled once this is settled.`,
         // A deposit is due before the truck rolls, not on net-14 terms.
         dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      },
     });
 
-    const balance = await prisma.invoice.create({
-      data: {
-        ...base,
+    const balance = await createInvoice(tenantId, {
+      ...base,
         kind: "BALANCE",
-        number: await nextNumber(tenantId),
         lineItems: JSON.stringify([
           ...lineItems,
           {
@@ -167,23 +195,19 @@ export async function POST(req: NextRequest) {
         total: round2(balanceSubtotal + balanceTax),
         notes: notes ?? `Balance after the ${pct}% deposit.`,
         dueDate,
-      },
     });
 
     return NextResponse.json({ ...deposit, balance, split: true }, { status: 201 });
   }
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      ...base,
-      number: await nextNumber(tenantId),
-      lineItems: JSON.stringify(lineItems),
-      subtotal,
-      tax,
-      total,
-      notes,
-      dueDate,
-    },
+  const invoice = await createInvoice(tenantId, {
+    ...base,
+    lineItems: JSON.stringify(lineItems),
+    subtotal,
+    tax,
+    total,
+    notes,
+    dueDate,
   });
 
   return NextResponse.json(invoice, { status: 201 });
