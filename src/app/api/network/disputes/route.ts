@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { getAppSessionUser } from "@/lib/session";
@@ -254,28 +255,60 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const slaDueAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO NetworkDispute (
-        id, claimId, openedByTenantId, respondentTenantId, category, summary,
-        evidenceUrls, status, slaDueAt, createdAt, updatedAt
-      ) VALUES (
-        ${id}, ${claim.id}, ${openedByTenantId}, ${respondentTenantId}, ${category}, ${summary},
-        ${JSON.stringify(urls)}, 'OPEN', ${slaDueAt}, ${now}, ${now}
-      )
-    `);
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO NetworkDisputeMessage (
-        id, disputeId, tenantId, authorEmail, body, evidenceUrls, createdAt
-      ) VALUES (
-        ${messageId}, ${id}, ${user.tenantId}, ${user.email}, ${summary}, ${JSON.stringify(urls)}, ${now}
-      )
-    `);
-    await tx.leadListing.update({
-      where: { id: claim.listingId },
-      data: { status: "DISPUTED" },
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO NetworkDispute (
+          id, claimId, openedByTenantId, respondentTenantId, category, summary,
+          evidenceUrls, status, slaDueAt, createdAt, updatedAt
+        ) VALUES (
+          ${id}, ${claim.id}, ${openedByTenantId}, ${respondentTenantId}, ${category}, ${summary},
+          ${JSON.stringify(urls)}, 'OPEN', ${slaDueAt}, ${now}, ${now}
+        )
+      `);
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO NetworkDisputeMessage (
+          id, disputeId, tenantId, authorEmail, body, evidenceUrls, createdAt
+        ) VALUES (
+          ${messageId}, ${id}, ${user.tenantId}, ${user.email}, ${summary}, ${JSON.stringify(urls)}, ${now}
+        )
+      `);
+      await tx.leadListing.update({
+        where: { id: claim.listingId },
+        data: { status: "DISPUTED" },
+      });
+      await recordAuditEvent(
+        {
+          actor: { type: "USER", id: user.id, email: user.email },
+          tenantId: user.tenantId,
+          action: "NETWORK_DISPUTE_OPENED",
+          targetType: "NETWORK_DISPUTE",
+          targetId: id,
+          metadata: {
+            claimId: claim.id,
+            listingId: claim.listingId,
+            category,
+            evidenceCount: urls.length,
+            openedAs: isClaimant ? "CLAIMANT" : "OWNER",
+            respondentTenantId,
+            slaDueAt: slaDueAt.toISOString(),
+          },
+          ipAddress: requestIp(req.headers),
+        },
+        tx
+      );
     });
-  });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("unresolved dispute already exists")) {
+      return NextResponse.json(
+        { error: "Another unresolved dispute already exists for this lead listing." },
+        { status: 409 }
+      );
+    }
+    console.error("Unable to open network dispute", error);
+    return NextResponse.json({ error: "Unable to open dispute." }, { status: 500 });
+  }
 
   const respondent = isClaimant ? claim.listing.tenant : claim.claimedBy;
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://handymanpro.ca";
@@ -283,6 +316,7 @@ export async function POST(req: NextRequest) {
     await sendOutboundEmail({
       to: respondent.ownerEmail,
       subject: `Lead network dispute opened: ${claim.listing.title}`,
+      idempotencyKey: `dispute-opened:${id}:${respondentTenantId}`,
       text: [
         `A dispute was opened by ${isClaimant ? claim.claimedBy.businessName : claim.listing.tenant.businessName}.`,
         `Category: ${category.replaceAll("_", " ")}`,
