@@ -37,7 +37,7 @@ async function main() {
   const wallet = await prisma.creditWallet.create({
     data: { tenantId: claimantA.id, balance: 10 },
   });
-  await prisma.creditTransaction.create({
+  const welcomeTransaction = await prisma.creditTransaction.create({
     data: {
       walletId: wallet.id,
       type: "WELCOME",
@@ -60,6 +60,17 @@ async function main() {
       },
     }),
     /Unique constraint|unique constraint/i
+  );
+  await assert.rejects(
+    prisma.creditTransaction.update({
+      where: { id: welcomeTransaction.id },
+      data: { description: "Mutated ledger entry" },
+    }),
+    /Credit transactions are immutable/i
+  );
+  await assert.rejects(
+    prisma.creditTransaction.delete({ where: { id: welcomeTransaction.id } }),
+    /Credit transactions are immutable/i
   );
 
   const bucketKey = `ci-rate-limit:${suffix}`;
@@ -122,6 +133,56 @@ async function main() {
   assert.equal(outboxRows[0].status, "PENDING");
   assert.equal(Number(outboxRows[0].attempts), 0);
   assert.equal(Number(outboxRows[0].maxAttempts), 8);
+
+  const auditId = randomUUID();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO AuditEvent (
+      "id", "actorType", "actorId", "actorEmail", "tenantId", "action",
+      "targetType", "targetId", "metadataJson", "createdAt"
+    ) VALUES (?, 'SYSTEM', ?, ?, ?, ?, ?, ?, '{}', CURRENT_TIMESTAMP)`,
+    auditId,
+    `ci-${suffix}`,
+    `ci-${suffix}@example.test`,
+    owner.id,
+    "CI_AUDIT_EVENT",
+    "CI_TARGET",
+    suffix
+  );
+  await assert.rejects(
+    prisma.$executeRawUnsafe(
+      `UPDATE AuditEvent SET "action" = 'MUTATED' WHERE "id" = ?`,
+      auditId
+    ),
+    /Audit events are immutable/i
+  );
+  await assert.rejects(
+    prisma.$executeRawUnsafe(`DELETE FROM AuditEvent WHERE "id" = ?`, auditId),
+    /Audit events are immutable/i
+  );
+
+  const webhookId = randomUUID();
+  const webhookEventId = `evt_ci_${suffix}`;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO WebhookReceipt (
+      "id", "provider", "eventId", "eventType", "objectId", "payloadSha256",
+      "livemode", "status", "attempts", "receivedAt", "updatedAt"
+    ) VALUES (?, 'STRIPE', ?, 'checkout.session.completed', ?, ?, 0, 'RECEIVED', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    webhookId,
+    webhookEventId,
+    `cs_ci_${suffix}`,
+    "a".repeat(64)
+  );
+  await assert.rejects(
+    prisma.$executeRawUnsafe(
+      `INSERT INTO WebhookReceipt (
+        "id", "provider", "eventId", "eventType", "payloadSha256", "status"
+      ) VALUES (?, 'STRIPE', ?, 'checkout.session.completed', ?, 'RECEIVED')`,
+      randomUUID(),
+      webhookEventId,
+      "b".repeat(64)
+    ),
+    /UNIQUE constraint failed|unique constraint/i
+  );
 
   const lead = await prisma.lead.create({
     data: {
@@ -188,7 +249,7 @@ async function main() {
   );
 
   console.log(
-    "Database smoke checks passed: ledger idempotency, rate limits, email outbox and dispute trigger."
+    "Database smoke checks passed: immutable ledgers, rate limits, email outbox, webhook receipts and dispute trigger."
   );
 }
 
