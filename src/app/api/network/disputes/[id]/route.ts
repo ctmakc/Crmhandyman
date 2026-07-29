@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { recordAuditEvent, requestIp } from "@/lib/audit";
 import { refundCredits } from "@/lib/credits";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
@@ -100,10 +101,15 @@ async function restoreListingStatus(tx: Prisma.TransactionClient, listingId: str
   });
 }
 
-async function notifyParties(dispute: DisputeRow, subject: string, body: string) {
+async function notifyParties(
+  dispute: DisputeRow,
+  subject: string,
+  body: string,
+  idempotencyPrefix: string
+) {
   const tenants = await prisma.tenant.findMany({
     where: { id: { in: [dispute.ownerTenantId, dispute.claimantTenantId] } },
-    select: { businessName: true, ownerEmail: true },
+    select: { id: true, businessName: true, ownerEmail: true },
   });
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://handymanpro.ca";
 
@@ -112,6 +118,7 @@ async function notifyParties(dispute: DisputeRow, subject: string, body: string)
       sendOutboundEmail({
         to: tenant.ownerEmail,
         subject,
+        idempotencyKey: `${idempotencyPrefix}:${tenant.id}`,
         text: `${body}\n\nReview the case: ${baseUrl}/network/disputes`,
         html: `
           <p>${escapeHtml(body)}</p>
@@ -174,6 +181,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           updatedAt = ${now}
       WHERE id = ${dispute.id}
     `);
+    await recordAuditEvent(
+      {
+        actor: { type: "USER", id: user.id, email: user.email },
+        tenantId: user.tenantId,
+        action: "NETWORK_DISPUTE_MESSAGE_ADDED",
+        targetType: "NETWORK_DISPUTE",
+        targetId: dispute.id,
+        metadata: {
+          messageId,
+          evidenceCount: urls.length,
+          party,
+          superAdmin,
+        },
+        ipAddress: requestIp(req.headers),
+      },
+      tx
+    );
   });
 
   const otherTenantId =
@@ -190,6 +214,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       await sendOutboundEmail({
         to: otherTenant.ownerEmail,
         subject: `New response in dispute: ${dispute.listingTitle}`,
+        idempotencyKey: `dispute-response:${dispute.id}:${messageId}:${otherTenantId}`,
         text: `${message}\n\nReview the case: ${baseUrl}/network/disputes`,
         html: `<p style="white-space:pre-line">${escapeHtml(message)}</p><p><a href="${escapeHtml(`${baseUrl}/network/disputes`)}">Review the case</a></p>`,
       });
@@ -244,6 +269,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const now = new Date();
   let walletBalance: number | null = null;
+  let refundTransactionId: string | null = null;
   const nextStatus = action === "REQUEST_INFO" ? "NEEDS_INFO" : action === "CLOSE" ? "CLOSED" : "RESOLVED";
 
   await prisma.$transaction(async (tx) => {
@@ -263,6 +289,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         description: `Dispute refund for ${dispute.listingTitle}`,
       });
       walletBalance = refund.wallet.balance;
+      refundTransactionId = refund.transaction.id;
       await tx.leadClaim.update({
         where: { id: claim.id },
         data: { status: "REFUNDED", creditsPaid: 0 },
@@ -288,6 +315,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ${randomUUID()}, ${dispute.id}, NULL, ${user.email}, ${resolution}, '[]', ${now}
       )
     `);
+    await recordAuditEvent(
+      {
+        actor: { type: "USER", id: user.id, email: user.email },
+        tenantId: user.tenantId,
+        action: `NETWORK_DISPUTE_${action}`,
+        targetType: "NETWORK_DISPUTE",
+        targetId: dispute.id,
+        metadata: {
+          previousStatus: dispute.status,
+          nextStatus,
+          listingId: dispute.listingId,
+          claimId: dispute.claimId,
+          refundTransactionId,
+          walletBalance,
+          resolution,
+        },
+        ipAddress: requestIp(req.headers),
+      },
+      tx
+    );
   });
 
   await notifyParties(
@@ -299,7 +346,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ? `The dispute was resolved without a refund. ${resolution}`
         : action === "REQUEST_INFO"
           ? `Additional information was requested. ${resolution}`
-          : `The dispute was closed. ${resolution}`
+          : `The dispute was closed. ${resolution}`,
+    `dispute-resolution:${dispute.id}:${action}`
   );
 
   return NextResponse.json({
