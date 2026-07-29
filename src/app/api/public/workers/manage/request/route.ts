@@ -1,26 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { createSignedToken } from "@/lib/signed-token";
-
-const requestLog = new Map<string, number[]>();
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_REQUESTS_PER_HOUR = 5;
 
 function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const recent = (requestLog.get(ip) ?? []).filter((timestamp) => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_REQUESTS_PER_HOUR) {
-    requestLog.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  requestLog.set(ip, recent);
-  return false;
 }
 
 export async function POST(req: NextRequest) {
@@ -28,13 +13,6 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
-
-  if (rateLimited(ip)) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 }
-    );
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -50,6 +28,40 @@ export async function POST(req: NextRequest) {
   const email = cleanText(body.email, 160).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "A valid email is required." }, { status: 422 });
+  }
+
+  try {
+    const ipLimit = await consumeRateLimit({
+      scope: "worker-manage-request-ip",
+      identifier: ip,
+      limit: 10,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(ipLimit) }
+      );
+    }
+
+    const emailLimit = await consumeRateLimit({
+      scope: "worker-manage-request-email",
+      identifier: email,
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!emailLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429, headers: rateLimitHeaders(emailLimit) }
+      );
+    }
+  } catch (error) {
+    console.error("Worker management rate limiter failed", error);
+    return NextResponse.json(
+      { error: "Request protection is temporarily unavailable." },
+      { status: 503 }
+    );
   }
 
   const genericResponse = NextResponse.json({
