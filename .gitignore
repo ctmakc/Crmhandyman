@@ -50,3 +50,10 @@ cookies.txt
 next-env.d.ts
 
 /src/generated/prisma
+
+# Renamed build/dependency leftovers. The patterns above are root-anchored, so a
+# directory renamed aside (".next_old_blocked") slipped past them and 163MB of
+# stale build output was committed once already.
+*_old_blocked/
+.next_old_blocked/
+node_modules_old_blocked/
