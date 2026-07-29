@@ -67,7 +67,7 @@ async function main() {
         walletId: wallet.id,
         type: "WELCOME",
         amount: 10,
-        balanceAfter: 20,
+        balanceAfter: 10,
         description: "Duplicate CI welcome credits",
         idempotencyKey: `ci-welcome:${claimantA.id}`,
       },
