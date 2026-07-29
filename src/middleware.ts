@@ -15,6 +15,7 @@ const PUBLIC_PATHS = [
   "/api/auth",
   "/api/webhooks",
   "/api/public",
+  "/api/internal",
   "/api/tenant/resolve",
   "/api/register",
   "/sitemap.xml",
