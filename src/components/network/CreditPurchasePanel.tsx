@@ -7,12 +7,24 @@ type CreditPack = {
   id: string;
   label: string;
   credits: number;
+  amountCents: number;
+  currency: string;
   description: string | null;
 };
 
+function formatPrice(pack: CreditPack) {
+  try {
+    return new Intl.NumberFormat("en-CA", {
+      style: "currency",
+      currency: pack.currency,
+    }).format(pack.amountCents / 100);
+  } catch {
+    return `${(pack.amountCents / 100).toFixed(2)} ${pack.currency}`;
+  }
+}
+
 export default function CreditPurchasePanel() {
   const [packs, setPacks] = useState<CreditPack[]>([]);
-  const [currency, setCurrency] = useState("CAD");
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState("");
   const [error, setError] = useState("");
@@ -26,8 +38,7 @@ export default function CreditPurchasePanel() {
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unable to load credit packs.");
-        setPacks(payload.data || []);
-        setCurrency(payload.meta?.currency || "CAD");
+        setPacks(Array.isArray(payload.data) ? payload.data : []);
       })
       .catch((reason) => {
         setError(reason instanceof Error ? reason.message : "Unable to load credit packs.");
@@ -74,12 +85,12 @@ export default function CreditPurchasePanel() {
             <h2 className="text-lg font-black">Buy network credits</h2>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Checkout is hosted by Stripe. Credits are added only after a signed paid webhook is
-            validated against the server-side pack catalog.
+            Checkout is hosted by Stripe. Credits are added only after the signed webhook confirms
+            the tenant, paid amount, currency and server-controlled credit pack.
           </p>
         </div>
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-600">
-          {currency}
+          Secure checkout
         </span>
       </div>
 
@@ -115,9 +126,16 @@ export default function CreditPurchasePanel() {
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {packs.map((pack) => (
             <article key={pack.id} className="rounded-2xl border border-slate-200 p-5">
-              <div className="text-3xl font-black text-slate-950">{pack.credits}</div>
-              <div className="mt-1 text-xs font-black uppercase tracking-wider text-blue-700">
-                credits
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-3xl font-black text-slate-950">{pack.credits}</div>
+                  <div className="mt-1 text-xs font-black uppercase tracking-wider text-blue-700">
+                    credits
+                  </div>
+                </div>
+                <div className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-800">
+                  {formatPrice(pack)}
+                </div>
               </div>
               <h3 className="mt-4 font-black">{pack.label}</h3>
               <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
@@ -130,7 +148,7 @@ export default function CreditPurchasePanel() {
                 className="mt-5 flex w-full items-center justify-center rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800 disabled:opacity-50"
               >
                 {buying === pack.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Continue to Stripe
+                Buy {pack.credits} credits
               </button>
             </article>
           ))}
@@ -139,7 +157,7 @@ export default function CreditPurchasePanel() {
         <div className="mt-5 flex gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
           <PackageOpen className="mt-0.5 h-5 w-5 shrink-0" />
           No Stripe credit packs are configured. Set `STRIPE_CREDIT_PACKS_JSON` with valid Stripe
-          Price IDs before exposing purchases.
+          Price IDs, exact amounts and currencies before exposing purchases.
         </div>
       )}
     </section>
