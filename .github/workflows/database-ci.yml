@@ -50,5 +50,8 @@ jobs:
       - name: Exercise lead claim concurrency constraints
         run: node scripts/ci-lead-claim-smoke.mjs
 
+      - name: Exercise credit wallet integrity
+        run: node scripts/ci-credit-integrity-smoke.mjs
+
       - name: Build application against migrated schema
         run: npm run build
