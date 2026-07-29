@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordAuditEvent } from "@/lib/audit";
 import { adjustCredits } from "@/lib/credit-adjustments";
 import { getCreditPack } from "@/lib/credit-packs";
 import { escapeHtml, sendOutboundEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { validateStripeCreditSession } from "@/lib/stripe-credit-reconciliation.js";
 import { verifyStripeWebhookSignature } from "@/lib/stripe-webhook.js";
+import { receiveWebhookEvent, updateWebhookReceipt } from "@/lib/webhook-receipts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,15 +70,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid Stripe webhook JSON." }, { status: 400 });
   }
 
-  if (!event.id || !event.type || !SUPPORTED_EVENTS.has(event.type)) {
-    return NextResponse.json({ received: true, processed: false });
+  if (!event.id || !event.type) {
+    return NextResponse.json({ error: "Stripe event ID and type are required." }, { status: 400 });
   }
 
   const session = event.data?.object;
+  let receipt;
+  try {
+    receipt = await receiveWebhookEvent({
+      provider: "STRIPE",
+      eventId: event.id,
+      eventType: event.type,
+      objectId: session?.id ?? null,
+      payload: rawBody,
+      livemode: event.livemode === true,
+    });
+  } catch (error) {
+    console.error("Unable to persist Stripe webhook receipt", error);
+    return NextResponse.json({ error: "Unable to persist webhook receipt." }, { status: 500 });
+  }
+
+  if (receipt.status === "PROCESSED") {
+    return NextResponse.json({ received: true, processed: true, replayed: true });
+  }
+
+  if (!SUPPORTED_EVENTS.has(event.type)) {
+    await updateWebhookReceipt(receipt.id, {
+      status: "IGNORED",
+      lastError: `Unsupported event type: ${event.type}`,
+    });
+    return NextResponse.json({ received: true, processed: false, ignored: true });
+  }
+
   if (!session?.id || session.object !== "checkout.session") {
+    await updateWebhookReceipt(receipt.id, {
+      status: "FAILED",
+      lastError: "Stripe event does not contain a Checkout Session.",
+    });
     return NextResponse.json({ error: "Stripe event does not contain a Checkout Session." }, { status: 400 });
   }
   if (session.payment_status !== "paid") {
+    await updateWebhookReceipt(receipt.id, {
+      status: "IGNORED",
+      lastError: `Payment status is ${session.payment_status || "unknown"}.`,
+    });
     return NextResponse.json({ received: true, processed: false, reason: "PAYMENT_NOT_PAID" });
   }
 
@@ -84,6 +121,8 @@ export async function POST(req: NextRequest) {
   const pack = getCreditPack(packId);
   const reconciliation = validateStripeCreditSession(session, pack);
   if (!reconciliation.valid || !pack) {
+    const reason = `Credit reconciliation failed: ${reconciliation.reason || "UNKNOWN"}`;
+    await updateWebhookReceipt(receipt.id, { status: "FAILED", lastError: reason });
     console.error("Stripe credit checkout reconciliation failed", {
       eventId: event.id,
       sessionId: session.id,
@@ -101,12 +140,16 @@ export async function POST(req: NextRequest) {
     select: { id: true, businessName: true, ownerEmail: true },
   });
   if (!tenant) {
+    await updateWebhookReceipt(receipt.id, {
+      status: "FAILED",
+      lastError: "Credit purchase workspace not found.",
+    });
     return NextResponse.json({ error: "Credit purchase workspace not found." }, { status: 400 });
   }
 
   try {
-    const result = await prisma.$transaction((tx) =>
-      adjustCredits(tx, {
+    const result = await prisma.$transaction(async (tx) => {
+      const purchase = await adjustCredits(tx, {
         tenantId: tenant.id,
         amount: pack.credits,
         type: "CREDIT_PURCHASE",
@@ -114,8 +157,39 @@ export async function POST(req: NextRequest) {
         description: `${pack.label} purchased through Stripe Checkout`,
         referenceType: "STRIPE_CHECKOUT",
         referenceId: session.id,
-      })
-    );
+      });
+
+      if (!purchase.replayed) {
+        await recordAuditEvent(
+          {
+            actor: { type: "WEBHOOK", id: event.id, email: null },
+            tenantId: tenant.id,
+            action: "STRIPE_CREDIT_PURCHASE_APPLIED",
+            targetType: "CREDIT_WALLET",
+            targetId: purchase.wallet.id,
+            metadata: {
+              eventId: event.id,
+              sessionId: session.id,
+              packId: pack.id,
+              credits: pack.credits,
+              amountCents: pack.amountCents,
+              currency: pack.currency,
+              transactionId: purchase.transaction.id,
+              balanceAfter: purchase.wallet.balance,
+              webhookAttempts: receipt.attempts,
+            },
+          },
+          tx
+        );
+      }
+
+      await updateWebhookReceipt(
+        receipt.id,
+        { status: "PROCESSED", lastError: null },
+        tx
+      );
+      return purchase;
+    });
 
     if (!result.replayed) {
       try {
@@ -126,6 +200,7 @@ export async function POST(req: NextRequest) {
         await sendOutboundEmail({
           to: tenant.ownerEmail,
           subject: `${pack.credits} HandymanPro credits added`,
+          idempotencyKey: `stripe-credit-confirmation:${session.id}`,
           text: [
             `Payment received for ${pack.label}.`,
             `Payment amount: ${formattedAmount}`,
@@ -152,8 +227,13 @@ export async function POST(req: NextRequest) {
       replayed: result.replayed,
       transactionId: result.transaction.id,
       balance: result.wallet.balance,
+      webhookAttempts: receipt.attempts,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to apply credit purchase.";
+    await updateWebhookReceipt(receipt.id, { status: "FAILED", lastError: message }).catch(
+      (receiptError) => console.error("Unable to mark Stripe receipt failed", receiptError)
+    );
     console.error("Unable to apply Stripe credit purchase", {
       eventId: event.id,
       sessionId: session.id,
