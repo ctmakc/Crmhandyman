@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getCreditPack } from "@/lib/credit-packs";
 import { prisma } from "@/lib/prisma";
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
   });
   if (!tenant) return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
 
+  const checkoutRequestId = randomUUID();
   const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || "http://localhost:3000")
     .replace(/\/$/, "");
   const form = new URLSearchParams();
@@ -72,9 +74,15 @@ export async function POST(req: NextRequest) {
   form.set("metadata[tenantSlug]", tenant.slug);
   form.set("metadata[creditPackId]", pack.id);
   form.set("metadata[credits]", String(pack.credits));
+  form.set("metadata[amountCents]", String(pack.amountCents));
+  form.set("metadata[currency]", pack.currency);
+  form.set("metadata[checkoutRequestId]", checkoutRequestId);
   form.set("payment_intent_data[metadata][tenantId]", tenant.id);
   form.set("payment_intent_data[metadata][creditPackId]", pack.id);
   form.set("payment_intent_data[metadata][credits]", String(pack.credits));
+  form.set("payment_intent_data[metadata][amountCents]", String(pack.amountCents));
+  form.set("payment_intent_data[metadata][currency]", pack.currency);
+  form.set("payment_intent_data[metadata][checkoutRequestId]", checkoutRequestId);
   form.set("payment_intent_data[description]", `${pack.credits} HandymanPro network credits for ${tenant.businessName}`);
 
   const customerEmail = user.email || tenant.ownerEmail;
@@ -88,7 +96,7 @@ export async function POST(req: NextRequest) {
       headers: {
         Authorization: `Bearer ${stripeSecretKey}`,
         "Content-Type": "application/x-www-form-urlencoded",
-        "Idempotency-Key": `credit-checkout:${tenant.id}:${pack.id}:${Date.now()}`,
+        "Idempotency-Key": `credit-checkout:${tenant.id}:${checkoutRequestId}`,
       },
       body: form.toString(),
       cache: "no-store",
@@ -114,6 +122,8 @@ export async function POST(req: NextRequest) {
         id: pack.id,
         label: pack.label,
         credits: pack.credits,
+        amountCents: pack.amountCents,
+        currency: pack.currency,
       },
     });
   } catch (error) {
