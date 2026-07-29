@@ -2,29 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { adjustCredits } from "@/lib/credit-adjustments";
 import { InsufficientCreditsError } from "@/lib/credits";
 import { prisma } from "@/lib/prisma";
-import { getAppSessionUser } from "@/lib/session";
-
-function superAdminEmails() {
-  return new Set(
-    (process.env.SUPER_ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-async function getSuperAdmin() {
-  const user = await getAppSessionUser();
-  if (!user || !superAdminEmails().has(user.email.toLowerCase())) return null;
-  return user;
-}
+import { getSuperAdminUser } from "@/lib/super-admin";
 
 function text(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
 export async function GET() {
-  const admin = await getSuperAdmin();
+  const admin = await getSuperAdminUser();
   if (!admin) return NextResponse.json({ error: "Super-admin access required." }, { status: 403 });
 
   const tenants = await prisma.tenant.findMany({
@@ -63,7 +48,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const admin = await getSuperAdmin();
+  const admin = await getSuperAdminUser();
   if (!admin) return NextResponse.json({ error: "Super-admin access required." }, { status: 403 });
 
   let body: Record<string, unknown>;
