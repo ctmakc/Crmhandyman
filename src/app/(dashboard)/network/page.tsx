@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import CreditPurchasePanel from "@/components/network/CreditPurchasePanel";
+import CreditWalletPanel from "@/components/network/CreditWalletPanel";
 import LeadNetwork from "@/components/network/LeadNetwork";
 
 export const metadata: Metadata = {
@@ -18,6 +20,8 @@ export default function NetworkPage({ searchParams }: { searchParams: { publishL
           private until the owner approves a request and the claimant unlocks it.
         </p>
       </div>
+      <CreditWalletPanel />
+      <CreditPurchasePanel />
       <LeadNetwork initialLeadId={searchParams.publishLead ?? ""} />
     </div>
   );
