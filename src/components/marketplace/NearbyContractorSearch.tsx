@@ -26,9 +26,9 @@ export default function NearbyContractorSearch({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const params = new URLSearchParams();
-    for (const [key, value] of form.entries()) {
+    form.forEach((value, key) => {
       if (typeof value === "string" && value.trim()) params.set(key, value.trim());
-    }
+    });
     router.push(`/contractors/nearby?${params.toString()}`);
   }
 
