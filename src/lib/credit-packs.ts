@@ -5,6 +5,8 @@ export type CreditPack = {
   label: string;
   credits: number;
   priceId: string;
+  amountCents: number;
+  currency: string;
   description: string | null;
 };
 
@@ -29,13 +31,19 @@ export function getCreditPacks(): CreditPack[] {
         const description = text(record.description, 300) || null;
         const priceId = text(record.priceId, 120);
         const credits = Number(record.credits);
+        const amountCents = Number(record.amountCents);
+        const currency = text(record.currency, 3).toUpperCase();
 
         if (!/^[a-z0-9][a-z0-9_-]{1,59}$/i.test(id)) return null;
         if (label.length < 2) return null;
         if (!/^price_[a-z0-9]+$/i.test(priceId)) return null;
         if (!Number.isInteger(credits) || credits < 1 || credits > 100_000) return null;
+        if (!Number.isInteger(amountCents) || amountCents < 50 || amountCents > 100_000_000) {
+          return null;
+        }
+        if (!/^[A-Z]{3}$/.test(currency)) return null;
 
-        return { id, label, credits, priceId, description };
+        return { id, label, credits, priceId, amountCents, currency, description };
       })
       .filter((pack): pack is CreditPack => Boolean(pack));
 
@@ -55,6 +63,8 @@ export function publicCreditPack(pack: CreditPack) {
     id: pack.id,
     label: pack.label,
     credits: pack.credits,
+    amountCents: pack.amountCents,
+    currency: pack.currency,
     description: pack.description,
   };
 }
