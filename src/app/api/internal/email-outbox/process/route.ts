@@ -15,7 +15,7 @@ function authorized(req: NextRequest) {
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-async function process(req: NextRequest) {
+async function handleProcessRequest(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -30,5 +30,5 @@ async function process(req: NextRequest) {
   }
 }
 
-export const GET = process;
-export const POST = process;
+export const GET = handleProcessRequest;
+export const POST = handleProcessRequest;
