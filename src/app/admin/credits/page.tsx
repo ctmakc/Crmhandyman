@@ -2,25 +2,17 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import AdminCreditsManager from "@/components/admin/AdminCreditsManager";
 import { getAppSessionUser } from "@/lib/session";
+import { isSuperAdminEmail } from "@/lib/super-admin";
 
 export const metadata: Metadata = {
   title: "Credit Administration",
   robots: { index: false, follow: false, noarchive: true },
 };
 
-function superAdminEmails() {
-  return new Set(
-    (process.env.SUPER_ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
 export default async function CreditAdministrationPage() {
   const user = await getAppSessionUser();
   if (!user) redirect("/login?callbackUrl=/admin/credits");
-  if (!superAdminEmails().has(user.email.toLowerCase())) redirect("/app");
+  if (!isSuperAdminEmail(user.email)) redirect("/app");
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
