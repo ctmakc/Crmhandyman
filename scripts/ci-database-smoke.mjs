@@ -88,6 +88,41 @@ async function main() {
     assert.equal(Number(rows[0].expiresAt), expiry);
   }
 
+  const emailKey = `ci-email:${suffix}`;
+  const emailId = randomUUID();
+  const emailInsert = `INSERT OR IGNORE INTO EmailOutbox (
+    "id", "idempotencyKey", "toEmail", "subject", "textBody", "status",
+    "attempts", "maxAttempts", "nextAttemptAt", "createdAt", "updatedAt"
+  ) VALUES (?, ?, ?, ?, ?, 'PENDING', 0, 8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+  const firstEmailInsert = await prisma.$executeRawUnsafe(
+    emailInsert,
+    emailId,
+    emailKey,
+    `outbox-${suffix}@example.test`,
+    "CI outbox delivery",
+    "CI outbox message"
+  );
+  const duplicateEmailInsert = await prisma.$executeRawUnsafe(
+    emailInsert,
+    randomUUID(),
+    emailKey,
+    `other-${suffix}@example.test`,
+    "Duplicate CI outbox delivery",
+    "This row must be ignored"
+  );
+  assert.equal(firstEmailInsert, 1);
+  assert.equal(duplicateEmailInsert, 0);
+
+  const outboxRows = await prisma.$queryRawUnsafe(
+    `SELECT "id", "status", "attempts", "maxAttempts" FROM EmailOutbox WHERE "idempotencyKey" = ?`,
+    emailKey
+  );
+  assert.equal(outboxRows.length, 1);
+  assert.equal(outboxRows[0].id, emailId);
+  assert.equal(outboxRows[0].status, "PENDING");
+  assert.equal(Number(outboxRows[0].attempts), 0);
+  assert.equal(Number(outboxRows[0].maxAttempts), 8);
+
   const lead = await prisma.lead.create({
     data: {
       tenantId: owner.id,
@@ -152,7 +187,9 @@ async function main() {
     /unresolved dispute already exists/i
   );
 
-  console.log("Database smoke checks passed: ledger idempotency, rate limits, dispute trigger.");
+  console.log(
+    "Database smoke checks passed: ledger idempotency, rate limits, email outbox and dispute trigger."
+  );
 }
 
 try {
