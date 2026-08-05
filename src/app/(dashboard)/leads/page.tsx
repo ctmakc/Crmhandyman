@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Phone, Plus, Search, X } from "lucide-react";
 import {
   PageHead,
@@ -29,6 +30,7 @@ interface Lead {
   status: string;
   createdAt: string;
   assignedTo?: { name: string };
+  project?: { id: string; title: string; status: string };
 }
 
 /* The pipeline, in the order a lead walks it. */
@@ -93,9 +95,22 @@ const field =
   "w-full mt-1.5 px-3 py-2 text-[13px] text-ink placeholder:text-ink-3";
 const label = "eyebrow";
 
+/* Inline outcome buttons — the dispatcher works the sheet without opening
+   records. Same button language as buttonClass, compressed to row scale. */
+const act =
+  "mono rounded border border-line bg-plate px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-2 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink";
+const actQuiet =
+  "mono rounded px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:text-rose-ink";
+const actPrimary =
+  "mono rounded border border-navy-900 bg-navy-900 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-plate transition-colors duration-[140ms] ease-instrument hover:bg-navy-800";
+
 export default function LeadsPage() {
+  const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  /* The row that just changed state gets the ticket-snap for one beat. */
+  const [snapId, setSnapId] = useState<string | null>(null);
+  const snapTimer = useRef<number>();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
@@ -128,6 +143,44 @@ export default function LeadsPage() {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, sourceFilter]);
+
+  useEffect(() => () => window.clearTimeout(snapTimer.current), []);
+
+  /**
+   * An inline outcome: PUT the new status, then move the row locally. No
+   * refetch — the dispatcher's search text, focus and scroll must survive
+   * working the sheet.
+   */
+  async function setOutcome(
+    e: React.MouseEvent,
+    lead: Lead,
+    status: string,
+    note: string
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      toast("Could not update the lead");
+      return;
+    }
+    setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, status } : l)));
+    toast(note);
+    window.clearTimeout(snapTimer.current);
+    setSnapId(lead.id);
+    snapTimer.current = window.setTimeout(() => setSnapId(null), 240);
+  }
+
+  /** Jump into the record with the convert modal armed. */
+  function openJob(e: React.MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    router.push(`/leads/${id}?convert=1`);
+  }
 
   async function handleAddLead(e: React.FormEvent) {
     e.preventDefault();
@@ -381,7 +434,11 @@ export default function LeadsPage() {
           ) : (
             <Lane>
               {callSheet.map((lead) => (
-                <Row key={lead.id} status={toneKey(lead.status)}>
+                <Row
+                  key={lead.id}
+                  status={toneKey(lead.status)}
+                  className={lead.id === snapId ? "ticket-snap" : undefined}
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       {lead.phone ? (
@@ -414,6 +471,39 @@ export default function LeadsPage() {
                     </div>
                     <AgeTally days={daysSince(lead.createdAt, now)} />
                   </div>
+                  {/* The outcome cluster — under the tally on desktop, wrapping
+                      below the detail line on a phone. */}
+                  <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
+                    {lead.status === "NEW" && (
+                      <button
+                        type="button"
+                        className={act}
+                        onClick={(e) =>
+                          setOutcome(e, lead, "CONTACTED", "Marked contacted")
+                        }
+                      >
+                        Contacted
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={act}
+                      onClick={(e) =>
+                        setOutcome(e, lead, "VERIFIED", "Lead verified")
+                      }
+                    >
+                      Verify
+                    </button>
+                    <button
+                      type="button"
+                      className={actQuiet}
+                      onClick={(e) =>
+                        setOutcome(e, lead, "REJECTED", "Lead rejected")
+                      }
+                    >
+                      Reject
+                    </button>
+                  </div>
                 </Row>
               ))}
             </Lane>
@@ -443,6 +533,7 @@ export default function LeadsPage() {
                   key={lead.id}
                   href={`/leads/${lead.id}`}
                   status={toneKey(lead.status)}
+                  className={lead.id === snapId ? "ticket-snap" : undefined}
                 >
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="truncate text-[15px] font-bold leading-tight text-ink">
@@ -458,6 +549,15 @@ export default function LeadsPage() {
                       {[lead.jobType, lead.city].filter(Boolean).join(" · ")}
                     </span>
                   </p>
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      className={actPrimary}
+                      onClick={(e) => openJob(e, lead.id)}
+                    >
+                      Open job →
+                    </button>
+                  </div>
                 </Row>
               ))}
               {verified.length > 0 && closed.length > 0 && (
@@ -470,6 +570,7 @@ export default function LeadsPage() {
                   key={lead.id}
                   href={`/leads/${lead.id}`}
                   status={lead.status}
+                  className={lead.id === snapId ? "ticket-snap" : undefined}
                 >
                   <div className="flex items-baseline gap-3">
                     <span className="truncate text-[13px] text-ink-3">
@@ -481,6 +582,20 @@ export default function LeadsPage() {
                     >
                       {lead.status}
                     </span>
+                    {lead.status === "CONVERTED" && lead.project && (
+                      <button
+                        type="button"
+                        className="mono shrink-0 text-[11px] tracking-[0.06em] text-sky-ink hover:underline"
+                        title={lead.project.title}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          router.push(`/projects/${lead.project!.id}`);
+                        }}
+                      >
+                        → WO
+                      </button>
+                    )}
                   </div>
                 </Row>
               ))}

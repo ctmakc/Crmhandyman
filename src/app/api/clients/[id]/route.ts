@@ -16,6 +16,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     where: { id: params.id, tenantId: await tenantOf(session) },
     include: {
       equipment: { orderBy: { installedAt: "desc" } },
+      contracts: {
+        select: { id: true, name: true, pricePerVisit: true, visitMonths: true, active: true },
+        orderBy: { createdAt: "desc" },
+      },
       leads: { orderBy: { createdAt: "desc" } },
       projects: {
         orderBy: { createdAt: "desc" },

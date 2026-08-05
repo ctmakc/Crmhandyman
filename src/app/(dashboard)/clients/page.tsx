@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Plus, Search, X } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -23,6 +24,7 @@ interface Client {
   jobCount: number;
   leadCount: number;
   equipmentCount: number;
+  equipmentKinds: string[];
   openJobs: number;
   owing: number;
   lastSeen: string | null;
@@ -300,7 +302,6 @@ export default function ClientsPage() {
                 {groups.get(letter)!.map((c) => (
                   <Row
                     key={c.id}
-                    href={`/clients/${c.id}`}
                     className="!pt-[19px]"
                     // Green means "worked for, settled up" — a name with no jobs yet is neutral.
                     status={
@@ -313,6 +314,13 @@ export default function ClientsPage() {
                             : "DRAFT"
                     }
                   >
+                    {/* Stretched link: the whole card opens the dossier, while the tel:
+                        anchor below stays a real link — no <a>-inside-<a> hydration break. */}
+                    <Link
+                      href={`/clients/${c.id}`}
+                      className="absolute inset-0"
+                      aria-label={`Open ${c.name}`}
+                    />
                     {/* The file tab: initials on a half-raised tab straddling the top rule. */}
                     <span className="mono absolute left-5 top-0 -translate-y-1/2 rounded-t border border-b-0 border-line bg-plate px-1.5 py-[3px] text-[10px] font-medium uppercase leading-none tracking-[0.1em] text-ink-2">
                       {initialsOf(c.name)}
@@ -340,9 +348,19 @@ export default function ClientsPage() {
                     </p>
 
                     <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5 border-t border-line pt-2">
-                      <span className="mono text-[12px] text-ink-3">
-                        {c.phone || c.email || "no contact on file"}
-                      </span>
+                      {c.phone ? (
+                        <a
+                          href={`tel:${c.phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mono relative z-[1] text-[12px] text-ink underline underline-offset-4 hover:text-sky-ink"
+                        >
+                          {c.phone}
+                        </a>
+                      ) : (
+                        <span className="mono text-[12px] text-ink-3">
+                          {c.email || "no contact on file"}
+                        </span>
+                      )}
                       <span className="mono text-[12px] text-ink-2">
                         {c.jobCount === 0 && c.leadCount > 0
                           ? `LEAD ONLY · ${c.leadCount}`
@@ -356,9 +374,17 @@ export default function ClientsPage() {
                           {c.openJobs} OPEN
                         </span>
                       )}
-                      {c.equipmentCount > 0 && (
-                        <span className="mono rounded border border-line px-1.5 py-0.5 text-[10px] uppercase leading-none tracking-[0.08em] text-ink-2">
-                          {c.equipmentCount} UNIT{c.equipmentCount === 1 ? "" : "S"} ON SITE
+                      {(c.equipmentKinds ?? []).map((k, i) => (
+                        <span
+                          key={`${k}-${i}`}
+                          className="mono rounded border border-line px-1.5 py-0.5 text-[10px] uppercase leading-none tracking-[0.08em] text-ink-2"
+                        >
+                          {k}
+                        </span>
+                      ))}
+                      {c.equipmentCount > (c.equipmentKinds?.length ?? 0) && (
+                        <span className="mono rounded border border-line px-1.5 py-0.5 text-[10px] uppercase leading-none tracking-[0.08em] text-ink-3">
+                          +{c.equipmentCount - c.equipmentKinds.length}
                         </span>
                       )}
                       {c.owing > 0.005 && c.lastSeen && (

@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Phone, Check, X, ArrowRight } from "lucide-react";
-import { buttonClass, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
+import { ArrowLeft, ArrowRight, Check, Mail, Phone, X } from "lucide-react";
+import {
+  buttonClass,
+  spineFor,
+  textToneFor,
+  Skeleton,
+} from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 interface Lead {
@@ -24,8 +29,92 @@ interface Lead {
   project?: { id: string; title: string; status: string };
 }
 
+/**
+ * VERIFIED is this screen's word for a vetted lead; the shared SPINE map spells
+ * it QUALIFIED. Alias it so the spine and text tones come from the system map.
+ */
+const toneKey = (s: string) => (s === "VERIFIED" ? "QUALIFIED" : s);
+
+const DAY = 86_400_000;
+
+function daysOnSheet(iso: string) {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / DAY));
+}
+
+/** The rail the lead climbs. JOB is the CONVERTED end state. */
+const LADDER = [
+  { status: "NEW", label: "NEW" },
+  { status: "CONTACTED", label: "CONTACTED" },
+  { status: "VERIFIED", label: "VERIFIED" },
+  { status: "CONVERTED", label: "JOB" },
+];
+
+/** Log timestamp, built client-side: [04 AUG 14:32]. */
+function logStamp() {
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = d
+    .toLocaleDateString("en-CA", { month: "short" })
+    .replace(/\./g, "")
+    .toUpperCase();
+  const time = d.toLocaleTimeString("en-CA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `[${day} ${mon} ${time}]`;
+}
+
+/**
+ * The status ladder — a horizontal rail of mono eyebrows joined by hairline
+ * segments. Done steps read emerald with a filled segment; the current step is
+ * bold in its own semantic tone; the future is dim.
+ */
+function StatusLadder({ status }: { status: string }) {
+  const idx = LADDER.findIndex((s) => s.status === status);
+  return (
+    <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap pb-1">
+      {LADDER.map((step, i) => {
+        const done = idx >= 0 && i < idx;
+        const current = i === idx;
+        return (
+          <Fragment key={step.status}>
+            {i > 0 && (
+              <span
+                aria-hidden="true"
+                className="h-px min-w-[20px] flex-1"
+                style={{
+                  background:
+                    idx >= i ? "var(--emerald-ink)" : "var(--line)",
+                }}
+              />
+            )}
+            <span
+              className={`mono shrink-0 text-[11px] uppercase tracking-[0.09em] ${
+                current ? "font-bold" : ""
+              }`}
+              style={{
+                color: done
+                  ? "var(--emerald-ink)"
+                  : current
+                    ? textToneFor(toneKey(step.status))
+                    : "var(--ink-3)",
+                opacity: done || current ? 1 : 0.55,
+              }}
+              aria-current={current ? "step" : undefined}
+            >
+              {step.label}
+            </span>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [lead, setLead] = useState<Lead | null>(null);
   const [editing, setEditing] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -38,6 +127,8 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     assignedToId: "",
   });
   const [saving, setSaving] = useState(false);
+  const [logText, setLogText] = useState("");
+  const [logging, setLogging] = useState(false);
 
   async function fetchLead() {
     const res = await fetch(`/api/leads/${params.id}`);
@@ -56,6 +147,19 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* Arriving from the sheet's "OPEN JOB →": the convert modal opens itself. */
+  useEffect(() => {
+    if (
+      lead &&
+      searchParams.get("convert") === "1" &&
+      lead.status === "VERIFIED" &&
+      !lead.project
+    ) {
+      setShowConvertModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead?.id]);
+
   async function handleSave() {
     setSaving(true);
     await fetch(`/api/leads/${params.id}`, {
@@ -73,10 +177,34 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     await fetch(`/api/leads/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...lead, status }),
+      body: JSON.stringify({ status }),
     });
     toast(`Lead marked ${status.toLowerCase()}`);
     fetchLead();
+  }
+
+  /** Append a stamped line to the call log without touching the rest of notes. */
+  async function handleLogCall(e: React.FormEvent) {
+    e.preventDefault();
+    const text = logText.trim();
+    if (!text || !lead) return;
+    setLogging(true);
+    const entry = `${logStamp()} ${text}`;
+    const notes = lead.notes ? `${lead.notes}\n${entry}` : entry;
+    const res = await fetch(`/api/leads/${params.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
+    });
+    setLogging(false);
+    if (!res.ok) {
+      toast("Could not log the call");
+      return;
+    }
+    setLead({ ...lead, notes });
+    setForm((f) => ({ ...f, notes }));
+    setLogText("");
+    toast("Call logged");
   }
 
   async function handleConvert(e: React.FormEvent) {
@@ -101,6 +229,12 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   if (!lead) return <Skeleton lines={4} />;
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
+  const age = daysOnSheet(lead.createdAt);
+  const ageTone = age > 3 ? "var(--rose-ink)" : "var(--ink-3)";
+  const logLines = (lead.notes || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-24 md:pb-0">
@@ -108,12 +242,14 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         <ArrowLeft className="h-3.5 w-3.5" /> All leads
       </Link>
 
+      {/* THE CALL CARD — the header plate. The phone number is the instrument;
+          everything else on the plate exists to make this call. */}
       <div
         className="plate px-5 py-5"
-        style={{ borderLeft: `4px solid ${spineFor(lead.status)}` }}
+        style={{ borderLeft: `4px solid ${spineFor(toneKey(lead.status))}` }}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
               LD-{new Date(lead.createdAt).getFullYear()}-{lead.id.slice(-4).toUpperCase()}
             </span>
@@ -125,13 +261,99 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
             </p>
           </div>
           <div className="text-right">
-            <span className="eyebrow" style={{ color: textToneFor(lead.status) }}>
-              {lead.status}
+            <span
+              className="mono text-[11px] font-bold tracking-[0.08em]"
+              style={{ color: ageTone }}
+            >
+              IN THE SHEET {age}D
             </span>
             <p className="eyebrow mt-2">via {lead.source}</p>
           </div>
         </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-line pt-4">
+          {lead.phone ? (
+            <a
+              href={`tel:${lead.phone}`}
+              className="mono text-[24px] font-bold leading-none tracking-[-0.02em] text-ink transition-colors duration-[140ms] ease-instrument hover:text-sky-ink"
+            >
+              {lead.phone}
+            </a>
+          ) : (
+            <span className="mono text-[24px] leading-none tracking-[-0.02em] text-ink-3">
+              NO NUMBER
+            </span>
+          )}
+          <div className="flex items-center gap-2">
+            {lead.phone && (
+              <a href={`tel:${lead.phone}`} className={buttonClass("primary")}>
+                <Phone className="h-3.5 w-3.5" /> Call
+              </a>
+            )}
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} className={buttonClass("ghost")}>
+                <Mail className="h-3.5 w-3.5" /> Email
+              </a>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* THE LADDER — where this lead stands, and the moves available from here.
+          A rejected lead gets a stamp instead of a rail. */}
+      <section>
+        <div className="pb-2.5">
+          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+            Pipeline
+          </h2>
+        </div>
+        <div className="border-t border-line pt-4">
+          {lead.status === "REJECTED" ? (
+            <span className="mono inline-block rounded border border-rose-ink px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.14em] text-rose-ink">
+              Rejected
+            </span>
+          ) : (
+            <StatusLadder status={lead.status} />
+          )}
+
+          {lead.status !== "CONVERTED" && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {lead.status !== "CONTACTED" && (
+                <button
+                  onClick={() => handleStatusChange("CONTACTED")}
+                  className={buttonClass("ghost")}
+                >
+                  <Phone className="h-3.5 w-3.5" /> Mark contacted
+                </button>
+              )}
+              {lead.status !== "VERIFIED" && (
+                <button
+                  onClick={() => handleStatusChange("VERIFIED")}
+                  className={buttonClass("ghost")}
+                >
+                  <Check className="h-3.5 w-3.5" /> Verify
+                </button>
+              )}
+              {lead.status === "VERIFIED" && !lead.project && (
+                <button
+                  onClick={() => setShowConvertModal(true)}
+                  className={buttonClass("primary")}
+                >
+                  <ArrowRight className="h-3.5 w-3.5" /> Open a job
+                </button>
+              )}
+              {lead.status !== "REJECTED" && (
+                <button
+                  onClick={() => handleStatusChange("REJECTED")}
+                  className={`${buttonClass("danger")} ml-auto`}
+                >
+                  <X className="h-3.5 w-3.5" /> Reject
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
 
       <section>
         <div className="flex items-center justify-between pb-2.5">
@@ -214,37 +436,58 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
                   )}
                 </div>
               ))}
-            {lead.notes && (
-              <p className="border-b border-line px-1 py-3 text-[13px] text-ink-2">{lead.notes}</p>
-            )}
           </div>
         )}
       </section>
 
-      {lead.status !== "CONVERTED" && (
-        <div className="flex flex-wrap gap-2">
-          {lead.status !== "CONTACTED" && (
-            <button onClick={() => handleStatusChange("CONTACTED")} className={buttonClass("ghost")}>
-              <Phone className="h-3.5 w-3.5" /> Mark contacted
-            </button>
-          )}
-          {lead.status !== "VERIFIED" && (
-            <button onClick={() => handleStatusChange("VERIFIED")} className={buttonClass("ghost")}>
-              <Check className="h-3.5 w-3.5" /> Verify
-            </button>
-          )}
-          {lead.status === "VERIFIED" && !lead.project && (
-            <button onClick={() => setShowConvertModal(true)} className={buttonClass("primary")}>
-              <ArrowRight className="h-3.5 w-3.5" /> Open a job
-            </button>
-          )}
-          {lead.status !== "REJECTED" && (
-            <button onClick={() => handleStatusChange("REJECTED")} className={buttonClass("danger")}>
-              <X className="h-3.5 w-3.5" /> Reject
-            </button>
-          )}
+      {/* THE CALL LOG — notes read as a log; stamped lines are the calls. */}
+      <section>
+        <div className="pb-2.5">
+          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+            Call log
+          </h2>
         </div>
-      )}
+        <div className="border-t border-line">
+          {logLines.length === 0 && (
+            <p className="border-b border-line px-1 py-3 text-[13px] text-ink-3">
+              No calls logged yet.
+            </p>
+          )}
+          {logLines.map((line, i) => {
+            const m = line.match(/^(\[[^\]]*\])\s*(.*)$/);
+            return m ? (
+              <p
+                key={i}
+                className="mono border-b border-line px-1 py-2.5 text-[12px] leading-snug text-ink"
+              >
+                <span className="text-ink-3">{m[1]}</span> {m[2]}
+              </p>
+            ) : (
+              <p
+                key={i}
+                className="border-b border-line px-1 py-2.5 text-[13px] leading-snug text-ink-2"
+              >
+                {line}
+              </p>
+            );
+          })}
+          <form onSubmit={handleLogCall} className="flex gap-2 px-1 py-3">
+            <input
+              value={logText}
+              onChange={(e) => setLogText(e.target.value)}
+              placeholder="Log a call — no answer, callback Tuesday…"
+              className="w-full px-3 py-2 text-[13px]"
+            />
+            <button
+              type="submit"
+              disabled={logging || !logText.trim()}
+              className={buttonClass("ghost")}
+            >
+              {logging ? "…" : "Log"}
+            </button>
+          </form>
+        </div>
+      </section>
 
       {lead.project && (
         <Link

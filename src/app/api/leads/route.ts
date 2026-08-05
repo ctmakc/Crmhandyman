@@ -28,7 +28,11 @@ export async function GET(req: NextRequest) {
         ],
       } : {}),
     },
-    include: { assignedTo: { select: { id: true, name: true } } },
+    include: {
+      assignedTo: { select: { id: true, name: true } },
+      // The call sheet's closed lane links CONVERTED leads straight to their job.
+      project: { select: { id: true, title: true, status: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
 

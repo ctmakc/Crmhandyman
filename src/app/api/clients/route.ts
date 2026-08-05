@@ -37,6 +37,11 @@ export async function GET(req: NextRequest) {
           invoices: { select: { total: true, status: true, payments: { select: { amount: true } } } },
         },
       },
+      equipment: {
+        select: { kind: true, brand: true },
+        orderBy: { createdAt: "asc" },
+        take: 3,
+      },
       _count: { select: { projects: true, leads: true, equipment: true } },
     },
     orderBy: { name: "asc" },
@@ -69,6 +74,10 @@ export async function GET(req: NextRequest) {
         jobCount: c._count.projects,
         leadCount: c._count.leads,
         equipmentCount: c._count.equipment,
+        // Real iron, not a count: "FURNACE · Carrier" chips for the card index.
+        equipmentKinds: c.equipment.map((e) =>
+          e.brand ? `${e.kind.replace(/_/g, " ")} · ${e.brand}` : e.kind.replace(/_/g, " ")
+        ),
         openJobs,
         owing,
         lastSeen: lastSeen ?? null,

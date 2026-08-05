@@ -267,3 +267,26 @@ Loop log, two cycles + gates:
    the line). T-account verified against July's live entries, negative NET reads rose.
 3. **Gates** — `tsc` clean, zero console errors across all six screens both viewports,
    automated contrast sweep: zero failures.
+
+### Revision 3.1, 2026-08-04 — Leads and Clients get working depth
+
+The owner asked for the two people-facing sections to be worked over properly. The
+instruments stayed; they gained hands:
+
+- **The call sheet acts.** Row-level outcomes (CONTACTED / VERIFY / quiet REJECT; primary
+  OPEN JOB → on verified) PUT a partial `{status}` and mutate local state — search focus
+  and scroll survive, the moved row gets the ticket-snap. Converted leads link `→ WO`.
+- **The lead record is a call card.** The phone is the dominant object (24px mono + CALL /
+  EMAIL); a 4-step pipeline ladder (NEW→CONTACTED→VERIFIED→JOB, done steps filled) replaces
+  scattered buttons; `notes` render as a CALL LOG with `[04 AUG 21:56]` mono stamps and a
+  one-line quick-add. `?convert=1` deep-links the convert modal from the sheet.
+- **The client record is a dossier.** The boxed stat grid and jobs/equipment/invoices tabs
+  are gone: file-plate header (initials tab, OWES readout or IN GOOD STANDING), 7/5 body —
+  HISTORY on a date rail + PAPER ledger with dot leaders on the left; MONEY POSITION,
+  IRON ON SITE (spined rows, emerald=under warranty, expired warranty in rose-ink) and
+  SERVICE PLANS on the right. Equipment CRUD kept.
+- **The index knows the iron.** `/api/clients` ships `equipmentKinds` ("FURNACE · Carrier")
+  for real chips; phones are tel: links (row link became an overlay to keep the HTML valid).
+
+Loop: live smoke (inline outcome click, call-log append, chips) + screenshot pass desktop
+and 390px, zero console errors, contrast sweep over list + record pages: zero failures.
