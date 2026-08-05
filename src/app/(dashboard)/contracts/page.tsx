@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X, CalendarClock } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import {
   PageHead,
   Empty,
@@ -33,6 +33,38 @@ interface ClientOption {
   id: string;
   name: string;
   address?: string | null;
+}
+
+const MONTH_ABBR = [
+  "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+  "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+const MONTH_INITIALS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+/**
+ * The 12-cell month strip — each contract's own year rule.
+ * Emerald is a CLAIM ("this visit was booked"), so it is painted only for as
+ * many past cycles as `visitsBooked` vouches for; a past cycle nobody booked
+ * is spent time, not done work — it gets the pale `--line` fill.
+ */
+function monthCellStyle(c: ContractRow, month: number, year: number): React.CSSProperties {
+  const isVisit = c.visitMonths.includes(month);
+  if (!isVisit) return { background: "var(--sunk)", opacity: 0.5 };
+  if (!c.active || !c.nextVisit) return { background: "var(--slate)", opacity: 0.55 };
+  const next = new Date(c.nextVisit);
+  if (next.getMonth() + 1 === month && next.getFullYear() === year)
+    return { background: "var(--amber)" };
+  const nextKey = next.getFullYear() * 12 + next.getMonth();
+  const cellKey = year * 12 + (month - 1);
+  if (cellKey < nextKey) {
+    const pastMonths = c.visitMonths
+      .filter((m) => year * 12 + (m - 1) < nextKey)
+      .sort((a, b) => a - b);
+    return pastMonths.indexOf(month) < c.visitsBooked
+      ? { background: "var(--emerald)" }
+      : { background: "var(--line)" };
+  }
+  return { background: "var(--ink-3)", opacity: 0.6 };
 }
 
 export default function ContractsPage() {
@@ -107,12 +139,19 @@ export default function ContractsPage() {
     else load();
   }
 
+  const now = new Date();
+  const thisMonth = now.getMonth() + 1;
+  const thisYear = now.getFullYear();
+
+  const active = rows.filter((r) => r.active);
   const dueSoon = rows.filter(
     (r) => r.active && r.daysUntilNext !== null && r.daysUntilNext <= 45
   );
-  const annualValue = rows
-    .filter((r) => r.active)
-    .reduce((s, r) => s + r.pricePerVisit * r.visitMonths.length, 0);
+  const annualValue = active.reduce((s, r) => s + r.pricePerVisit * r.visitMonths.length, 0);
+  /** Visits due each month of the year, across every active plan. */
+  const monthLoad = MONTH_ABBR.map(
+    (_, i) => active.filter((r) => r.visitMonths.includes(i + 1)).length
+  );
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   return (
@@ -140,30 +179,77 @@ export default function ContractsPage() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-6 border-b border-line pb-6">
-        {[
-          { label: "Active plans", value: String(rows.filter((r) => r.active).length) },
-          {
-            label: "Due within 45d",
-            value: String(dueSoon.length),
-            tone: dueSoon.length ? "var(--amber-ink)" : undefined,
-          },
-          {
-            label: "Booked value / yr",
-            value: formatCurrency(annualValue),
-            tone: "var(--emerald-ink)",
-          },
-        ].map((r) => (
-          <div key={r.label}>
-            <div className="eyebrow">{r.label}</div>
-            <p
-              className="mono mt-2.5 text-[20px] font-bold leading-none md:text-[24px]"
-              style={{ color: r.tone || "var(--ink)" }}
+      {/* ------------------------------------------------------------------
+          THE YEAR RULE — the maintenance wall planner. Twelve months on one
+          tick-edged board; the load per month is the reading, and the current
+          month is lit by the amber light source, exactly like today on the
+          dispatch week board.
+          ------------------------------------------------------------------ */}
+      <div>
+        <div className="ruleband" style={{ backgroundSize: "calc(100% / 12) 4px" }} />
+        <div className="grid grid-cols-12 border-b border-line">
+          {MONTH_ABBR.map((abbr, i) => {
+            const isNow = i + 1 === thisMonth;
+            const count = monthLoad[i];
+            return (
+              <div
+                key={abbr}
+                className={cn(
+                  "arm-col flex h-[52px] flex-col items-center justify-between pb-2 pt-1.5 min-[480px]:h-[72px]",
+                  i > 0 && "border-l border-line",
+                  isNow && "today-glow"
+                )}
+                style={{ ["--i" as string]: i } as React.CSSProperties}
+              >
+                <span
+                  className="mono text-[10px] leading-none tracking-[0.09em]"
+                  style={{
+                    color: isNow ? "var(--amber-ink)" : "var(--ink-3)",
+                    fontWeight: isNow ? 700 : 400,
+                  }}
+                >
+                  {abbr}
+                </span>
+                <span
+                  className="mono hidden leading-none tabular-nums min-[480px]:block"
+                  style={
+                    count === 0
+                      ? { color: "var(--ink-3)", opacity: 0.5, fontSize: 22 }
+                      : {
+                          color: isNow ? "var(--amber-ink)" : "var(--ink)",
+                          fontSize: isNow ? 27 : 22,
+                          fontWeight: isNow ? 700 : 500,
+                          letterSpacing: "-0.02em",
+                        }
+                  }
+                >
+                  {count === 0 ? "·" : count}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mono flex flex-wrap items-baseline gap-x-5 gap-y-1 pt-2 text-[11px] tracking-[0.08em] text-ink-3">
+          <span>
+            ACTIVE PLANS{" "}
+            <span className="font-bold text-ink">{active.length}</span>
+          </span>
+          <span>
+            DUE WITHIN 45D{" "}
+            <span
+              className="font-bold"
+              style={{ color: dueSoon.length ? "var(--amber-ink)" : "var(--ink)" }}
             >
-              {r.value}
-            </p>
-          </div>
-        ))}
+              {dueSoon.length}
+            </span>
+          </span>
+          <span>
+            BOOKED VALUE/YR{" "}
+            <span className="font-bold" style={{ color: "var(--emerald-ink)" }}>
+              {formatCurrency(annualValue)}
+            </span>
+          </span>
+        </div>
       </div>
 
       {showForm && (
@@ -268,62 +354,54 @@ export default function ContractsPage() {
         </Plate>
       )}
 
-      <div className="space-y-2.5">
-        {loading ? (
-          <Skeleton lines={3} />
-        ) : rows.length === 0 ? (
-          <Empty>No maintenance plans yet — start one from a client</Empty>
-        ) : (
-          rows.map((c) => {
+      {/* ------------------------------------------------------------------
+          THE PLANS — ruled rows, each carrying its own 12-cell year strip:
+          due next = amber, verifiably booked = emerald, past-unbooked = pale,
+          still ahead = slate.
+          ------------------------------------------------------------------ */}
+      {loading ? (
+        <Skeleton lines={3} />
+      ) : rows.length === 0 ? (
+        <Empty>No maintenance plans yet — start one from a client</Empty>
+      ) : (
+        <div className="lane">
+          {rows.map((c) => {
             const due = c.daysUntilNext !== null && c.daysUntilNext <= 45;
             const late = c.daysUntilNext !== null && c.daysUntilNext < 0;
+            const spine = !c.active
+              ? "var(--slate)"
+              : late
+                ? "var(--rose)"
+                : due
+                  ? "var(--amber)"
+                  : "var(--emerald)";
+            const countdown = !c.active
+              ? "PAUSED"
+              : c.nextVisit
+                ? late
+                  ? `${Math.abs(c.daysUntilNext!)}D LATE`
+                  : `IN ${c.daysUntilNext}D`
+                : "NO SCHEDULE";
+            const countdownTone = !c.active
+              ? "var(--slate-ink)"
+              : late
+                ? "var(--rose-ink)"
+                : due
+                  ? "var(--amber-ink)"
+                  : "var(--ink-3)";
             return (
               <div
                 key={c.id}
-                className="ticket ticket-hover px-4 py-3"
-                style={
-                  {
-                    ["--spine"]: !c.active
-                      ? "var(--slate)"
-                      : late
-                        ? "var(--rose)"
-                        : due
-                          ? "var(--amber)"
-                          : "var(--emerald)",
-                  } as React.CSSProperties
-                }
+                className="row row-hover"
+                style={{ ["--spine" as string]: spine } as React.CSSProperties}
               >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-                    {c.visitMonths.map((m) => MONTH_NAMES[m]).join(" · ")} ·{" "}
-                    {formatCurrency(c.pricePerVisit)}/visit
-                  </span>
-                  <span
-                    className="mono text-[11px] tracking-[0.08em]"
-                    style={{
-                      color: late
-                        ? "var(--rose-ink)"
-                        : due
-                          ? "var(--amber-ink)"
-                          : "var(--ink-3)",
-                    }}
-                  >
-                    {!c.active
-                      ? "PAUSED"
-                      : c.nextVisit
-                        ? late
-                          ? `${Math.abs(c.daysUntilNext!)}D LATE`
-                          : `IN ${c.daysUntilNext}D`
-                        : "NO SCHEDULE"}
-                  </span>
-                </div>
-
-                <div className="mt-1.5 flex flex-wrap items-end justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[15px] font-bold leading-tight text-ink">
+                {/* line 1 — plan, client, price per visit */}
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+                  <p className="min-w-0 truncate">
+                    <span className="text-[15px] font-bold leading-tight text-ink">
                       {c.name}
-                    </p>
-                    <p className="truncate text-[13px] text-ink-2">
+                    </span>{" "}
+                    <span className="text-[13px] text-ink-2">
                       <Link
                         href={`/clients/${c.client.id}`}
                         className="font-medium text-ink underline underline-offset-4"
@@ -331,38 +409,70 @@ export default function ContractsPage() {
                         {c.client.name}
                       </Link>
                       {c.client.address ? ` · ${c.client.address}` : ""}
-                    </p>
-                  </div>
+                    </span>
+                  </p>
+                  <span className="mono shrink-0 text-[13px] font-medium tabular-nums text-ink">
+                    {formatCurrency(c.pricePerVisit)}
+                    <span className="text-[11px] text-ink-3"> /visit</span>
+                  </span>
+                </div>
+
+                {/* line 2 — the contract's own year rule */}
+                <div className="mt-2.5 grid w-max grid-cols-12 gap-x-[3px]">
+                  {MONTH_INITIALS.map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-[10px] w-[14px]"
+                      style={monthCellStyle(c, i + 1, thisYear)}
+                    />
+                  ))}
+                  {MONTH_INITIALS.map((letter, i) => (
+                    <span
+                      key={`l${i}`}
+                      className="mono mt-[3px] w-[14px] text-center text-[8px] leading-none text-ink-3"
+                    >
+                      {letter}
+                    </span>
+                  ))}
+                </div>
+
+                {/* line 3 — meta + the book action */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  {c.equipment && (
+                    <span className="mono border border-line px-1.5 py-0.5 text-[11px] uppercase tracking-[0.05em] text-ink-2">
+                      {c.equipment.kind.replace(/_/g, " ")}
+                      {c.equipment.brand ? ` · ${c.equipment.brand}` : ""}
+                    </span>
+                  )}
+                  {c.autoInvoice && (
+                    <span className="mono text-[11px] tracking-[0.08em] text-ink-2">
+                      AUTO-INVOICE
+                    </span>
+                  )}
+                  <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
+                    {c.visitsBooked} BOOKED
+                  </span>
+                  <span
+                    className="mono text-[11px] font-bold tracking-[0.08em]"
+                    style={{ color: countdownTone }}
+                  >
+                    {countdown}
+                  </span>
                   {c.active && c.nextVisit && (
                     <button
                       disabled={busy}
                       onClick={() => book(c.id)}
-                      className={buttonClass("ghost")}
+                      className={cn(buttonClass("ghost"), "ml-auto px-2.5 py-1 text-[11px]")}
                     >
                       Book {formatDate(c.nextVisit)}
                     </button>
                   )}
                 </div>
-
-                <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-2.5">
-                  <span className="mono text-[12px] text-ink-2">
-                    {c.visitsBooked} BOOKED
-                  </span>
-                  {c.autoInvoice && (
-                    <span className="mono text-[12px] text-ink-2">AUTO-INVOICE</span>
-                  )}
-                  {c.equipment && (
-                    <span className="mono text-[12px] text-ink-3">
-                      {c.equipment.kind.replace(/_/g, " ")}
-                      {c.equipment.brand ? ` · ${c.equipment.brand}` : ""}
-                    </span>
-                  )}
-                </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }

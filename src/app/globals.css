@@ -264,6 +264,30 @@ a.ticket:hover,
   background-repeat: repeat-x;
 }
 
+/* --------------------------------------------------------------------------
+   LEDGER VOCABULARY (revision 3) — the receivables book and the month-end
+   T-account borrow two devices from paper accounting.
+   -------------------------------------------------------------------------- */
+
+/* Dotted leader: the line of dots that walks the eye from a ledger entry to its
+   amount. A flex child that stretches between label and money. */
+.dotlead {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 1em;
+  background-image: radial-gradient(circle, var(--line) 1px, transparent 1.3px);
+  background-size: 7px 2px;
+  background-repeat: repeat-x;
+  background-position: 0 calc(100% - 3px);
+}
+
+/* The accountant's double rule: drawn above a total to say "this line is final".
+   (CSS `double` needs 3px to render both strokes — this is a rule, not depth;
+   the no-shadow law is untouched.) */
+.rule-double {
+  border-top: 3px double var(--ink-2);
+}
+
 /* Form controls inherit the system rather than the browser. */
 input,
 select,

@@ -221,3 +221,49 @@ without giving the rectangles back.
 
 Budget respected: one signature effect (the rule + arming), three structural (grid, gauge
 numerals, machined rail edge), micro-interactions unchanged. Contrast: zero failures.
+
+### Revision 3, 2026-08-04 — "каждому экрану свой прибор"
+
+Owner's verdict on v2: *«все экраны почти одинаковые таблички — хочу индивидуальные в
+зависимости от функции»*. He is right: Leads, Jobs, Clients and Invoices had converged on
+one template — PageHead → full-width search bar → identical ruled rows. Only Crew (kanban)
+and Today (field cards) had faces.
+
+The rule that fixes it: **every screen is a different instrument from the same toolbox.**
+Tokens, type, spines, rows and tickets stay law; what changes per screen is the DEVICE — the
+one layout mechanism that could only belong to that screen's function. The search-bar-first
+header is dead; search folds into the lane heads. Each screen's device, grounded in what a
+contractor actually holds in his hands for that job:
+
+| Screen | Device | Grounding |
+|---|---|---|
+| Dispatch | week board as measuring rule (v2, unchanged) | the dispatch desk |
+| Leads | **call sheet + pipeline rail**: stage strip up top (NEW→CONTACTED→VERIFIED→closed, counts + share bars); body split 7/5 — "on the phone" (fresh + aging, phone numbers big, age tallies going rose past 3 days) vs "worked" (verified/converted/rejected, dimmed) | the morning call-back sheet by the shop phone |
+| Jobs | **state ladder**: IN PROGRESS as full ticket plates with crew + an EST→PAID fill rule; SCHEDULED as rows on a left date rail (day numeral + month, board-style); COMPLETED as compressed one-line ledger rows | live orders on the desk, booked orders on the peg, closed orders in the drawer |
+| Clients | **card index**: A–Z thumb rail; letter dividers in the gutter (22px mono); rows as file cards — initials tab, owing readout in rose, equipment chips | the rolodex / phone book |
+| Contracts | **year rule**: 12-month strip board up top (visits due per month, current month lit by the amber light source); each contract carries its own 12-cell month strip — visit months marked, next due amber, done emerald | the annual maintenance wall planner |
+| Invoices | **the ledger**: aging bar (one stacked rule: paid/partial/due/overdue with readouts); body grouped by aging band, rows as single-line ledger entries with dotted leaders to right-aligned money | the green-bar receivables book |
+| Finance | **the T-account**: money-in column left, money-out column right, one center rule; NET on a double accounting rule at the bottom | the month-end books |
+| Crew | kanban lanes (unchanged) | the whiteboard |
+| Today | field cards (unchanged) | the clipboard in the truck |
+
+New CSS vocabulary (globals.css): `.dotlead` (dotted leader line for ledger entries),
+`.rule-double` (the accountant's double rule above a total). Everything else is assembled
+from existing tokens and primitives — no new colours, no new type, no new radius.
+
+Loop log, two cycles + gates:
+
+1. **Cycle 1** (desktop, all six screens) — two semantic lies caught: the contract
+   mini-strip painted every past cycle emerald ("done") while the same row said
+   `0 BOOKED`; emerald is now paid out only for as many past cycles as `visitsBooked`
+   vouches for, the rest get the pale `--line` fill (spent time, not done work). And an
+   empty Finance month shouted `$0.00` in rose/emerald — zero totals now sit in neutral
+   ink. Also identified (and disproved as a bug) the "white second row" — a stuck
+   Playwright hover from the login click, not a rendering defect.
+2. **Cycle 2** (desktop + 390px + Finance on a month with data) — two real phone
+   defects: the Clients search input amputated the A–Z rail at "J" (search now stacks
+   above the rail below `sm`), and invoice ledger lines crushed client names to "K.."
+   (the number and dot leader now yield below `sm`; spine + name + aging + money carry
+   the line). T-account verified against July's live entries, negative NET reads rose.
+3. **Gates** — `tsc` clean, zero console errors across all six screens both viewports,
+   automated contrast sweep: zero failures.

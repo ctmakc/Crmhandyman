@@ -6,13 +6,16 @@ import { Plus, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   PageHead,
+  LaneHead,
   Row,
-  Lane,
+  Ticket,
   WoNumber,
+  Money,
   Empty,
   Plate,
   buttonClass,
   Skeleton,
+  textToneFor,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
@@ -40,6 +43,163 @@ interface Project {
 }
 
 const STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+
+/* ----------------------------------------------------------------------------
+   THE STATE LADDER (DESIGN.md revision 3) — the Jobs device.
+   A job's state changes its physical form: live orders sit on the desk as full
+   ticket plates, booked orders hang on a date rail, closed orders compress into
+   one-line drawer entries. Three lanes, three renderings, one toolbox.
+   -------------------------------------------------------------------------- */
+
+const paidOf = (p: Project) => p.payments.reduce((s, x) => s + x.amount, 0);
+const estOf = (p: Project) => p.estimates[0]?.total ?? null;
+
+/** Booked jobs group under a day-numeral rail cell, undated ones at the end. */
+function groupByDate(jobs: Project[]) {
+  const map = new Map<string, Project[]>();
+  for (const p of jobs) {
+    const key = p.scheduledDate ? p.scheduledDate.slice(0, 10) : "";
+    map.set(key, [...(map.get(key) ?? []), p]);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))
+    .map(([key, items]) => ({
+      key: key || "undated",
+      day: key ? String(parseInt(key.slice(8, 10), 10)) : "—",
+      mon: key
+        ? new Date(`${key}T00:00:00`)
+            .toLocaleString("en-CA", { month: "short" })
+            .toUpperCase()
+        : "TBD",
+      items,
+    }));
+}
+
+/** ON THE GO — the full work order in your hand: crew tally + EST→PAID fill. */
+function LiveTicket({ project }: { project: Project }) {
+  const paid = paidOf(project);
+  const est = estOf(project);
+  const pct = est && est > 0 ? Math.min(paid / est, 1) * 100 : 0;
+  const done = project.tasks.filter((t) => t.status === "DONE").length;
+  return (
+    <Ticket href={`/projects/${project.id}`} status={project.status} className="px-5 py-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <WoNumber id={project.id} date={project.createdAt} />
+        {project.scheduledDate && (
+          <span className="mono text-[11px] text-ink-3">
+            {project.scheduledDate.slice(0, 10)}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-[17px] font-black leading-tight tracking-[-0.01em] text-ink">
+        {project.title}
+      </p>
+      <p className="mt-1 truncate text-[13px] text-ink-2">
+        {project.clientName} · {project.address}
+      </p>
+      {project.tasks.length > 0 && (
+        <div className="mt-3 flex items-center gap-2">
+          <span className="flex items-center gap-1">
+            {project.tasks.slice(0, 10).map((t) => (
+              <span
+                key={t.id}
+                className="inline-block h-2 w-2 rounded-full"
+                style={
+                  t.status === "DONE"
+                    ? { background: "var(--emerald)" }
+                    : { background: "var(--sunk)", border: "1px solid var(--line)" }
+                }
+              />
+            ))}
+          </span>
+          <span className="mono text-[11px] text-ink-3">
+            CREW {done}/{project.tasks.length}
+          </span>
+        </div>
+      )}
+      <div className="mt-3.5">
+        <div className="h-1 bg-sunk">
+          <div
+            className="h-full transition-[width] duration-[380ms] ease-instrument"
+            style={{ width: `${pct}%`, background: "var(--emerald)" }}
+          />
+        </div>
+        <div className="mt-1.5 flex items-baseline gap-1.5">
+          <span className="mono text-[11px] font-bold" style={{ color: "var(--emerald-ink)" }}>
+            PAID {formatCurrency(paid)}
+          </span>
+          <span className="mono text-[11px] text-ink-3">
+            / EST {est != null ? formatCurrency(est) : "—"}
+          </span>
+        </div>
+      </div>
+    </Ticket>
+  );
+}
+
+/** BOOKED — a standard ruled row, hanging to the right of its date rail. */
+function BookedRow({ project }: { project: Project }) {
+  const est = estOf(project);
+  const done = project.tasks.filter((t) => t.status === "DONE").length;
+  return (
+    <Row href={`/projects/${project.id}`} status={project.status}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          <WoNumber id={project.id} date={project.createdAt} />
+          <p className="mt-1 truncate text-[15px] font-bold leading-tight text-ink">
+            {project.title}
+          </p>
+          <p className="truncate text-[13px] text-ink-2">
+            {project.clientName} · {project.address}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          {est != null && (
+            <div className="mono text-[12px] text-ink-2">
+              EST <Money value={est} className="text-[13px]" />
+            </div>
+          )}
+          {project.tasks.length > 0 && (
+            <div className="mono mt-1 text-[11px] text-ink-3">
+              CREW {done}/{project.tasks.length}
+            </div>
+          )}
+        </div>
+      </div>
+    </Row>
+  );
+}
+
+/** CLOSED — the drawer: one compressed ledger line per order. */
+function ClosedRow({ project }: { project: Project }) {
+  const paid = paidOf(project);
+  const est = estOf(project);
+  const money = paid > 0 ? paid : est ?? 0;
+  return (
+    <Row href={`/projects/${project.id}`} status={project.status} className="!py-2">
+      <div className="flex min-w-0 items-baseline gap-3 text-[13px]">
+        <WoNumber id={project.id} date={project.createdAt} />
+        <span className="truncate font-medium text-ink-2">{project.title}</span>
+        <span className="hidden min-w-0 truncate text-ink-3 sm:inline">
+          {project.clientName}
+        </span>
+        <span className="ml-auto flex shrink-0 items-baseline gap-3">
+          <span
+            className="mono text-[10px] uppercase tracking-[0.09em]"
+            style={{ color: textToneFor(project.status) }}
+          >
+            {project.status.replace("_", " ")}
+          </span>
+          {money > 0 ? (
+            <Money value={money} className="text-[13px]" tone="var(--ink-3)" />
+          ) : (
+            <span className="mono text-[13px] text-ink-3">—</span>
+          )}
+        </span>
+      </div>
+    </Row>
+  );
+}
 
 export default function ProjectsPage() {
   const searchParams = useSearchParams();
@@ -137,12 +297,57 @@ export default function ProjectsPage() {
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
+  /* The ladder split. The server already narrows by statusFilter; the split
+     just routes what came back into the right rung. */
+  const live = projects.filter((p) => p.status === "IN_PROGRESS");
+  const booked = projects.filter((p) => p.status === "SCHEDULED");
+  const closed = projects.filter(
+    (p) => p.status === "COMPLETED" || p.status === "CANCELLED"
+  );
+  const bookedGroups = groupByDate(booked);
+
+  const showLive = !statusFilter || statusFilter === "IN_PROGRESS";
+  const showBooked = !statusFilter || statusFilter === "SCHEDULED";
+  const showClosed =
+    !statusFilter || statusFilter === "COMPLETED" || statusFilter === "CANCELLED";
+  const firstLane = showLive ? "live" : showBooked ? "booked" : "closed";
+
+  /* Search + filter fold into the first lane head — no full-width bar. */
+  const controls = (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
+          strokeWidth={2}
+        />
+        <input
+          placeholder="Search jobs…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-[140px] max-w-[240px] py-1.5 pl-7 pr-2 text-[12px] sm:w-[200px]"
+        />
+      </div>
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        className="mono px-2 py-1.5 text-[11px] uppercase tracking-[0.06em]"
+      >
+        <option value="">All</option>
+        {STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {s.replace("_", " ")}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <div className="space-y-8 pb-24 md:pb-0">
       <PageHead
         eyebrow="Work orders"
         title="Jobs"
-        sub="Booked, running and closed work — one ticket each."
+        sub="Live orders on the desk, booked on the peg, closed in the drawer."
         action={
           <button onClick={() => setShowAddForm((v) => !v)} className={buttonClass("primary")}>
             {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -150,33 +355,6 @@ export default function ProjectsPage() {
           </button>
         }
       />
-
-      <div className="flex flex-col gap-2 border-t border-line pt-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
-            strokeWidth={2}
-          />
-          <input
-            placeholder="Search client, title, address…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full py-2 pl-9 pr-3 text-[13px]"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="mono px-3 py-2 text-[12px] uppercase tracking-[0.06em]"
-        >
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s.replace("_", " ")}
-            </option>
-          ))}
-        </select>
-      </div>
 
       {showAddForm && (
         <Plate className="p-5">
@@ -259,55 +437,89 @@ export default function ProjectsPage() {
         </Plate>
       )}
 
-      <Lane>
-        {loading ? (
+      {loading ? (
+        <section>
+          <LaneHead title="ON THE GO" lamp="var(--amber)" right={controls} />
           <Skeleton lines={4} />
-        ) : projects.length === 0 ? (
-          <Empty>No jobs match this filter</Empty>
-        ) : (
-          projects.map((project) => {
-            const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
-            const latestEstimate = project.estimates[0];
-            const doneTasks = project.tasks.filter((t) => t.status === "DONE").length;
-            return (
-              <Row key={project.id} href={`/projects/${project.id}`} status={project.status}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <WoNumber id={project.id} date={project.createdAt} />
-                  <span className="eyebrow">{project.status.replace("_", " ")}</span>
+        </section>
+      ) : (
+        <>
+          {/* RUNG 1 — ON THE GO: each live job is a full work-order plate. */}
+          {showLive && (
+            <section>
+              <LaneHead
+                title={`ON THE GO · ${live.length}`}
+                lamp="var(--amber)"
+                right={firstLane === "live" ? controls : undefined}
+              />
+              {live.length === 0 ? (
+                <Empty>Nothing on the desk — no jobs running</Empty>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {live.map((p) => (
+                    <LiveTicket key={p.id} project={p} />
+                  ))}
                 </div>
-                <p className="mt-1.5 truncate text-[15px] font-bold leading-tight text-ink">
-                  {project.title}
-                </p>
-                <p className="truncate text-[13px] text-ink-2">
-                  {project.clientName} · {project.address}
-                </p>
-                <div className="mt-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-line pt-2.5">
-                  {latestEstimate && (
-                    <span className="mono text-[12px] text-ink-2">
-                      EST {formatCurrency(latestEstimate.total)}
-                    </span>
-                  )}
-                  {totalPaid > 0 && (
-                    <span className="mono text-[12px]" style={{ color: "var(--emerald-ink)" }}>
-                      PAID {formatCurrency(totalPaid)}
-                    </span>
-                  )}
-                  {project.tasks.length > 0 && (
-                    <span className="mono text-[12px] text-ink-3">
-                      CREW {doneTasks}/{project.tasks.length}
-                    </span>
-                  )}
-                  {project.scheduledDate && (
-                    <span className="mono text-[12px] text-ink-3">
-                      {new Date(project.scheduledDate).toLocaleDateString("en-CA")}
-                    </span>
-                  )}
+              )}
+            </section>
+          )}
+
+          {/* RUNG 2 — BOOKED: rows hung on a date rail, board-style numerals. */}
+          {showBooked && (
+            <section>
+              <LaneHead
+                title={`BOOKED · ${booked.length}`}
+                lamp="var(--sky)"
+                right={firstLane === "booked" ? controls : undefined}
+              />
+              {booked.length === 0 ? (
+                <Empty>Nothing on the peg — no work booked</Empty>
+              ) : (
+                <div className="border-t border-line">
+                  {bookedGroups.map((g) => (
+                    <div
+                      key={g.key}
+                      className="grid grid-cols-[48px_1fr] border-b border-line last:border-b-0 sm:grid-cols-[64px_1fr]"
+                    >
+                      <div className="border-r border-line pr-2 pt-4">
+                        <div className="mono text-[22px] font-medium leading-none text-ink">
+                          {g.day}
+                        </div>
+                        <div className="eyebrow mt-1.5">{g.mon}</div>
+                      </div>
+                      <div>
+                        {g.items.map((p) => (
+                          <BookedRow key={p.id} project={p} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </Row>
-            );
-          })
-        )}
-      </Lane>
+              )}
+            </section>
+          )}
+
+          {/* RUNG 3 — CLOSED: the drawer, one compressed ledger line each. */}
+          {showClosed && (
+            <section>
+              <LaneHead
+                title={`CLOSED · ${closed.length}`}
+                lamp="var(--emerald)"
+                right={firstLane === "closed" ? controls : undefined}
+              />
+              {closed.length === 0 ? (
+                <Empty>The drawer is empty — no closed orders</Empty>
+              ) : (
+                <div className="border-t border-line">
+                  {closed.map((p) => (
+                    <ClosedRow key={p.id} project={p} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }
