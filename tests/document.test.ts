@@ -106,3 +106,47 @@ describe("renderDocument — escaping", () => {
     expect(html).not.toContain("<run>");
   });
 });
+
+/**
+ * The supplier block. CRA requires the GST/HST number on an invoice over $30; without
+ * it a business customer loses the input tax credit and sends the paper back, so this
+ * is the one omission that stops a Canadian shop from billing at all.
+ */
+describe("renderDocument — who is billing", () => {
+  const business = {
+    address: "120 Bank St, Ottawa, ON K1P 5N2",
+    phone: "613-555-0100",
+    email: "office@korvex.ca",
+    hstNumber: "123456789RT0001",
+    paymentInstructions: "Interac e-Transfer to pay@korvex.ca",
+  };
+
+  it("prints the contractor's registration, address and contacts", () => {
+    const html = renderDocument(doc({ business }));
+    expect(html).toContain("GST/HST 123456789RT0001");
+    expect(html).toContain("120 Bank St, Ottawa, ON K1P 5N2");
+    expect(html).toContain("613-555-0100");
+    expect(html).toContain("office@korvex.ca");
+  });
+
+  it("puts how-to-pay on the stub the customer tears off", () => {
+    const html = renderDocument(doc({ business }));
+    expect(html).toContain("Interac e-Transfer to pay@korvex.ca");
+    // An estimate has no stub, so it carries no payment instructions.
+    expect(renderDocument(doc({ kind: "ESTIMATE", business }))).not.toContain(
+      "Interac e-Transfer"
+    );
+  });
+
+  it("prints nothing at all for a shop that has filled nothing in", () => {
+    const html = renderDocument(doc());
+    expect(html).not.toContain("GST/HST");
+    expect(html).toContain("Korvex Developments");
+  });
+
+  it("escapes the supplier block like every other field", () => {
+    const html = renderDocument(doc({ business: { ...business, address: "<script>alert(1)</script>" } }));
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});

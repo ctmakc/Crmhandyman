@@ -13,7 +13,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     include: {
       payments: { select: { amount: true } },
       project: { select: { title: true, phone: true } },
-      tenant: { select: { businessName: true } },
+      tenant: {
+        select: {
+          businessName: true,
+          businessAddress: true,
+          businessPhone: true,
+          businessEmail: true,
+          hstNumber: true,
+          paymentInstructions: true,
+        },
+      },
     },
   });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -23,6 +32,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     number: invoice.number,
     status: invoice.status,
     businessName: invoice.tenant.businessName,
+    business: {
+      address: invoice.tenant.businessAddress,
+      phone: invoice.tenant.businessPhone,
+      email: invoice.tenant.businessEmail,
+      hstNumber: invoice.tenant.hstNumber,
+      paymentInstructions: invoice.tenant.paymentInstructions,
+    },
     clientName: invoice.clientName,
     address: invoice.address,
     phone: invoice.project.phone,

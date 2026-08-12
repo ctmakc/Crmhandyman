@@ -11,6 +11,15 @@ model Tenant {
   slug         String      @unique
   businessName String
   ownerEmail   String
+  /// What has to be on the paper. A Canadian invoice over $30 without the supplier's
+  /// GST/HST number costs the customer their input tax credit, so a business client
+  /// sends it back — the shop cannot bill HST it cannot evidence registering for.
+  businessAddress String?
+  businessPhone   String?
+  businessEmail   String?
+  hstNumber       String?
+  /// Where the money goes: the e-Transfer address, cheque payee, deposit terms.
+  paymentInstructions String?
   plan         TenantPlan  @default(DEMO)
   expiresAt    DateTime?
   createdAt    DateTime    @default(now())

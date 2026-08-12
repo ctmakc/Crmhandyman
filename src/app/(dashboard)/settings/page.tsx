@@ -3,26 +3,32 @@ import { PageHead } from "@/components/ui/primitives";
 
 const SECTIONS = [
   {
-    href: "/settings/users",
+    href: "/settings/business",
     code: "01",
+    title: "Business details",
+    sub: "What goes on the printed estimate and invoice — HST number, address, how to pay",
+  },
+  {
+    href: "/settings/users",
+    code: "02",
     title: "Team",
     sub: "Add crew, set admin or worker access",
   },
   {
     href: "/settings/integrations",
-    code: "02",
+    code: "03",
     title: "Intake channels",
     sub: "Facebook, Instagram, Google LSA, email marketplaces",
   },
   {
     href: "/settings/log",
-    code: "03",
+    code: "04",
     title: "Action log",
     sub: "Who changed a price, took a payment, voided an invoice",
   },
   {
     href: "/settings/intake",
-    code: "04",
+    code: "05",
     title: "Landing intake",
     sub: "Lead forms on your own sites post straight into this desk",
   },

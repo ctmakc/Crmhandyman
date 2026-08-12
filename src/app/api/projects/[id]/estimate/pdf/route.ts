@@ -24,7 +24,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // enough to read another tenant's document.
   const estimate = await prisma.estimate.findFirst({
     where: { id: estimateId, projectId: params.id, project: { tenantId } },
-    include: { project: { include: { tenant: { select: { businessName: true } } } } },
+    include: {
+      project: {
+        include: {
+          tenant: {
+            select: {
+              businessName: true,
+              businessAddress: true,
+              businessPhone: true,
+              businessEmail: true,
+              hstNumber: true,
+              paymentInstructions: true,
+            },
+          },
+        },
+      },
+    },
   });
   if (!estimate) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -33,6 +48,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     number: docRef("EST", estimate.id, estimate.createdAt),
     status: estimate.status,
     businessName: estimate.project.tenant.businessName,
+    business: {
+      address: estimate.project.tenant.businessAddress,
+      phone: estimate.project.tenant.businessPhone,
+      email: estimate.project.tenant.businessEmail,
+      hstNumber: estimate.project.tenant.hstNumber,
+      paymentInstructions: estimate.project.tenant.paymentInstructions,
+    },
     clientName: estimate.project.clientName,
     address: estimate.project.address,
     phone: estimate.project.phone,

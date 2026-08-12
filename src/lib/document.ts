@@ -31,6 +31,14 @@ export interface DocumentSpec {
   number: string;
   status: string;
   businessName: string;
+  /** The contractor's own details, as they must appear on the paper. */
+  business?: {
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    hstNumber?: string | null;
+    paymentInstructions?: string | null;
+  };
   clientName: string;
   address?: string | null;
   phone?: string | null;
@@ -67,6 +75,21 @@ export function renderDocument(doc: DocumentSpec): string {
     doc.dueDate != null &&
     new Date(doc.dueDate) < new Date() &&
     owing > 0.005;
+
+  // The supplier block. Each line appears only once it has been filled in, so a shop
+  // that has not entered its HST number prints a clean sheet instead of an empty label.
+  const b = doc.business ?? {};
+  const supplierLines = [
+    b.address && `<div>${esc(b.address)}</div>`,
+    b.phone && `<div class="mono" style="font-size:12px">${esc(b.phone)}</div>`,
+    b.email && `<div class="mono" style="font-size:12px">${esc(b.email)}</div>`,
+    b.hstNumber &&
+      `<div class="mono" style="font-size:12px">GST/HST ${esc(b.hstNumber)}</div>`,
+  ].filter(Boolean);
+
+  const supplier = supplierLines.length
+    ? `<div style="margin-top:6px; color:var(--ink-3); line-height:1.5">${supplierLines.join("")}</div>`
+    : "";
 
   const spine = overdue
     ? "var(--rose)"
@@ -161,6 +184,7 @@ export function renderDocument(doc: DocumentSpec): string {
   <div class="head">
     <div>
       <div class="wordmark">${esc(doc.businessName)}</div>
+      ${supplier}
       <div class="eyebrow" style="margin-top:8px">${isInvoice ? "Invoice" : "Estimate"}</div>
       <div class="docno">${esc(doc.number)}</div>
       <div style="margin-top:14px; font-weight:700">${esc(doc.clientName)}</div>
@@ -228,6 +252,11 @@ export function renderDocument(doc: DocumentSpec): string {
     <div>
       <div class="eyebrow">Remittance stub</div>
       <div class="mono" style="font-size:12px; color:var(--ink-2); margin-top:6px">${esc(doc.number)} · ${esc(doc.clientName)}</div>
+      ${
+        b.paymentInstructions
+          ? `<div style="font-size:12px; color:var(--ink-2); margin-top:8px; max-width:46ch; white-space:pre-line">${esc(b.paymentInstructions)}</div>`
+          : ""
+      }
     </div>
     <div style="text-align:right">
       <div class="eyebrow">Amount due</div>
