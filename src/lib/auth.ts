@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -10,23 +11,31 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
-        tenantId: { label: "Tenant ID", type: "text" },
+        slug: { label: "Workspace", type: "text" },
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+      /**
+       * The tenant is resolved here from its slug — the browser never handles a tenant id.
+       * The old flow had the login page fetch the id from a public endpoint and post it
+       * back, which handed anyone the first half of an account takeover.
+       */
+      async authorize(credentials, req) {
+        if (!credentials?.email || !credentials?.password || !credentials?.slug) return null;
 
-        // Find user by email + tenantId if provided, else first match by email
-        let user;
-        if (credentials.tenantId) {
-          user = await prisma.user.findUnique({
-            where: { email_tenantId: { email: credentials.email, tenantId: credentials.tenantId } },
-          });
-        } else {
-          user = await prisma.user.findFirst({
-            where: { email: credentials.email },
-          });
-        }
+        // Ten tries per address per quarter hour. Passwords are the only thing standing
+        // between a stranger and a contractor's whole customer list.
+        const forwarded = (req?.headers?.["x-forwarded-for"] as string | undefined) ?? "";
+        const ip = forwarded.split(",")[0].trim() || "unknown";
+        if (!rateLimit(`login:${ip}`, 10, 15 * 60 * 1000).ok) return null;
 
+        const tenant = await prisma.tenant.findUnique({
+          where: { slug: credentials.slug },
+          select: { id: true, slug: true },
+        });
+        if (!tenant) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { email_tenantId: { email: credentials.email, tenantId: tenant.id } },
+        });
         if (!user) return null;
 
         const passwordValid = await bcrypt.compare(credentials.password, user.password);
@@ -39,6 +48,7 @@ export const authOptions: NextAuthOptions = {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           role: user.role as any,
           tenantId: user.tenantId,
+          tenantSlug: tenant.slug,
         };
       },
     }),
@@ -51,6 +61,8 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         token.tenantId = (user as any).tenantId;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        token.tenantSlug = (user as any).tenantSlug;
       }
       return token;
     },
@@ -61,6 +73,7 @@ export const authOptions: NextAuthOptions = {
         u.role = token.role as string;
         u.id = token.id as string;
         u.tenantId = token.tenantId as string;
+        u.tenantSlug = token.tenantSlug as string;
       }
       return session;
     },

@@ -107,6 +107,7 @@ async function main() {
     update: {},
     create: {
       id: "estimate-sample-1",
+      tenantId: tenant.id,
       projectId: project.id,
       lineItems: JSON.stringify([
         { description: "Drywall materials", qty: 10, unit: "sheet", unitPrice: 25 },

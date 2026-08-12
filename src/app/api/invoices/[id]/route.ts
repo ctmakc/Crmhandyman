@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function tenantOf(session: unknown) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (session as any)?.user?.tenantId as string;
-}
+import { requireAdmin } from "@/lib/guard";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const invoice = await prisma.invoice.findFirst({
-    where: { id: params.id, tenantId: await tenantOf(session) },
+    where: { id: params.id, tenantId },
     include: {
       payments: { orderBy: { date: "desc" } },
       project: { select: { id: true, title: true, jobType: true } },
@@ -33,10 +28,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
  * there is no separate "amount paid" field to drift out of sync.
  */
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const tenantId = await tenantOf(session);
-
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
+  
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.id, tenantId },
     include: { payments: { select: { amount: true } } },
@@ -88,10 +83,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const tenantId = await tenantOf(session);
-
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
+  
   const invoice = await prisma.invoice.findFirst({ where: { id: params.id, tenantId } });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

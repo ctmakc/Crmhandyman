@@ -1,8 +1,18 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
+/**
+ * Sample data for a trial workspace. Never call this for a paying account: a contractor
+ * who just paid should open an empty desk, not sweep out invented leads and invoices.
+ *
+ * Returns the sample worker's one-time password. It used to be the literal string
+ * "demo123" in every workspace ever created — combined with a public endpoint that
+ * turned a slug into a tenant id, that was an unauthenticated way into any account.
+ */
 export async function seedDemoData(tenantId: string, adminUserId: string) {
-  const workerPassword = await bcrypt.hash("demo123", 10);
+  const workerSecret = crypto.randomBytes(9).toString("base64url");
+  const workerPassword = await bcrypt.hash(workerSecret, 12);
 
   const worker = await prisma.user.create({
     data: {
@@ -73,6 +83,7 @@ export async function seedDemoData(tenantId: string, adminUserId: string) {
 
   await prisma.estimate.create({
     data: {
+      tenantId,
       projectId: project.id,
       lineItems: JSON.stringify([
         { description: "Framing lumber", qty: 20, unit: "pc", unitPrice: 15 },
@@ -129,4 +140,6 @@ export async function seedDemoData(tenantId: string, adminUserId: string) {
       description: "Lumber and drywall",
     },
   });
+
+  return { workerEmail: worker.email, workerPassword: workerSecret };
 }

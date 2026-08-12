@@ -41,8 +41,10 @@ export default function DemoBanner() {
             : "trial active"}
         </span>
       </span>
+      {/* Upgrading is an operator action, so this asks for one instead of granting it —
+          the old link pointed a GET at a POST endpoint and never worked anyway. */}
       <a
-        href="/api/tenant/upgrade"
+        href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "support@handymanpro.ca"}?subject=Upgrade%20my%20HandymanPro%20account`}
         className="border border-navy-900 bg-navy-900 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-plate transition-colors duration-[140ms] ease-instrument hover:bg-navy-800"
       >
         Upgrade

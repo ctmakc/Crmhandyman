@@ -68,6 +68,7 @@ async function main() {
 
   const estimate = await prisma.estimate.create({
     data: {
+      tenantId: tenant.id,
       projectId: created[0].id,
       lineItems: JSON.stringify(lineItems),
       subtotal,

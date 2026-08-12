@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdmin } from "@/lib/guard";
 
 export interface LineItem {
   description: string;
@@ -57,10 +56,9 @@ async function createInvoice(
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
@@ -96,10 +94,9 @@ export async function GET(req: NextRequest) {
  * (`estimateId` in the body copies its line items and totals verbatim).
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json();
   const project = await prisma.project.findFirst({
@@ -113,7 +110,7 @@ export async function POST(req: NextRequest) {
 
   if (estimateId) {
     const estimate = await prisma.estimate.findFirst({
-      where: { id: estimateId, projectId: project.id },
+      where: { id: estimateId, projectId: project.id, tenantId },
     });
     if (!estimate) return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
     lineItems = JSON.parse(estimate.lineItems) as LineItem[];

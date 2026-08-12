@@ -37,12 +37,18 @@ export async function POST(req: NextRequest) {
       if (!leadgenId) continue;
 
       try {
-        // Resolve tenant by pageId
-        const integration = pageId
-          ? await prisma.channelIntegration.findFirst({ where: { pageId, channel: "FACEBOOK" } })
-          : await prisma.channelIntegration.findFirst({ where: { channel: "FACEBOOK", isActive: true } });
+        // Resolve tenant strictly by page. The old fallback — «no page id, take the
+        // first active Facebook integration» — delivered one company's leads to another.
+        if (!pageId) {
+          console.warn(`Facebook lead ${leadgenId} arrived without a page id — skipped`);
+          continue;
+        }
 
-        if (!integration?.accessToken || !integration.isActive) continue;
+        const integration = await prisma.channelIntegration.findFirst({
+          where: { pageId, channel: "FACEBOOK", isActive: true },
+        });
+
+        if (!integration?.accessToken) continue;
 
         const leadData = await fetchFbLead(leadgenId, integration.accessToken);
         const fields = leadData.field_data;

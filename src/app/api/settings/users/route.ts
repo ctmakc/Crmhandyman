@@ -51,9 +51,30 @@ export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenantId = (session.user as any).tenantId as string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const selfId = (session.user as any).id as string;
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  if (id === selfId) {
+    return NextResponse.json({ error: "You cannot remove your own account" }, { status: 400 });
+  }
+
+  // Scoped to this crew: an unscoped delete reached any user of any tenant, including
+  // another company's only admin, which locks them out of their own workspace for good.
+  const target = await prisma.user.findFirst({ where: { id, tenantId }, select: { role: true } });
+  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (target.role === "ADMIN") {
+    const admins = await prisma.user.count({ where: { tenantId, role: "ADMIN" } });
+    if (admins <= 1) {
+      return NextResponse.json({ error: "The last admin cannot be removed" }, { status: 400 });
+    }
+  }
 
   await prisma.user.delete({ where: { id } });
   return NextResponse.json({ ok: true });

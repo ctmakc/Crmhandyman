@@ -17,10 +17,18 @@ import DayRail from "@/components/DayRail";
 import ChaseLane from "@/components/ChaseLane";
 import ServiceDueLane from "@/components/ServiceDueLane";
 import { nextDueVisit, daysUntil } from "@/lib/contracts";
+import { sessionTenant } from "@/lib/session";
+import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  const isAdmin = (session?.user as { role?: string })?.role === "ADMIN";
+  if (!session) redirect("/login");
+
+  // Every query below carries this. Without it the desk aggregated the whole platform:
+  // one contractor's dashboard showed every other contractor's leads, jobs, revenue and
+  // overdue clients by name.
+  const { tenantId, id: userId, role } = sessionTenant(session);
+  const isAdmin = role === "ADMIN";
 
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
@@ -38,19 +46,21 @@ export default async function DashboardPage() {
     outstanding,
     weekJobs,
   ] = await Promise.all([
-    prisma.lead.count({ where: { status: { in: ["NEW", "CONTACTED"] } } }),
-    prisma.project.count({ where: { status: { in: ["SCHEDULED", "IN_PROGRESS"] } } }),
+    prisma.lead.count({ where: { tenantId, status: { in: ["NEW", "CONTACTED"] } } }),
+    prisma.project.count({ where: { tenantId, status: { in: ["SCHEDULED", "IN_PROGRESS"] } } }),
     prisma.task.count({
       where: {
+        tenantId,
         status: { in: ["TODO", "IN_PROGRESS"] },
-        ...(isAdmin ? {} : { assignedToId: (session?.user as { id?: string })?.id }),
+        ...(isAdmin ? {} : { assignedToId: userId }),
       },
     }),
-    prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 5 }),
-    prisma.project.findMany({ orderBy: { updatedAt: "desc" }, take: 5 }),
+    prisma.lead.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 5 }),
+    prisma.project.findMany({ where: { tenantId }, orderBy: { updatedAt: "desc" }, take: 5 }),
     isAdmin
       ? prisma.payment.aggregate({
           where: {
+            tenantId,
             date: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
           },
           _sum: { amount: true },
@@ -58,23 +68,23 @@ export default async function DashboardPage() {
       : null,
     isAdmin
       ? prisma.invoice.aggregate({
-          where: { status: { in: ["SENT", "PARTIAL"] } },
+          where: { tenantId, status: { in: ["SENT", "PARTIAL"] } },
           _sum: { total: true },
           _count: true,
         })
       : null,
     prisma.project.findMany({
-      where: { scheduledDate: { gte: weekStart, lt: weekEnd } },
+      where: { tenantId, scheduledDate: { gte: weekStart, lt: weekEnd } },
       orderBy: { scheduledDate: "asc" },
       select: { id: true, title: true, clientName: true, status: true, scheduledDate: true },
     }),
   ]);
 
-  const crewSize = await prisma.user.count({ where: { role: "WORKER" } });
+  const crewSize = await prisma.user.count({ where: { tenantId, role: "WORKER" } });
 
   // Contract visits that need putting on the board — derived, see lib/contracts.ts.
   const contracts = await prisma.serviceContract.findMany({
-    where: { active: true },
+    where: { tenantId, active: true },
     include: {
       client: { select: { id: true, name: true, address: true } },
       projects: { select: { contractCycle: true } },
@@ -113,7 +123,7 @@ export default async function DashboardPage() {
   // Overdue is derived, not stored — see lib/invoice-state.ts.
   const openInvoices = isAdmin
     ? await prisma.invoice.findMany({
-        where: { status: { in: ["SENT", "PARTIAL"] }, dueDate: { lt: new Date() } },
+        where: { tenantId, status: { in: ["SENT", "PARTIAL"] }, dueDate: { lt: new Date() } },
         include: { payments: { select: { amount: true } } },
         orderBy: { dueDate: "asc" },
       })

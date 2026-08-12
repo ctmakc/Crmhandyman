@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -16,6 +17,8 @@ import {
   Settings,
 } from "lucide-react";
 
+/** `owner: true` means the books — the API refuses these to the crew, so the rail hides
+ *  them rather than offering a door that answers 403. */
 const navItems = [
   { href: "/", label: "Dispatch", code: "01", icon: LayoutDashboard },
   { href: "/today", label: "Today", code: "02", icon: Truck },
@@ -24,16 +27,19 @@ const navItems = [
   { href: "/projects", label: "Jobs", code: "05", icon: Briefcase },
   { href: "/contracts", label: "Contracts", code: "06", icon: CalendarClock },
   { href: "/tasks", label: "Crew", code: "07", icon: CheckSquare },
-  { href: "/invoices", label: "Invoices", code: "08", icon: FileText },
-  { href: "/finance", label: "Finance", code: "09", icon: DollarSign },
-  { href: "/settings", label: "Settings", code: "10", icon: Settings },
+  { href: "/invoices", label: "Invoices", code: "08", icon: FileText, owner: true },
+  { href: "/finance", label: "Finance", code: "09", icon: DollarSign, owner: true },
+  { href: "/settings", label: "Settings", code: "10", icon: Settings, owner: true },
 ];
 
-/** The phone bar is the tech's tool: today, the board, the book, the money. */
+/** The phone bar is the tech's tool: today, the board, the customer record. */
 const mobileItems = ["/today", "/", "/projects", "/clients", "/invoices"];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN";
+  const items = navItems.filter((i) => isAdmin || !i.owner);
 
   return (
     <>
@@ -59,7 +65,7 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex-1 py-2">
-          {navItems.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             const isActive =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -99,7 +105,8 @@ export default function Sidebar() {
       {/* Mobile bar — the tech in the driveway gets the same five lanes. */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-navy-700 bg-navy-900 md:hidden">
         {mobileItems
-          .map((href) => navItems.find((n) => n.href === href)!)
+          .map((href) => items.find((n) => n.href === href))
+          .filter((item): item is (typeof navItems)[number] => Boolean(item))
           .map((item) => {
           const Icon = item.icon;
           const isActive =

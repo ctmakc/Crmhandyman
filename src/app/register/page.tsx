@@ -5,7 +5,8 @@ import { buttonClass } from "@/components/ui/primitives";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ businessName: "", email: "", password: "", plan: "demo" });
+  // Signup always opens a trial — the plan is not the visitor's to choose.
+  const [form, setForm] = useState({ businessName: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -119,23 +120,12 @@ export default function RegisterPage() {
               <input
                 type="password"
                 required
-                minLength={6}
+                minLength={10}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Min 6 characters"
+                placeholder="Min 10 characters"
                 className={field}
               />
-            </div>
-            <div>
-              <label className="eyebrow">Plan</label>
-              <select
-                value={form.plan}
-                onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
-                className={field}
-              >
-                <option value="demo">Free trial — 7 days</option>
-                <option value="paid">Full access</option>
-              </select>
             </div>
 
             <button

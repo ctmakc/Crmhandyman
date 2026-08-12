@@ -4,31 +4,26 @@ import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { buttonClass } from "@/components/ui/primitives";
+import { slugFromHost } from "@/lib/tenant-slug";
 
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantId, setTenantId] = useState("");
   const [slug, setSlug] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [registered, setRegistered] = useState(false);
 
   useEffect(() => {
-    const reg = params.get("registered");
-    const s = params.get("slug");
-    if (reg) setRegistered(true);
-    if (s) setSlug(s);
+    if (params.get("registered")) setRegistered(true);
 
-    // Resolve tenant from slug to get tenantId for auth
-    fetch(`/api/tenant/resolve?slug=${s || "demo"}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.id) setTenantId(d.id);
-      })
-      .catch(() => null);
+    // Same rule the middleware uses: the address names the workspace. The tenant id
+    // stays on the server — the form signs in with the slug.
+    setSlug(
+      slugFromHost(window.location.host, params.get("slug") ?? params.get("tenant"))
+    );
   }, [params]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -36,7 +31,7 @@ function LoginForm() {
     setLoading(true);
     setError("");
 
-    const res = await signIn("credentials", { email, password, tenantId, redirect: false });
+    const res = await signIn("credentials", { email, password, slug, redirect: false });
 
     if (res?.error) {
       setError("That email and password do not match");
