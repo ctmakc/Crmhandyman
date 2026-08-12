@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
+import { dayStamp } from "@/lib/dates";
+import { jobMoney } from "@/lib/margin";
 
 /**
  * CSV for the bookkeeper.
@@ -19,8 +21,12 @@ const csvCell = (v: unknown) => {
 const csv = (rows: Array<Array<unknown>>) =>
   rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
 
-const day = (d: Date | null | undefined) =>
-  d ? new Date(d).toISOString().slice(0, 10) : "";
+/**
+ * Local calendar day. Printed in UTC, an evening payment moved to the next date and an
+ * evening payment on the 31st moved into the next month — the bookkeeper's file then
+ * disagreed with the screen the owner read it off.
+ */
+const day = dayStamp;
 
 const KINDS = ["invoices", "payments", "expenses", "jobs"] as const;
 type Kind = (typeof KINDS)[number];
@@ -102,7 +108,8 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
     const jobs = await prisma.project.findMany({
       where: { tenantId, createdAt: { lte: to } },
       include: {
-        estimates: { select: { total: true, status: true } },
+        // Newest first: jobMoney reads the live accepted price off the head of the list.
+        estimates: { select: { total: true, status: true }, orderBy: { createdAt: "desc" } },
         invoices: { select: { total: true, status: true } },
         payments: { select: { amount: true } },
         expenses: { select: { amount: true } },
@@ -111,18 +118,14 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
     });
     rows = [
       ["Job", "Client", "Address", "Status", "Scheduled", "Completed", "Quoted", "Invoiced", "Collected", "Costs", "Margin", "Margin %"],
+      // Same arithmetic as the job card: the export and the screen must never differ.
       ...jobs.map((j) => {
-        const quoted = j.estimates.filter((e) => e.status === "ACCEPTED").reduce((s, e) => s + e.total, 0)
-          || j.estimates[0]?.total || 0;
-        const invoiced = j.invoices.filter((i) => i.status !== "VOID").reduce((s, i) => s + i.total, 0);
-        const collected = j.payments.reduce((s, p) => s + p.amount, 0);
-        const costs = j.expenses.reduce((s, e) => s + e.amount, 0);
-        const margin = collected - costs;
+        const m = jobMoney(j);
         return [
           j.title, j.clientName, j.address, j.status,
           day(j.scheduledDate), day(j.completedDate),
-          quoted.toFixed(2), invoiced.toFixed(2), collected.toFixed(2), costs.toFixed(2),
-          margin.toFixed(2), collected > 0 ? ((margin / collected) * 100).toFixed(1) : "",
+          m.quoted.toFixed(2), m.invoiced.toFixed(2), m.collected.toFixed(2), m.costs.toFixed(2),
+          m.margin.toFixed(2), m.marginPct === null ? "" : m.marginPct.toFixed(1),
         ];
       }),
     ];

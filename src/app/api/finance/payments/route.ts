@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireUser } from "@/lib/guard";
+import { record, money, day, jobLabel } from "@/lib/audit";
+import { scopedProjectId } from "@/lib/scope";
+import { parseDayInput } from "@/lib/dates";
+import { round2 } from "@/lib/money";
 
 export async function POST(req: NextRequest) {
   // The crew collects at the door and buys materials on the way, so recording is
@@ -10,15 +14,39 @@ export async function POST(req: NextRequest) {
   const { tenantId } = guard.identity;
 
   const body = await req.json();
+
+  // The job has to be ours. A bare body.projectId planted a payment on a stranger's
+  // job — visible on their card through the relation, and undeletable by them, because
+  // the row carried the attacker's tenant.
+  const project = await scopedProjectId(tenantId, body.projectId);
+  if (!project.ok || !project.value)
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+  const amount = round2(Number(body.amount));
+  if (!Number.isFinite(amount) || amount <= 0)
+    return NextResponse.json({ error: "An amount is required" }, { status: 400 });
+
   const payment = await prisma.payment.create({
     data: {
       tenantId,
-      projectId: body.projectId,
-      amount: Number(body.amount),
+      projectId: project.value,
+      amount,
       method: body.method || "CASH",
-      date: body.date ? new Date(body.date) : new Date(),
+      date: parseDayInput(body.date) ?? new Date(),
       notes: body.notes,
     },
+  });
+
+  await record({
+    tenantId,
+    actor: guard.identity,
+    action: "payment.record",
+    entity: "Payment",
+    entityId: payment.id,
+    summary:
+      `Recorded ${money(payment.amount)} by ${payment.method.replace(/_/g, " ")} on ` +
+      `${day(payment.date)} against ${await jobLabel(tenantId, payment.projectId)}`,
+    meta: { amount: payment.amount, method: payment.method, projectId: payment.projectId },
   });
 
   return NextResponse.json(payment, { status: 201 });
@@ -35,8 +63,32 @@ export async function DELETE(req: NextRequest) {
 
   // Scoped delete: an unscoped one reached into another contractor's books and could
   // silently turn their settled invoice back into money owed.
+  // Read for the journal before it is gone: erasing a payment turns a settled invoice
+  // back into a debt, and that is exactly the move a client will later dispute.
+  const doomed = await prisma.payment.findFirst({ where: { id, tenantId } });
+
   const { count } = await prisma.payment.deleteMany({ where: { id, tenantId } });
   if (count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (doomed) {
+    await record({
+      tenantId,
+      actor: guard.identity,
+      action: "payment.delete",
+      entity: "Payment",
+      entityId: doomed.id,
+      summary:
+        `Deleted a ${money(doomed.amount)} ${doomed.method.replace(/_/g, " ")} payment taken ` +
+        `${day(doomed.date)} on ${await jobLabel(tenantId, doomed.projectId)}`,
+      meta: {
+        amount: doomed.amount,
+        method: doomed.method,
+        date: doomed.date,
+        projectId: doomed.projectId,
+        invoiceId: doomed.invoiceId,
+      },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

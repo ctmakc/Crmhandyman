@@ -35,7 +35,7 @@ const navItems = [
 /** The phone bar is the tech's tool: today, the board, the customer record. */
 const mobileItems = ["/today", "/", "/projects", "/clients", "/invoices"];
 
-export default function Sidebar() {
+export default function Sidebar({ business }: { business?: string | null }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN";
@@ -59,8 +59,8 @@ export default function Sidebar() {
           <span className="text-[19px] font-black leading-none tracking-tight text-plate">
             HANDYMAN<span className="text-amber">PRO</span>
           </span>
-          <p className="mono mt-2 text-[10px] uppercase tracking-[0.14em] text-ink-rail">
-            Work-order desk
+          <p className="mono mt-2 truncate text-[10px] uppercase tracking-[0.14em] text-ink-rail">
+            {business || "Work-order desk"}
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export default function Sidebar() {
 
         <div className="border-t border-navy-700 px-5 py-4">
           <p className="mono text-[10px] uppercase tracking-[0.12em] text-ink-rail">
-            HVAC · Moving · Trades
+            HVAC · Moving · Renovation
           </p>
         </div>
       </aside>

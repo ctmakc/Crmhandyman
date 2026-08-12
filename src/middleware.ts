@@ -8,6 +8,8 @@ const PUBLIC_PATHS = [
   "/expired",
   "/api/auth",
   "/api/webhooks",
+  "/api/intake",
+  "/api/health",
   "/api/tenant/resolve",
   "/api/register",
   "/_next",
@@ -19,16 +21,35 @@ const tenantCache = new Map<string, { plan: string; expiresAt: string | null; ts
 const CACHE_TTL = 60_000; // 1 minute
 
 /**
+ * Where the internal resolve call is sent.
+ *
+ * This used to be built from the request's own `Host` header while carrying
+ * NEXTAUTH_SECRET in a header: a signed-in user could point Host at a listener of their
+ * choosing and be handed the master secret, which mints an admin token for any
+ * workspace. The address is configuration now, and an unset NEXTAUTH_URL resolves
+ * nothing at all rather than trusting the caller.
+ */
+const INTERNAL_ORIGIN = (() => {
+  try {
+    return new URL(process.env.NEXTAUTH_URL ?? "").origin;
+  } catch {
+    return "";
+  }
+})();
+
+/**
  * Middleware runs on the edge runtime and cannot open the database, so the plan and
  * expiry still come over HTTP — but the endpoint no longer hands out the tenant id, and
  * the answer is cached for a minute.
  */
-async function resolveTenant(slug: string, baseUrl: string) {
+async function resolveTenant(slug: string) {
+  if (!INTERNAL_ORIGIN) return null;
+
   const cached = tenantCache.get(slug);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   try {
-    const res = await fetch(`${baseUrl}/api/tenant/resolve?slug=${encodeURIComponent(slug)}`, {
+    const res = await fetch(`${INTERNAL_ORIGIN}/api/tenant/resolve?slug=${encodeURIComponent(slug)}`, {
       headers: { "x-internal-resolve": process.env.NEXTAUTH_SECRET ?? "" },
     });
     if (!res.ok) return null;
@@ -81,7 +102,7 @@ export async function middleware(req: NextRequest) {
     return deny(req, url, pathname, 403);
   }
 
-  const tenant = await resolveTenant(slug, `${req.nextUrl.protocol}//${host}`);
+  const tenant = await resolveTenant(slug);
 
   if (!tenant) {
     url.pathname = "/register";

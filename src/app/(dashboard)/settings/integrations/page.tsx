@@ -109,9 +109,9 @@ export default function IntegrationsPage() {
           ))}
           <div className="flex flex-wrap items-baseline gap-x-3 border-t border-line pt-2">
             <dt className="w-[130px] shrink-0 text-[13px] text-ink-2">Verify token</dt>
-            <dd className="mono text-[12px] text-ink-3">
-              {process.env.NEXT_PUBLIC_META_WEBHOOK_TOKEN || "set META_WEBHOOK_VERIFY_TOKEN in .env"}
-            </dd>
+            {/* Printing the token here would ship it in the browser bundle to every
+                signed-in user. Meta needs the value the server holds. */}
+            <dd className="mono text-[12px] text-ink-3">META_WEBHOOK_VERIFY_TOKEN, from the server&apos;s .env</dd>
           </div>
         </dl>
       </div>

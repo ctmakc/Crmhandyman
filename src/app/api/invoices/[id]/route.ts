@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
+import { record, money } from "@/lib/audit";
+import { cents, round2 } from "@/lib/money";
+import { parseDayInput } from "@/lib/dates";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireAdmin();
@@ -41,7 +44,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const body = await req.json();
 
   if (body.action === "pay") {
-    const amount = Number(body.amount);
+    const amount = round2(Number(body.amount));
     if (!amount || amount <= 0)
       return NextResponse.json({ error: "Amount must be positive" }, { status: 400 });
 
@@ -56,9 +59,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       },
     });
 
-    const paid = invoice.payments.reduce((s, p) => s + p.amount, 0) + amount;
-    // Round to the cent before comparing — float sums otherwise leave $0.001 owing.
-    const settled = Math.round(paid * 100) >= Math.round(invoice.total * 100);
+    const paid = round2(invoice.payments.reduce((s, p) => s + p.amount, 0) + amount);
+    // Compare in whole cents — float sums otherwise leave $0.001 owing forever.
+    const settled = cents(paid) >= cents(invoice.total);
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
@@ -67,6 +70,21 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         paidAt: settled ? new Date() : null,
       },
     });
+
+    const owing = round2(invoice.total - paid);
+    await record({
+      tenantId,
+      actor: guard.identity,
+      action: "invoice.pay",
+      entity: "Invoice",
+      entityId: invoice.id,
+      summary:
+        `Took ${money(amount)} by ${String(body.method || "E_TRANSFER").replace(/_/g, " ")} ` +
+        `on ${invoice.number} from ${invoice.clientName} — ` +
+        (settled ? "settled in full" : `${money(owing)} still owing`),
+      meta: { amount, method: body.method || "E_TRANSFER", paid, total: invoice.total, settled },
+    });
+
     return NextResponse.json(updated);
   }
 
@@ -76,9 +94,25 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (body.status === "SENT" && !invoice.sentAt) data.sentAt = new Date();
   }
   if (body.notes !== undefined) data.notes = body.notes;
-  if (body.dueDate) data.dueDate = new Date(body.dueDate);
+  const dueDate = parseDayInput(body.dueDate);
+  if (dueDate) data.dueDate = dueDate;
 
   const updated = await prisma.invoice.update({ where: { id: invoice.id }, data });
+
+  if (body.status && body.status !== invoice.status) {
+    await record({
+      tenantId,
+      actor: guard.identity,
+      action: "invoice.status",
+      entity: "Invoice",
+      entityId: invoice.id,
+      summary:
+        `Moved ${invoice.number} (${money(invoice.total)}) for ${invoice.clientName} ` +
+        `from ${invoice.status} to ${body.status}`,
+      meta: { from: invoice.status, to: body.status },
+    });
+  }
+
   return NextResponse.json(updated);
 }
 
@@ -95,5 +129,16 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     where: { id: invoice.id },
     data: { status: "VOID" },
   });
+
+  await record({
+    tenantId,
+    actor: guard.identity,
+    action: "invoice.void",
+    entity: "Invoice",
+    entityId: invoice.id,
+    summary: `Voided ${invoice.number} (${money(invoice.total)}) for ${invoice.clientName}`,
+    meta: { from: invoice.status, total: invoice.total },
+  });
+
   return NextResponse.json(updated);
 }

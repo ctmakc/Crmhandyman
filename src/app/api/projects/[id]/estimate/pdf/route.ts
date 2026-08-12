@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { renderDocument, DocLineItem } from "@/lib/document";
+import { requireAdmin } from "@/lib/guard";
+import { docRef, renderDocument, DocLineItem } from "@/lib/document";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
+
+  // Ownership of the job first: answering «estimateId required» to a stranger confirms
+  // the route and the job behind it exist.
+  const owned = await prisma.project.findFirst({
+    where: { id: params.id, tenantId },
+    select: { id: true },
+  });
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
   const estimateId = searchParams.get("estimateId");
@@ -24,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const html = renderDocument({
     kind: "ESTIMATE",
-    number: `EST-${new Date(estimate.createdAt).getFullYear()}-${estimate.id.slice(-4).toUpperCase()}`,
+    number: docRef("EST", estimate.id, estimate.createdAt),
     status: estimate.status,
     businessName: estimate.project.tenant.businessName,
     clientName: estimate.project.clientName,

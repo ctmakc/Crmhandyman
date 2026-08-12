@@ -17,10 +17,17 @@ export function owingOf(inv: InvoiceLike) {
   return inv.total - (inv.amountPaid ?? 0);
 }
 
+/**
+ * Late by the same calendar the shop uses.
+ *
+ * Comparing instants made an invoice due «today» overdue at 00:01 of that very day:
+ * the desk printed OVERDUE · 0D LATE, the chase lane opened at level 1 and the reminder
+ * email told the client the bill «was due today». Both readings now count whole days.
+ */
 export function isOverdue(inv: InvoiceLike, now: Date = new Date()) {
   if (inv.status !== "SENT" && inv.status !== "PARTIAL") return false;
   if (!inv.dueDate) return false;
-  return new Date(inv.dueDate) < now && owingOf(inv) > 0.005;
+  return daysOverdue(inv, now) > 0 && owingOf(inv) > 0.005;
 }
 
 /**

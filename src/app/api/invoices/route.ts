@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
+import { record, money } from "@/lib/audit";
+import { round2 } from "@/lib/money";
+import { parseDayInput } from "@/lib/dates";
 
 export interface LineItem {
   description: string;
@@ -8,9 +11,6 @@ export interface LineItem {
   unit: string;
   unitPrice: number;
 }
-
-/** Money never leaves this file with more than two decimals. */
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Sequential, human-quotable invoice number, scoped per tenant per year.
@@ -21,13 +21,21 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  */
 async function nextNumber(tenantId: string) {
   const year = new Date().getFullYear();
-  const last = await prisma.invoice.findFirst({
-    where: { tenantId, number: { startsWith: `INV-${year}-` } },
-    orderBy: { number: "desc" },
+  const prefix = `INV-${year}-`;
+
+  /**
+   * Compared as numbers, not as text. The padding is four wide, so the ten-thousandth
+   * invoice of a year sorts BELOW the nine-thousandth as a string ("INV-2026-10000" <
+   * "INV-2026-9999") and its tail reads "0000" — the sequence restarted at one and
+   * every retry then hit the unique constraint, answering 500 for the rest of the year.
+   */
+  const issued = await prisma.invoice.findMany({
+    where: { tenantId, number: { startsWith: prefix } },
     select: { number: true },
   });
-  const seq = last ? Number(last.number.slice(-4)) || 0 : 0;
-  return `INV-${year}-${String(seq + 1).padStart(4, "0")}`;
+
+  const seq = issued.reduce((top, i) => Math.max(top, Number(i.number.slice(prefix.length)) || 0), 0);
+  return `${prefix}${String(seq + 1).padStart(4, "0")}`;
 }
 
 /** Prisma's unique-constraint violation. */
@@ -122,14 +130,16 @@ export async function POST(req: NextRequest) {
   if (!lineItems.length)
     return NextResponse.json({ error: "An invoice needs at least one line" }, { status: 400 });
 
-  const subtotal = lineItems.reduce((sum, i) => sum + i.qty * i.unitPrice, 0);
+  // Rounded here, once, and every number downstream is derived from these three.
+  // Unrounded, an invoice went out for 274.025: a third of a cent the client cannot
+  // transfer, and a CSV row whose columns no longer add up to their own total.
+  const subtotal = round2(lineItems.reduce((sum, i) => sum + i.qty * i.unitPrice, 0));
   const taxRate = body.taxRate ?? 0.13;
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  const tax = round2(subtotal * taxRate);
+  const total = round2(subtotal + tax);
 
-  const dueDate = body.dueDate
-    ? new Date(body.dueDate)
-    : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const dueDate =
+    parseDayInput(body.dueDate) ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
   /**
    * A deposit split cuts ONE job into TWO independently payable invoices, which is
@@ -149,6 +159,12 @@ export async function POST(req: NextRequest) {
   };
 
   if (depositRate > 0) {
+    /**
+     * The halves are cut out of the ALREADY ROUNDED whole, and the second half takes
+     * whatever the first one left. Rounding each half on its own let the two invoices
+     * add up to a cent more than the same job billed in one — the same work costing a
+     * different amount depending on how it was paperworked.
+     */
     const depositSubtotal = round2(subtotal * depositRate);
     const depositTax = round2(depositSubtotal * taxRate);
     const balanceSubtotal = round2(subtotal - depositSubtotal);
@@ -194,6 +210,31 @@ export async function POST(req: NextRequest) {
         dueDate,
     });
 
+    // One entry per invoice: each half is chased, paid and disputed on its own, so
+    // filtering the journal by either invoice id has to return its own history.
+    await record({
+      tenantId,
+      actor: guard.identity,
+      action: "invoice.issue",
+      entity: "Invoice",
+      entityId: deposit.id,
+      summary:
+        `Issued ${deposit.number} (${money(deposit.total)}) to ${project.clientName} — ` +
+        `${pct}% deposit on ${project.title}`,
+      meta: { kind: "DEPOSIT", split: true, balanceNumber: balance.number, estimateId },
+    });
+    await record({
+      tenantId,
+      actor: guard.identity,
+      action: "invoice.issue",
+      entity: "Invoice",
+      entityId: balance.id,
+      summary:
+        `Issued ${balance.number} (${money(balance.total)}) to ${project.clientName} — ` +
+        `balance on ${project.title} after deposit ${deposit.number}`,
+      meta: { kind: "BALANCE", split: true, depositNumber: deposit.number, estimateId },
+    });
+
     return NextResponse.json({ ...deposit, balance, split: true }, { status: 201 });
   }
 
@@ -205,6 +246,18 @@ export async function POST(req: NextRequest) {
     total,
     notes,
     dueDate,
+  });
+
+  await record({
+    tenantId,
+    actor: guard.identity,
+    action: "invoice.issue",
+    entity: "Invoice",
+    entityId: invoice.id,
+    summary:
+      `Issued ${invoice.number} (${money(invoice.total)}) to ${project.clientName} — ${project.title}` +
+      (estimateId ? ", torn off the accepted estimate" : ""),
+    meta: { kind: "FULL", subtotal, tax, taxRate, estimateId },
   });
 
   return NextResponse.json(invoice, { status: 201 });

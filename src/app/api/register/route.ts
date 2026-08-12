@@ -28,7 +28,27 @@ async function uniqueSlug(base: string) {
   return slug;
 }
 
+/**
+ * Self-serve signup, with a switch.
+ *
+ * On a real domain the open form is how a stranger walks in and opens a workspace on
+ * the contractor's own host — it happened during review, and the operator had no way to
+ * turn it off. Production is closed unless SELF_SERVE_SIGNUP says otherwise; local
+ * development stays open so the register flow can be worked on and tested.
+ */
+function signupOpen() {
+  const raw = (process.env.SELF_SERVE_SIGNUP || "").trim().toLowerCase();
+  if (raw) return raw === "on" || raw === "true" || raw === "1";
+  return process.env.NODE_ENV !== "production";
+}
+
 export async function POST(req: NextRequest) {
+  if (!signupOpen())
+    return NextResponse.json(
+      { error: "Signups are closed here. Ask the operator to open a workspace for you." },
+      { status: 403 }
+    );
+
   const limited = rateLimit(`register:${clientIp(req)}`, 5, 60 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json(

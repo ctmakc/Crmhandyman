@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
 import { nextDueVisit, daysUntil, visitMonthsOf } from "@/lib/contracts";
 
 /** Contracts with their derived next visit. `?due=<days>` filters to what needs booking. */
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const dueWithin = Number(new URL(req.url).searchParams.get("due") || 0);
 
@@ -58,8 +58,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
   const client = await prisma.client.findFirst({ where: { id: body.clientId, tenantId } });

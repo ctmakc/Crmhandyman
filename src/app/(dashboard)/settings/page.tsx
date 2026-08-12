@@ -14,6 +14,18 @@ const SECTIONS = [
     title: "Intake channels",
     sub: "Facebook, Instagram, Google LSA, email marketplaces",
   },
+  {
+    href: "/settings/log",
+    code: "03",
+    title: "Action log",
+    sub: "Who changed a price, took a payment, voided an invoice",
+  },
+  {
+    href: "/settings/intake",
+    code: "04",
+    title: "Landing intake",
+    sub: "Lead forms on your own sites post straight into this desk",
+  },
 ];
 
 export default function SettingsPage() {

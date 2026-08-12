@@ -8,6 +8,17 @@ import { formatCurrency } from "@/lib/utils";
  * so it cannot depend on the app's CSS bundle being present.
  */
 
+/**
+ * The reference a client and a contractor say out loud. Derived from the record id, so
+ * it is stable: the estimate list used to number by position on screen (EST-2026-001)
+ * while the paper and the journal printed the id form (EST-2026-RQBV) — two names for
+ * one document, and the positional one changed whenever an estimate was added.
+ */
+export function docRef(prefix: string, id: string, date: Date | string | null | undefined) {
+  const year = (date ? new Date(date) : new Date()).getFullYear();
+  return `${prefix}-${year}-${id.slice(-4).toUpperCase()}`;
+}
+
 export interface DocLineItem {
   description: string;
   qty: number;

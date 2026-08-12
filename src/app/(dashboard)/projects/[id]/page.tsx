@@ -16,6 +16,7 @@ import {
 import { toast } from "@/components/ui/Toaster";
 import { jobMoney, marginTone, marginVerdict } from "@/lib/margin";
 import AddressHistory from "@/components/AddressHistory";
+import JobPhotos from "@/components/JobPhotos";
 
 interface Project {
   id: string;
@@ -39,6 +40,8 @@ interface Project {
   lead?: { id: string; name: string; source: string };
   assignedToId?: string | null;
   assignedTo?: { id: string; name: string } | null;
+  /** Sent by the API: the crew is served a card with the money stripped out. */
+  viewerRole?: "ADMIN" | "WORKER";
 }
 
 interface Estimate {
@@ -85,6 +88,9 @@ interface Expense {
 
 const TABS = ["overview", "invoices", "crew", "money"] as const;
 type Tab = (typeof TABS)[number];
+
+/** What the crew gets: the work and the day's cash, without the books behind them. */
+const FIELD_TABS: Tab[] = ["overview", "crew", "money"];
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const [project, setProject] = useState<Project | null>(null);
@@ -176,6 +182,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
   const money = jobMoney(project);
   const invoices = project.invoices ?? [];
+  // The API already withholds the numbers from a worker; the page stops drawing empty
+  // frames around the hole and stops offering controls the answer would refuse.
+  const ownerView = project.viewerRole !== "WORKER";
+  const tabs = ownerView ? TABS : FIELD_TABS;
   const acceptedEstimate = project.estimates.find((e) => e.status === "ACCEPTED");
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
@@ -229,39 +239,48 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               Mark complete
             </button>
           )}
-          <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
-            <FileText className="h-4 w-4" />
-            {project.estimates.length > 0 ? "Estimates" : "Create estimate"}
-          </Link>
-          {acceptedEstimate && (
+          {ownerView && (
+            <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
+              <FileText className="h-4 w-4" />
+              {project.estimates.length > 0 ? "Estimates" : "Create estimate"}
+            </Link>
+          )}
+          {ownerView && acceptedEstimate && (
             <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
               <Scissors className="h-4 w-4" /> Issue invoice
             </Link>
           )}
 
           {/* The tech who owns this job. Field mode and the crew-load readout both
-              read this — until it is set, a worker's Today is empty. */}
-          <label className="ml-auto flex items-center gap-2">
-            <span className="eyebrow">Crew</span>
-            <select
-              value={project.assignedToId || ""}
-              onChange={(e) => assignTo(e.target.value)}
-              className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
-            >
-              <option value="">— Unassigned —</option>
-              {crew.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              read this — until it is set, a worker's Today is empty. Dispatch is the
+              owner's call: the select used to sit here for the crew too, empty, and one
+              tap on «— Unassigned —» took the tech off his own work order. */}
+          {ownerView && (
+            <label className="ml-auto flex items-center gap-2">
+              <span className="eyebrow">Crew</span>
+              <select
+                value={project.assignedToId || ""}
+                onChange={(e) => assignTo(e.target.value)}
+                className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
+              >
+                <option value="">— Unassigned —</option>
+                {crew.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {!ownerView && project.assignedTo && (
+            <span className="eyebrow ml-auto self-center">Crew · {project.assignedTo.name}</span>
+          )}
         </div>
       </div>
 
       {/* Tabs — ruled, not pills. */}
       <div className="flex gap-6 border-b border-line">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -303,7 +322,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             )}
           </div>
 
+          <JobPhotos projectId={params.id} />
+
           {/* Did this job make money — the four numbers, then the verdict. */}
+          {ownerView && (
           <section>
             <LaneHead title="Job economics" />
             <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-4">
@@ -358,6 +380,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               </div>
             </div>
           </section>
+          )}
         </div>
       )}
 
@@ -515,7 +538,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             )}
 
             {project.payments.length === 0 ? (
-              <Empty>Nothing collected yet</Empty>
+              <Empty>{ownerView ? "Nothing collected yet" : "Recorded straight to the owner's books"}</Empty>
             ) : (
               <div className="border-t border-line">
                 {project.payments.map((p) => (
@@ -617,7 +640,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             )}
 
             {project.expenses.length === 0 ? (
-              <Empty>No costs logged</Empty>
+              <Empty>{ownerView ? "No costs logged" : "Recorded straight to the owner's books"}</Empty>
             ) : (
               <div className="border-t border-line">
                 {project.expenses.map((e) => (

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireUser } from "@/lib/guard";
+import { scopedProjectId } from "@/lib/scope";
+import { parseDayInput } from "@/lib/dates";
+import { round2 } from "@/lib/money";
 
 export async function POST(req: NextRequest) {
   // The crew collects at the door and buys materials on the way, so recording is
@@ -10,14 +13,24 @@ export async function POST(req: NextRequest) {
   const { tenantId } = guard.identity;
 
   const body = await req.json();
+
+  // A cost planted on a stranger's job dragged that job's margin under water on the
+  // owner's own screen. An expense with no job at all is general overhead and fine.
+  const project = await scopedProjectId(tenantId, body.projectId);
+  if (!project.ok) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+  const amount = round2(Number(body.amount));
+  if (!Number.isFinite(amount) || amount <= 0)
+    return NextResponse.json({ error: "An amount is required" }, { status: 400 });
+
   const expense = await prisma.expense.create({
     data: {
       tenantId,
-      projectId: body.projectId || undefined,
-      amount: Number(body.amount),
+      projectId: project.value,
+      amount,
       category: body.category || "OTHER",
       description: body.description,
-      date: body.date ? new Date(body.date) : new Date(),
+      date: parseDayInput(body.date) ?? new Date(),
     },
   });
 

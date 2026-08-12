@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
+import { scopedUserId } from "@/lib/scope";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
@@ -42,10 +43,15 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
+
+  // Work handed to a stranger's employee also handed their name back through
+  // `assignedTo` on the list below.
+  const assignee = await scopedUserId(tenantId, body.assignedToId);
+  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+
   const lead = await prisma.lead.create({
     data: {
       tenantId,
@@ -57,7 +63,7 @@ export async function POST(req: NextRequest) {
       source: body.source || "MANUAL",
       jobType: body.jobType,
       notes: body.notes,
-      assignedToId: body.assignedToId,
+      assignedToId: assignee.value,
     },
   });
 

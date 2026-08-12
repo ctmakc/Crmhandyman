@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/guard";
+import { scopedProjectId, scopedUserId } from "@/lib/scope";
+import { parseDayInput } from "@/lib/dates";
 
 export async function GET(_req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const u = session.user as any;
-  const tenantId = u.tenantId as string;
-  const userId = u.id as string;
-  const isAdmin = u.role === "ADMIN";
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, id: userId, role } = guard.identity;
 
   const tasks = await prisma.task.findMany({
-    where: isAdmin ? { tenantId } : { tenantId, assignedToId: userId },
+    where: role === "ADMIN" ? { tenantId } : { tenantId, assignedToId: userId },
     include: {
       assignedTo: { select: { id: true, name: true } },
       project: { select: { id: true, title: true } },
@@ -25,24 +22,29 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const u = session.user as any;
-  const tenantId = u.tenantId as string;
-  const userId = u.id as string;
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, id: userId } = guard.identity;
 
   const body = await req.json();
+
+  // Both ids in the body point outside this row. Unchecked, a task landed on a
+  // stranger's job card and their job title came back in the attacker's own task list.
+  const project = await scopedProjectId(tenantId, body.projectId);
+  if (!project.ok) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+  const assignee = await scopedUserId(tenantId, body.assignedToId);
+  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
 
   const task = await prisma.task.create({
     data: {
       tenantId,
       title: body.title,
       description: body.description,
-      projectId: body.projectId || undefined,
-      assignedToId: body.assignedToId || userId,
+      projectId: project.value,
+      assignedToId: assignee.value ?? userId,
       createdById: userId,
-      dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+      dueDate: parseDayInput(body.dueDate),
     },
     include: { assignedTo: { select: { id: true, name: true } } },
   });

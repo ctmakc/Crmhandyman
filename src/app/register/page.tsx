@@ -72,7 +72,7 @@ export default function RegisterPage() {
         </div>
 
         <p className="mono text-[10px] uppercase tracking-[0.12em] text-ink-rail">
-          HVAC · Moving · Trades
+          HVAC · Moving · Renovation
         </p>
       </aside>
 

@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { rateLimit } from "@/lib/rate-limit";
+import { clientIpFromHeaders, rateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -22,9 +22,12 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password || !credentials?.slug) return null;
 
         // Ten tries per address per quarter hour. Passwords are the only thing standing
-        // between a stranger and a contractor's whole customer list.
-        const forwarded = (req?.headers?.["x-forwarded-for"] as string | undefined) ?? "";
-        const ip = forwarded.split(",")[0].trim() || "unknown";
+        // between a stranger and a contractor's whole customer list, so the address is
+        // read the one trustworthy way — see clientIpFromHeaders.
+        const ip = clientIpFromHeaders(
+          req?.headers?.["x-forwarded-for"] as string | undefined,
+          req?.headers?.["x-real-ip"] as string | undefined
+        );
         if (!rateLimit(`login:${ip}`, 10, 15 * 60 * 1000).ok) return null;
 
         const tenant = await prisma.tenant.findUnique({

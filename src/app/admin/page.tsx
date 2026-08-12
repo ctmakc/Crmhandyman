@@ -42,7 +42,6 @@ export default function SuperAdminPage() {
   }
 
   const email = (session?.user as { email?: string })?.email || "";
-  const superAdminEmails = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "";
 
   return (
     <div className="min-h-screen bg-navy-900 p-6 text-plate">
@@ -53,12 +52,6 @@ export default function SuperAdminPage() {
 
         {loading && <p className="mono text-[12px] text-ink-rail">Loading…</p>}
         {error && <p className="mono text-[12px]" style={{ color: "var(--rose)" }}>{error}</p>}
-        {!superAdminEmails && (
-          <div className="mb-4 border-l-2 py-1.5 pl-3 text-[13px]" style={{ borderColor: "var(--amber)", color: "var(--amber)" }}>
-            Set SUPER_ADMIN_EMAILS in .env to grant access to this panel.
-          </div>
-        )}
-
         <div className="overflow-hidden border border-navy-700 bg-navy-800">
           <table className="w-full text-sm">
             <thead>

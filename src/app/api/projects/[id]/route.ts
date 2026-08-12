@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/guard";
+import { scopedUserId } from "@/lib/scope";
+import { parseDayInput } from "@/lib/dates";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, role } = guard.identity;
 
   const project = await prisma.project.findFirst({
     where: { id: params.id, tenantId },
@@ -29,19 +29,48 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   });
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(project);
+
+  /**
+   * The books are the owner's. A tech opening the same job card was reading the quoted
+   * price, the margin and every invoice on it — the rail hides the finance screens, and
+   * this payload handed the same numbers over anyway. The field needs the address, the
+   * work and its tasks; the money rides with `viewerRole` so the page knows what to draw.
+   */
+  if (role !== "ADMIN") {
+    return NextResponse.json({
+      ...project,
+      estimates: [],
+      invoices: [],
+      payments: [],
+      expenses: [],
+      viewerRole: role,
+    });
+  }
+
+  return NextResponse.json({ ...project, viewerRole: role });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, role } = guard.identity;
 
   const existing = await prisma.project.findFirst({ where: { id: params.id, tenantId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
+
+  const assignee = await scopedUserId(tenantId, body.assignedToId);
+  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+
+  /**
+   * Who owns a job is the dispatcher's call. The crew select on the job card sends the
+   * whole project back on every save, so a tech pressing «Start job» was also posting
+   * `assignedToId: null` — one tap took him off the work order and out of the day plan.
+   */
+  const assignedToId =
+    role === "ADMIN" && "assignedToId" in body ? assignee.value ?? null : undefined;
+
   const project = await prisma.project.update({
     where: { id: params.id },
     data: {
@@ -53,9 +82,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       description: body.description,
       jobType: body.jobType,
       status: body.status,
-      scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : undefined,
-      completedDate: body.completedDate ? new Date(body.completedDate) : undefined,
-      assignedToId: body.assignedToId,
+      scheduledDate: parseDayInput(body.scheduledDate),
+      completedDate: parseDayInput(body.completedDate),
+      assignedToId,
     },
   });
 

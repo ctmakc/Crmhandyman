@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
 
 /**
  * "This address has been here before."
@@ -13,8 +14,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const project = await prisma.project.findFirst({
     where: { id: params.id, tenantId },

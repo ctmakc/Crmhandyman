@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
 
 /**
  * Today's stops for field mode.
@@ -13,10 +14,8 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const user = session.user as any;
-  const tenantId = user.tenantId as string;
-  const isAdmin = user.role === "ADMIN";
+  const { tenantId, id: userId, role } = sessionTenant(session);
+  const isAdmin = role === "ADMIN";
 
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
@@ -26,7 +25,7 @@ export async function GET() {
       tenantId,
       status: { in: ["SCHEDULED", "IN_PROGRESS", "COMPLETED"] },
       scheduledDate: { lte: endOfToday },
-      ...(isAdmin ? {} : { assignedToId: user.id }),
+      ...(isAdmin ? {} : { assignedToId: userId }),
     },
     include: {
       client: { select: { equipment: true } },

@@ -1,6 +1,7 @@
 "use client";
 
 import { signOut } from "next-auth/react";
+import Link from "next/link";
 import { LogOut, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -67,12 +68,18 @@ export default function TopBar({ user }: TopBarProps) {
         </button>
       </div>
       <div className="flex items-center gap-3">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate">
-          {initials}
-        </span>
-        <span className="hidden text-[13px] font-medium text-ink-2 sm:inline">
-          {user?.name || user?.email}
-        </span>
+        {/* The only door to your own account — the crew never reaches /settings. */}
+        <Link
+          href="/account"
+          className="flex items-center gap-3 transition-colors duration-[140ms] ease-instrument hover:text-ink"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate">
+            {initials}
+          </span>
+          <span className="hidden text-[13px] font-medium text-ink-2 sm:inline">
+            {user?.name || user?.email}
+          </span>
+        </Link>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="flex items-center gap-1.5 border border-line px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink"

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn, formatCurrency } from "@/lib/utils";
+import { docRef } from "@/lib/document";
 
 /* ==========================================================================
    «НАРЯД» primitives. Everything in the product is assembled from these.
@@ -278,11 +279,9 @@ export function WoNumber({
   prefix?: string;
   date?: Date | string | null;
 }) {
-  const year = date ? new Date(date).getFullYear() : new Date().getFullYear();
-  const tail = id.slice(-4).toUpperCase();
   return (
     <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-      {prefix}-{year}-{tail}
+      {docRef(prefix, id, date)}
     </span>
   );
 }

@@ -215,8 +215,17 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(convertForm),
     });
-    const project = await res.json();
     setSaving(false);
+
+    // The button used to fail silently: a 500 has no JSON body, res.json() threw, the
+    // catch swallowed it and the modal just sat there. Say what happened.
+    if (!res.ok) {
+      const reason = await res.text();
+      toast(reason.includes("Already converted") ? "This lead already has a job" : "Could not open the job");
+      return;
+    }
+
+    const project = await res.json();
     if (project.id) router.push(`/projects/${project.id}`);
   }
 

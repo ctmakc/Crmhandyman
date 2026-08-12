@@ -26,6 +26,9 @@ model Tenant {
   payments     Payment[]
   expenses     Expense[]
   integrations ChannelIntegration[]
+  auditLogs    AuditLog[]
+  photos       JobPhoto[]
+  intakeKeys   IntakeKey[]
 }
 
 enum TenantPlan {
@@ -211,6 +214,7 @@ model Project {
   invoices      Invoice[]
   payments      Payment[]
   expenses      Expense[]
+  photos        JobPhoto[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -360,6 +364,70 @@ enum ExpenseCategory {
   TOOLS
   VEHICLE
   OTHER
+}
+
+/// Who changed what. `actorId` carries no relation on purpose: a fired tech gets deleted,
+/// and the journal that settles a dispute has to survive him.
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  actorId   String
+  /// Name as of the action, not as of the read — renames must not rewrite history.
+  actorName String
+  action    String
+  entity    String
+  entityId  String
+  /// Plain sentence an owner can read aloud to a client.
+  summary   String
+  meta      String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
+}
+
+/// Before/after evidence on a job. `path` stays a var/uploads key so the file is served
+/// through a tenant-checked route — a public URL would leak a client's house to anyone.
+model JobPhoto {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  project      Project   @relation(fields: [projectId], references: [id])
+  projectId    String
+  kind         PhotoKind @default(BEFORE)
+  path         String
+  mime         String
+  sizeBytes    Int
+  caption      String?
+  uploadedById String
+  createdAt    DateTime  @default(now())
+
+  @@index([tenantId, projectId])
+}
+
+enum PhotoKind {
+  BEFORE
+  AFTER
+  DAMAGE
+  DOC
+}
+
+/// Landing-page intake credential. Only the hash lives here; the key itself is shown once
+/// at creation, so a leaked database hands nobody a working lead endpoint.
+model IntakeKey {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  label      String
+  keyHash    String   @unique
+  /// Stamped onto every lead this key brings in, so traffic can be told apart later.
+  source     String
+  isActive   Boolean  @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, isActive])
 }
 
 model ChannelIntegration {

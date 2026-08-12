@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
+import { parseDayInput } from "@/lib/dates";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const client = await prisma.client.findFirst({ where: { id: params.id, tenantId } });
   if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -23,8 +24,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       model: body.model || undefined,
       serial: body.serial || undefined,
       location: body.location || undefined,
-      installedAt: body.installedAt ? new Date(body.installedAt) : undefined,
-      warrantyUntil: body.warrantyUntil ? new Date(body.warrantyUntil) : undefined,
+      installedAt: parseDayInput(body.installedAt),
+      warrantyUntil: parseDayInput(body.warrantyUntil),
       notes: body.notes || undefined,
     },
   });
@@ -35,8 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const equipmentId = new URL(req.url).searchParams.get("equipmentId");
   if (!equipmentId)

@@ -1,27 +1,80 @@
+# HandymanPro CRM — single container plus one named volume.
+#
+# The volume holds everything that must survive a rebuild: the SQLite file, the job
+# photos and the backups. The image holds only code. Nothing is published to the world
+# directly — the port is bound to the loopback and a reverse proxy terminates TLS.
+#
+# Values come from the .env file next to this one; see DEPLOY.md.
+
 services:
   crm:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time, so a change here needs a rebuild.
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@handymanpro.ca}
+    image: handyman-crm:latest
     container_name: handyman-crm
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
-      - crm-data:/app/data
+      - crm-var:/app/var
     environment:
-      - DATABASE_URL=file:/app/data/crm.db
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
-      - META_APP_ID=${META_APP_ID:-}
-      - META_APP_SECRET=${META_APP_SECRET:-}
-      - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN:-}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASS=${SMTP_PASS:-}
-      - SMTP_FROM=${SMTP_FROM:-}
-      - MAILGUN_WEBHOOK_SIGNING_KEY=${MAILGUN_WEBHOOK_SIGNING_KEY:-}
+      # Inside the container the database always lives on the volume.
+      DATABASE_URL: file:/app/var/crm.db
+      UPLOADS_DIR: /app/var/uploads
+
+      # The «:?» form stops `docker compose up` when the value is missing, which is the
+      # difference between a loud failure at deploy time and a quiet one in production.
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?generate with: openssl rand -base64 32}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?public https address of the CRM}
+
+      # Super-admin panel. Empty PLATFORM_TENANT_SLUG keeps it switched off.
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
+      PLATFORM_TENANT_SLUG: ${PLATFORM_TENANT_SLUG:-}
+
+      # Public /register. Unset means closed in production — see .env.example.
+      SELF_SERVE_SIGNUP: ${SELF_SERVE_SIGNUP:-}
+      # Proxies in front of the app. The throttles read the caller's address from the
+      # right of X-Forwarded-For; a wrong count here is how a login limiter is bypassed.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+
+      TRIAL_DAYS: ${TRIAL_DAYS:-7}
+      LEAD_DEDUP_DAYS: ${LEAD_DEDUP_DAYS:-30}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-12}
+      MAX_PHOTOS_PER_JOB: ${MAX_PHOTOS_PER_JOB:-40}
+
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      MAILGUN_WEBHOOK_SIGNING_KEY: ${MAILGUN_WEBHOOK_SIGNING_KEY:-}
+
+    # /api/health answers 200 only when the database replies and every shipped migration
+    # is applied, so an unhealthy container here means something real.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
-  crm-data:
+  crm-var:

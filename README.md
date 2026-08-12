@@ -40,7 +40,23 @@ box-shadows, every number in Chivo Mono.
   so rather than pretending an email went out.
 - **CSV export** — invoices, payments, expenses and per-job margin, Excel-safe
 - **Finance** — payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
-- **Team** — admin + multiple workers, role-based access
+- **Renovation** — the third vertical: 53 reno line items priced for Ottawa, four whole-job
+  templates (repaint, bathroom gut, basement, kitchen) and an area take-off that turns
+  floor area, ceiling height, room count and scope into an editable scope of work
+- **Landing-page intake** (`Settings → Landing intake`) — issue a key, point your own
+  quiz or contact form at `POST /api/intake/<key>`, and the answers arrive as a lead with
+  the whole questionnaire written into its notes. The workspace comes from the key alone,
+  duplicates inside the dedup window fold together, and the desk shows when the channel
+  last fired. See **[docs/INTAKE.md](docs/INTAKE.md)**.
+- **Job photos** — before/after shots straight from the phone on the job card. Stored
+  outside `public/`, so every read passes the session check; signatures are sniffed from
+  the bytes, so a renamed file is refused.
+- **Action log** (`Settings → Action log`) — who took the payment, who moved the price,
+  who voided the invoice. Append-only: nothing in the code updates or deletes a line, and
+  a failure to write one never blocks the payment it was describing.
+- **Team** — admin + multiple workers, role-based access. The books, the paper, the
+  export and the prices are the owner's; the field screens, photos and taking money at
+  the door are the whole crew's. Everyone can change their own password on `/account`.
 - **Mobile-friendly** — the same deck works on a phone in a driveway
 
 ## Quick Start
@@ -73,9 +89,34 @@ npm run dev
 
 Open http://localhost:3000
 
-**Default login:**
+**Default login** — the local seed only, never a deployed workspace:
 - Admin: `admin@handyman.ca` / `admin123`
 - Worker: `worker1@handyman.ca` / `worker123`
+
+A real client's workspace is opened with `scripts/provision-tenant.ts`, which mints a
+random password per account and prints it once — see **[docs/ONBOARDING.md](docs/ONBOARDING.md)**
+for the fifteen-minute runbook and **[docs/OWNER-GUIDE.md](docs/OWNER-GUIDE.md)** for what
+to hand the contractor.
+
+## Tests
+
+```bash
+npm run test        # unit + end-to-end, one command
+```
+
+Two suites under one runner. `unit` covers the money rules out of `src/lib` — tax and
+totals, invoice state, deposit splits, the moving calculator, local-day parsing. `e2e`
+boots the real application on a throwaway database and drives it over HTTP with real
+sessions: the whole chain from a landing-page lead to a settled invoice, and a second
+workspace failing to reach the first one through every route that takes an id.
+
+The end-to-end suite never touches `dev.db`. It builds its own database with
+`prisma migrate deploy` in a temp directory and deletes it on the way out.
+
+## Deployment
+
+**[DEPLOY.md](DEPLOY.md)** is the whole path: Docker on a VPS, wildcard DNS and TLS,
+`/api/health`, nightly SQLite backups with a verified restore, and the rollback.
 
 ## Channel Integrations
 
@@ -104,7 +145,7 @@ Open http://localhost:3000
 ## Tech Stack
 
 - **Framework**: Next.js 14 (App Router)
-- **Database**: SQLite via Prisma 7 + LibSQL adapter
+- **Database**: SQLite via Prisma 7 + better-sqlite3 adapter
 - **Auth**: NextAuth.js (email/password)
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React

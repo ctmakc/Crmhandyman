@@ -57,3 +57,6 @@ next-env.d.ts
 *_old_blocked/
 .next_old_blocked/
 node_modules_old_blocked/
+
+# uploaded job photos and other runtime state
+/var/

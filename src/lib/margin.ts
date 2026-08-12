@@ -37,14 +37,20 @@ export interface JobMoney {
 }
 
 export function jobMoney(job: JobMoneyInput): JobMoney {
-  const accepted = (job.estimates ?? []).filter((e) => e.status === "ACCEPTED");
-  // Fall back to the latest estimate when none was formally accepted.
-  const quoted = accepted.length
-    ? accepted.reduce((s, e) => s + e.total, 0)
-    : (job.estimates ?? [])[0]?.total ?? 0;
+  /**
+   * ONE accepted estimate is the price of the job. Summing them all doubled the quote
+   * the moment a revised estimate was accepted without rejecting the old one — and the
+   * whole job then showed up as a phantom "quoted but never invoiced" leak. Callers
+   * hand the estimates newest first, so the head of the list is the live price; the
+   * same rule covers the fallback when nothing was formally accepted.
+   */
+  const estimates = job.estimates ?? [];
+  const quoted = (estimates.find((e) => e.status === "ACCEPTED") ?? estimates[0])?.total ?? 0;
 
+  // A DRAFT is paper nobody has seen. Counting it as billed hid the «quoted but never
+  // invoiced» signal and inflated what the desk reports as money on the street.
   const invoiced = (job.invoices ?? [])
-    .filter((i) => i.status !== "VOID")
+    .filter((i) => i.status !== "VOID" && i.status !== "DRAFT")
     .reduce((s, i) => s + i.total, 0);
 
   const collected = (job.payments ?? []).reduce((s, p) => s + p.amount, 0);

@@ -5,17 +5,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Printer, Send, Scissors, Calculator } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { PageHead, Empty, buttonClass, spineFor, textToneFor } from "@/components/ui/primitives";
+import { PageHead, Empty, buttonClass, spineFor, textToneFor, WoNumber } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import {
   JOB_TEMPLATES,
   PRICE_ITEMS,
+  TRADES,
   quoteMove,
   crewFor,
   baseHoursFor,
   type JobTemplate,
   type MoveInputs,
+  type Trade,
 } from "@/lib/price-book";
+import {
+  RENO_FLOORING,
+  RENO_SCOPES,
+  quoteRenovation,
+  renoGeometry,
+  type RenoFlooring,
+  type RenoInputs,
+  type RenoScope,
+} from "@/lib/renovation";
 import { SPLIT_PLANS } from "@/lib/margin";
 
 interface LineItem {
@@ -56,20 +67,40 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { description: "", qty: 1, unit: "hr", unitPrice: 0 },
   ]);
-  const [showCalc, setShowCalc] = useState(false);
+  /** Which vertical's shelf of the price book is open. */
+  const [trade, setTrade] = useState<Trade | "ALL">("ALL");
+  const [calc, setCalc] = useState<"MOVE" | "RENO" | null>(null);
   const [move, setMove] = useState<MoveInputs>({
     bedrooms: 2,
     flights: 0,
     travelHours: 1,
     packing: true,
   });
+  const [reno, setReno] = useState<RenoInputs>({
+    areaSqFt: 700,
+    ceilingFt: 8,
+    rooms: 3,
+    scope: "REFRESH",
+    flooring: "VINYL",
+  });
 
   /** A whole job in one click — the price book, not forty keystrokes. */
   function applyTemplate(t: JobTemplate) {
     setLineItems(t.lineItems.map((l) => ({ ...l })));
-    setShowCalc(false);
+    setCalc(null);
     toast(`${t.label} loaded — ${t.lineItems.length} lines`);
   }
+
+  /** A calculator belongs to its vertical; changing shelves closes the wrong one. */
+  function pickTrade(next: Trade | "ALL") {
+    setTrade(next);
+    if (calc === "MOVE" && next !== "ALL" && next !== "MOVING") setCalc(null);
+    if (calc === "RENO" && next !== "ALL" && next !== "RENOVATION") setCalc(null);
+  }
+
+  const templates = JOB_TEMPLATES.filter((t) => trade === "ALL" || t.trade === trade);
+  const showMoveCalc = trade === "ALL" || trade === "MOVING";
+  const showRenoCalc = trade === "ALL" || trade === "RENOVATION";
 
   async function fetchData() {
     const [projRes, estRes] = await Promise.all([
@@ -188,15 +219,49 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
           <div className="mt-4 border border-line bg-sunk p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="eyebrow">Start from a template</span>
-              <button
-                onClick={() => setShowCalc((v) => !v)}
-                className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
-              >
-                <Calculator className="h-3.5 w-3.5" /> Moving calculator
-              </button>
+              <div className="flex flex-wrap items-center gap-4">
+                {showMoveCalc && (
+                  <button
+                    onClick={() => setCalc((v) => (v === "MOVE" ? null : "MOVE"))}
+                    className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
+                    style={calc === "MOVE" ? { color: "var(--ink)" } : undefined}
+                  >
+                    <Calculator className="h-3.5 w-3.5" /> Moving calculator
+                  </button>
+                )}
+                {showRenoCalc && (
+                  <button
+                    onClick={() => setCalc((v) => (v === "RENO" ? null : "RENO"))}
+                    className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
+                    style={calc === "RENO" ? { color: "var(--ink)" } : undefined}
+                  >
+                    <Calculator className="h-3.5 w-3.5" /> Renovation take-off
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* The shelf switch: one book, four verticals. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 border-b border-line">
+              {(["ALL", ...TRADES] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => pickTrade(t)}
+                  className="eyebrow pb-1.5 transition-colors duration-[140ms] ease-instrument hover:text-ink"
+                  style={{
+                    color: trade === t ? "var(--ink)" : undefined,
+                    borderBottom:
+                      trade === t ? "2px solid var(--navy-900)" : "2px solid transparent",
+                    marginBottom: "-1px",
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {JOB_TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => applyTemplate(t)}
@@ -211,7 +276,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
               ))}
             </div>
 
-            {showCalc && (
+            {calc === "MOVE" && (
               <div className="mt-3 border-t border-line pt-3">
                 <div className="flex flex-wrap items-end gap-3">
                   <div>
@@ -268,6 +333,96 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                     Quote it
                   </button>
                 </div>
+              </div>
+            )}
+
+            {calc === "RENO" && (
+              <div className="mt-3 border-t border-line pt-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <label className="eyebrow">Area sq ft</label>
+                    <input
+                      type="number"
+                      min="40"
+                      step="10"
+                      value={reno.areaSqFt}
+                      onChange={(e) => setReno({ ...reno, areaSqFt: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[90px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Ceiling ft</label>
+                    <input
+                      type="number"
+                      min="7"
+                      max="16"
+                      step="0.5"
+                      value={reno.ceilingFt}
+                      onChange={(e) => setReno({ ...reno, ceilingFt: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[80px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Rooms</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={reno.rooms}
+                      onChange={(e) => setReno({ ...reno, rooms: Number(e.target.value) })}
+                      className="mono mt-1.5 w-[80px] px-2 py-1.5 text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Work</label>
+                    <select
+                      value={reno.scope}
+                      onChange={(e) =>
+                        setReno({ ...reno, scope: e.target.value as RenoScope })
+                      }
+                      className="mono mt-1.5 px-2 py-1.5 text-[12px]"
+                    >
+                      {RENO_SCOPES.map((s) => (
+                        <option key={s.id} value={s.id} title={s.hint}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="eyebrow">Floor</label>
+                    <select
+                      value={reno.flooring}
+                      disabled={reno.scope === "PAINT"}
+                      onChange={(e) =>
+                        setReno({ ...reno, flooring: e.target.value as RenoFlooring })
+                      }
+                      className="mono mt-1.5 px-2 py-1.5 text-[12px] disabled:text-ink-3"
+                    >
+                      {RENO_FLOORING.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const g = renoGeometry(reno);
+                      setLineItems(quoteRenovation(reno));
+                      toast(
+                        `${g.wallSqFt} sq ft of wall · ${g.trimLf} lf trim · ${g.doors} doors`
+                      );
+                    }}
+                    className={`${buttonClass("ghost")} mb-0.5`}
+                  >
+                    Take it off
+                  </button>
+                </div>
+                <p className="mt-2.5 text-[12px] text-ink-2">
+                  Quantities are inferred from the floor area — walk the site and correct
+                  them before this goes to the client.
+                </p>
               </div>
             )}
           </div>
@@ -347,9 +502,9 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                   className="mono px-2 py-1 text-[11px] uppercase tracking-[0.06em]"
                 >
                   <option value="">Pick a line…</option>
-                  {(["HVAC", "MOVING", "GENERAL"] as const).map((trade) => (
-                    <optgroup key={trade} label={trade}>
-                      {PRICE_ITEMS.filter((p) => p.trade === trade).map((p) => (
+                  {TRADES.map((t) => (
+                    <optgroup key={t} label={t}>
+                      {PRICE_ITEMS.filter((p) => p.trade === t).map((p) => (
                         <option key={p.description} value={p.description}>
                           {p.description} — {p.unitPrice}/{p.unit}
                         </option>
@@ -420,7 +575,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
 
       <div className="space-y-4">
         {estimates.length === 0 && !creating && <Empty>No estimates on this job yet</Empty>}
-        {estimates.map((estimate, i) => {
+        {estimates.map((estimate) => {
           const items = JSON.parse(estimate.lineItems) as LineItem[];
           return (
             <div
@@ -430,10 +585,8 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
             >
               <div className="flex items-center justify-between border-b border-line px-5 py-4">
                 <div>
-                  <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-                    EST-{new Date(estimate.createdAt).getFullYear()}-
-                    {String(estimates.length - i).padStart(3, "0")}
-                  </span>
+                  {/* The same reference the printed sheet and the journal carry. */}
+                  <WoNumber id={estimate.id} prefix="EST" date={estimate.createdAt} />
                   <p className="mono mt-1 text-[12px] text-ink-2">
                     {new Date(estimate.createdAt).toLocaleDateString("en-CA")}
                   </p>

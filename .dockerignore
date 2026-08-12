@@ -1,9 +1,30 @@
+# Keep the build context small and keep live data out of the image entirely.
+.git
+.gitignore
 node_modules
 .next
-.git
-*.md
+out
+build
+coverage
+
+# Data and secrets. The database and the uploads belong to the volume; a copy baked
+# into an image is both stale and a leak.
 .env
 .env.*
-cookies.txt
+!.env.example
+dev.db
+dev.db-journal
+dev.db-shm
+dev.db-wal
 prisma/dev.db
 prisma/dev.db-journal
+prisma/dev.db-shm
+prisma/dev.db-wal
+var
+cookies.txt
+
+*.md
+*.tsbuildinfo
+Dockerfile
+docker-compose.yml
+.dockerignore

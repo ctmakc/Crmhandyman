@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionTenant } from "@/lib/session";
 
 export async function GET(_: NextRequest, { params }: { params: { channel: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const channel = params.channel.toUpperCase();
   const integration = await prisma.channelIntegration.findUnique({
@@ -22,8 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: { channel: str
   if (!session || (session.user as { role?: string })?.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tenantId = (session.user as any).tenantId as string;
+  const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
   const channel = params.channel.toUpperCase();

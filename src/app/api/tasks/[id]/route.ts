@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { sessionTenant } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { scopedUserId } from "@/lib/scope";
+import { parseDayInput } from "@/lib/dates";
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -18,13 +20,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const body = await req.json();
 
   // A task can only be handed to someone on this crew.
-  if (body.assignedToId) {
-    const assignee = await prisma.user.findFirst({
-      where: { id: body.assignedToId, tenantId },
-      select: { id: true },
-    });
-    if (!assignee) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
-  }
+  const assignee = await scopedUserId(tenantId, body.assignedToId);
+  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
 
   const task = await prisma.task.update({
     where: { id: owned.id },
@@ -32,8 +29,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       title: body.title,
       description: body.description,
       status: body.status,
-      assignedToId: body.assignedToId,
-      dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+      assignedToId: assignee.value,
+      dueDate: parseDayInput(body.dueDate),
     },
     include: { assignedTo: { select: { id: true, name: true } } },
   });

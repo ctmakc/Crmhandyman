@@ -32,8 +32,43 @@ function sweep(now: number) {
   });
 }
 
+/**
+ * How many proxies sit in front of this app. One by default — the Caddy in DEPLOY.md.
+ * A wrong value here is a real hole, so it stays a deliberate number in the environment.
+ */
+const TRUSTED_PROXY_HOPS = Math.max(1, Math.trunc(Number(process.env.TRUSTED_PROXY_HOPS)) || 1);
+
+/**
+ * The caller's address, as far as it can be trusted.
+ *
+ * `X-Forwarded-For` is a list the client is free to start: a request arriving with
+ * `X-Forwarded-For: 10.9.8.7` reaches the app as `10.9.8.7, <real address>`, so reading
+ * the FIRST entry hands every attacker an unlimited supply of fresh identities. Rotating
+ * that header walked straight through the login throttle — the one wall between a
+ * stranger and the whole customer base — and burned other people's intake quota.
+ *
+ * Count from the right instead: the last entry was appended by our own proxy and the
+ * client cannot forge it. Each additional trusted hop moves one position left.
+ */
 export function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
+  return clientIpFromHeaders(req.headers.get("x-forwarded-for"), req.headers.get("x-real-ip"));
+}
+
+/**
+ * The same rule for callers that never see a `Request`. NextAuth hands `authorize()` a
+ * plain headers object, and the login throttle — the one that matters most — kept its
+ * own copy of this parsing, reading the leftmost entry long after the shared helper had
+ * stopped. Two implementations of one rule means one of them is wrong.
+ */
+export function clientIpFromHeaders(
+  forwardedFor: string | null | undefined,
+  realIp?: string | null
+): string {
+  const chain = (forwardedFor ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (chain.length) return chain[Math.max(chain.length - TRUSTED_PROXY_HOPS, 0)];
+  return realIp || "unknown";
 }

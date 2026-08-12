@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 import { sessionTenant } from "@/lib/session";
+import { removeStoredFile } from "@/lib/uploads";
 import type { Session } from "next-auth";
 
 const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS || "")
@@ -66,10 +67,21 @@ export async function DELETE(req: NextRequest) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  // Delete all tenant data in dependency order. Clients, equipment, contracts and
-  // invoices arrived in later waves and were never added here, so every foreign key
-  // still pointed at the tenant and the delete failed at the last statement.
+  /**
+   * Every table that carries `tenantId`, in dependency order. Each wave that adds a
+   * model has to appear here: waves 2–3 were missed once and the delete failed on the
+   * last statement, and wave 5б repeated it with AuditLog, JobPhoto and IntakeKey.
+   * The foreign keys are RESTRICT, so a forgotten table means the tenant cannot leave.
+   */
+  const photos = await prisma.jobPhoto.findMany({
+    where: { tenantId: id },
+    select: { path: true },
+  });
+
   await prisma.$transaction([
+    prisma.auditLog.deleteMany({ where: { tenantId: id } }),
+    prisma.jobPhoto.deleteMany({ where: { tenantId: id } }),
+    prisma.intakeKey.deleteMany({ where: { tenantId: id } }),
     prisma.expense.deleteMany({ where: { tenantId: id } }),
     prisma.payment.deleteMany({ where: { tenantId: id } }),
     prisma.invoice.deleteMany({ where: { tenantId: id } }),
@@ -84,6 +96,10 @@ export async function DELETE(req: NextRequest) {
     prisma.user.deleteMany({ where: { tenantId: id } }),
     prisma.tenant.delete({ where: { id } }),
   ]);
+
+  // Rows first, bytes second: an orphaned file is litter, an orphaned row is a 404 the
+  // owner cannot explain. Deleting a workspace has to take its site photos with it.
+  for (const photo of photos) await removeStoredFile(photo.path);
 
   return NextResponse.json({ ok: true });
 }
