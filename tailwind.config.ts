@@ -35,20 +35,37 @@ const config: Config = {
         sky: {
           DEFAULT: "var(--sky)",
           ink: "var(--sky-ink)",
+          rail: "var(--sky-rail)",
         },
         emerald: {
           DEFAULT: "var(--emerald)",
           ink: "var(--emerald-ink)",
+          rail: "var(--emerald-rail)",
         },
         rose: {
           DEFAULT: "var(--rose)",
           ink: "var(--rose-ink)",
+          rail: "var(--rose-rail)",
         },
         slate: {
           DEFAULT: "var(--slate)",
           ink: "var(--slate-ink)",
+          rail: "var(--slate-rail)",
         },
       },
+      /**
+       * The type scale deliberately does NOT live here.
+       *
+       * A `fontSize` entry named `body` compiles to `.text-body`, and `cn()`
+       * runs every class list through `tailwind-merge`, which reads `text-<word>`
+       * as a colour. On a button spelled `text-body … text-plate` the merge saw
+       * two colours, kept the last one and deleted the size — every button in the
+       * product silently rendered at the browser's 16px and grew from 38 to 42px.
+       * Caught in the after-audit; it typechecks and lints clean either way.
+       *
+       * The scale is `.t-*` in globals.css instead: unknown to tailwind-merge,
+       * so nothing can strip it.
+       */
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
@@ -68,6 +85,14 @@ const config: Config = {
       transitionTimingFunction: {
         DEFAULT: "var(--ease)",
         instrument: "var(--ease)",
+      },
+      /**
+       * Two durations, and the second one is the exception. `duration-[140ms]`
+       * spelled by hand in twenty places is how a third and a fourth arrive.
+       */
+      transitionDuration: {
+        fast: "var(--t-fast)",
+        instrument: "var(--t)",
       },
     },
   },

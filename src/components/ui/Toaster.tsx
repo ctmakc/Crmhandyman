@@ -56,17 +56,23 @@ export default function Toaster() {
       {items.map((t) => (
         <div
           key={t.id}
-          className="ticket-snap flex items-center gap-2.5 border border-navy-700 bg-navy-900 px-4 py-2.5"
-          style={{ borderLeft: `3px solid ${t.tone === "ok" ? "var(--emerald)" : "var(--rose)"}` }}
+          className="ticket-snap flex items-center gap-2.5 rounded border border-navy-700 bg-navy-900 px-4 py-2.5"
+          style={{
+            /* The spine takes the RAIL-weight twin, not the deck value: on navy the
+               deck hues sit near 3.4:1, and this bar is the tone's whole carrier. */
+            borderLeft: `3px solid ${
+              t.tone === "ok" ? "var(--emerald-rail)" : "var(--rose-rail)"
+            }`,
+          }}
         >
           {/* The spine colour carries the tone on the desk; the glyph carries it in
               sunlight and for anyone who cannot separate red from green. It is drawn
-              in --plate rather than in the tone: the semantic hues sit near 3.4:1 on
-              navy, and a shape at 17:1 says more than a colour at 3.4:1. */}
-          <span aria-hidden className="mono text-[12px] font-bold leading-none text-plate">
+              in --plate rather than in the tone: a shape at 17:1 says more than a
+              colour at any ratio this palette can reach on navy. */}
+          <span aria-hidden className="mono t-meta font-bold leading-none text-plate">
             {t.tone === "ok" ? "✓" : "!"}
           </span>
-          <span className="mono text-[12px] tracking-[0.04em] text-plate">{t.text}</span>
+          <span className="mono t-meta tracking-[0.04em] text-plate">{t.text}</span>
         </div>
       ))}
     </div>

@@ -54,10 +54,44 @@
   --slate: #64748b;
   --slate-ink: #5a6979;
 
+  /* Third surface, third twin. The deck twins (`*-ink`) are darkened for light
+     ground and land at 2.6–3.2:1 on the navy chrome, so a status word printed on
+     the rail, the mobile bar or a toast was unreadable. These are the same four
+     hues opened up for dark ground: 7.7–8.7:1 on --navy-900, 6.7–7.7 on --navy-800.
+     Amber needs no twin — it already reads 9.89:1 there, which is why it is the
+     rail's lamp. Use `railToneFor(status)`; never the spine value. */
+  --sky-rail: #7fa9f5;
+  --emerald-rail: #5fc79b;
+  --rose-rail: #f28e8b;
+  --slate-rail: var(--rail-ink);
+
   --r: 3px;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --t-fast: 140ms;
   --t: 180ms;
+
+  /* THE TYPE SCALE, as tokens. Ten steps and no eleventh — the audit of
+     2026-08-13 found twenty sizes in use, so 8/9/16/17/18/19/20/24/26/28 were
+     each a private decision on one screen. Mapping in docs/POLISH-SPEC.md. */
+  --fs-micro: 10px; /* mono ticks, strip letters, the smallest legible readout */
+  --fs-eyebrow: 11px; /* THE label language of the product */
+  --fs-meta: 12px; /* secondary detail under a title */
+  --fs-body: 13px; /* the default */
+  --fs-lede: 14px; /* page sub-line and prose only */
+  --fs-row: 15px; /* a row title, the thing you scan for */
+  --fs-record: 22px; /* record title, day numeral, phone number */
+  --fs-readout: 30px; /* money and count gauges */
+  --fs-page: 34px; /* page title, phone */
+  --fs-page-lg: 44px; /* page title, desk */
+
+  /* THE SPACING GRID. Four steps of air and no others: inside a control, inside
+     a row, between rows and a rule, between sections. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-10: 40px;
 }
 
 html,
@@ -88,14 +122,121 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
+/* --------------------------------------------------------------------------
+   THE TYPE SCALE, as classes. Ten steps, `.eyebrow` below is the eleventh name
+   for the same eleven pixels. Written here rather than as Tailwind `fontSize`
+   entries because `cn()` merges through tailwind-merge, which reads
+   `text-<word>` as a colour and deletes it when a colour follows.
+
+   Off-scale sizes found on 2026-08-13 and where they go:
+     8, 9   → .t-micro      17, 18   → .t-row
+     16     → .t-row        19, 20   → .t-record
+     24, 26, 28 → .t-readout (or .t-record where it is a title, not a number)
+   -------------------------------------------------------------------------- */
+.t-micro {
+  font-size: var(--fs-micro);
+  line-height: 1.1;
+}
+.t-meta {
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+.t-body {
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+.t-lede {
+  font-size: var(--fs-lede);
+  line-height: 1.5;
+}
+.t-row {
+  font-size: var(--fs-row);
+  line-height: 1.3;
+}
+.t-record {
+  font-size: var(--fs-record);
+  line-height: 1.1;
+}
+.t-readout {
+  font-size: var(--fs-readout);
+  line-height: 1;
+}
+.t-page {
+  font-size: var(--fs-page);
+  line-height: 0.92;
+}
+@media (min-width: 768px) {
+  .t-page {
+    font-size: var(--fs-page-lg);
+  }
+}
+
 /* Mono eyebrow — the label language of the whole product. */
 .eyebrow {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--fs-eyebrow);
   line-height: 1;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------------------
+   MEASURE — how wide a page is allowed to be.
+   The audit found the page title starting at a different x on every record
+   screen (260 / 288 / 346 / 386 / 410 / 474 / 498 at 1440), because each one
+   had picked its own max-width. Two widths exist now, and nothing else:
+   an index screen runs the full deck, a record or a form runs `.page-doc`.
+   -------------------------------------------------------------------------- */
+.page-doc {
+  max-width: 980px;
+}
+
+/* Prose stops where the eye stops. Applies to a page sub-line and to help text. */
+.measure {
+  max-width: 62ch;
+}
+
+/* --------------------------------------------------------------------------
+   THE CONTROL — one look for everything that takes typing or a choice.
+   Nine screens had hand-rolled `w-full mt-1.5 px-3 py-2 text-[13px]` into a
+   local constant, and they had drifted: inputs measured 32, 34, 38, 39 and 40px
+   on the same desk. The box is declared once here; the phone rule below lifts
+   it to 44px for a gloved hand.
+   -------------------------------------------------------------------------- */
+.control {
+  display: block;
+  width: 100%;
+  padding: 8px 11px;
+  font-size: var(--fs-body);
+  line-height: 20px;
+  color: var(--ink);
+}
+
+/* A control that carries a number carries it in mono, like every other number. */
+.control.mono {
+  letter-spacing: 0.01em;
+}
+
+/* --------------------------------------------------------------------------
+   THE CHIP — a fact about a record that is not its status: an equipment kind,
+   a source, a tag. Recessed, never framed: a hairline rectangle around eight
+   words in a row turns the row back into the box grid the v1 revision killed.
+   -------------------------------------------------------------------------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border-radius: var(--r);
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--fs-eyebrow);
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* --------------------------------------------------------------------------
@@ -114,7 +255,10 @@ body {
 /* THE ROW — the default list primitive. A spine, a rule, and air. No frame. */
 .row {
   position: relative;
-  padding: 13px 16px 13px 20px;
+  /* On the grid: 12 of air above and below, 16 to the right edge, 20 to the left
+     so the text clears the 3px spine by a full step. The old 13/11 pair was the
+     one place the spacing scale had a private value. */
+  padding: 12px 16px 12px 20px;
   border-bottom: 1px solid var(--line);
   transition: background-color var(--t) var(--ease);
   display: block;
@@ -125,8 +269,8 @@ body {
   content: "";
   position: absolute;
   left: 0;
-  top: 11px;
-  bottom: 11px;
+  top: 12px;
+  bottom: 12px;
   width: 3px;
   background: var(--spine, transparent);
 }
@@ -331,8 +475,19 @@ textarea:focus {
 input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: var(--r);
+  /* The ring is never animated. A control carrying `transition-all` interpolates
+     its outline from the resting value — `medium` width in its own text colour —
+     so for the first 140ms the ring on the VOID button was a 3px rose rectangle
+     and the ring on a ghost button was grey. Caught in the screenshot loop, and
+     invisible to every static check. This list is the transition every control is
+     allowed to have; nothing here is the focus ring. */
+  transition-property: background-color, border-color, color, transform, opacity;
 }
+
+/* The ring used to set `border-radius: var(--r)` here as well, which squared off
+   every `rounded-full` avatar and lamp the moment it took focus — the shape of
+   the thing changed under the keyboard. The outline follows whatever radius the
+   element already has, so the declaration only did harm. */
 
 /* On the navy rail the dark ring disappears into the chrome. */
 .focus-rail:focus-visible {
@@ -361,6 +516,28 @@ input:focus-visible {
   border: 1px solid var(--navy-900);
   border-radius: var(--r);
   padding: 10px 14px;
+}
+
+/* --------------------------------------------------------------------------
+   THE ACTION CLUSTER — where the buttons of a record sit.
+   On the desk they line up left to right at their own width. On the phone they
+   share the width two per line, so nothing lands at 61px next to something at
+   180px and nothing needs an aimed tap.
+   -------------------------------------------------------------------------- */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 767px) {
+  .actions > * {
+    flex: 1 1 calc(50% - var(--sp-1));
+  }
+  /* A cluster of one is the page's whole answer — give it the full width. */
+  .actions > *:only-child {
+    flex-basis: 100%;
+  }
 }
 
 /* Announced, never drawn. */

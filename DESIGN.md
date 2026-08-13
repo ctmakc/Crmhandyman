@@ -47,7 +47,8 @@ good version of that paper, not like a generic CRM.
 --line     #D3DBE4   hairlines (the ONLY separator strategy — no shadows anywhere)
 --ink      #131A26   primary text
 --ink-2    #45536C   secondary
---ink-3    #5D6B82   labels, mono eyebrows — tuned so 11px eyebrows clear AA on the deck
+--ink-3    #59677D   labels, mono eyebrows — tuned so 11px eyebrows clear AA on the deck
+                     AND on the recessed lane: 4.61 on --sunk, 5.02 on deck, 5.58 on plate
 --rail-ink #97A3B8   text on the navy rail; ink-3 fails AA against navy-900
 --amber    #FFB020   THE live-job lamp. ≤3 per viewport. Never a background wash.
 --amber-ink #7A5200   amber-as-text, WCAG AA on plate
@@ -62,7 +63,21 @@ does not clear it as 11px type on the deck:
 --rose-ink    #B82B27
 --sky-ink     #2A61CE
 --emerald-ink #17714B
+--slate-ink   #5A6979
 Use `textToneFor(status)` — never the spine value — for status text.
+
+Three surfaces, three twins. The `*-ink` values are darkened for light ground and land at
+2.6–3.2:1 on the navy chrome, so the same status word on the rail, the phone's bottom bar
+or a toast was unreadable. The rail twins are the same four hues opened up instead:
+--sky-rail     #7FA9F5   7.66:1 on navy-900
+--emerald-rail #5FC79B   8.72:1
+--rose-rail    #F28E8B   7.76:1
+--slate-rail   = --rail-ink
+Amber needs no twin — 9.89:1 there is why it is the rail's lamp. Use `railToneFor(status)`.
+
+Two more tokens carry the working surface rather than a status:
+--field-line #7A8899  the boundary of anything that takes typing (3.5:1 on plate)
+--focus      = --ink   the keyboard ring; --focus-rail = --plate on the navy chrome
 ```
 
 Semantic colours carry meaning ONLY. A pill is never blue because blue is pretty.
@@ -75,9 +90,21 @@ Semantic colours carry meaning ONLY. A pill is never blue because blue is pretty
 - No third family. No Inter, no Space Grotesk, no Geist as identity.
 
 Scale (revised — v1 clustered everything between 13 and 28px, so nothing could dominate):
-`10/11` mono eyebrows (uppercase, `0.1em` tracking) · `12` meta · `13/14` body ·
-`15` row titles · `22` day numerals on the week board · `30` money readouts ·
-`34/44` page titles. Real jumps, not 400-vs-600 weight nudges.
+`10` mono ticks and strip letters · `11` eyebrows (uppercase, `0.09em` tracking) ·
+`12` meta · `13` body · `14` the page sub-line and prose · `15` row titles ·
+`22` day numerals and record titles · `30` money readouts · `34/44` page titles.
+Real jumps, not 400-vs-600 weight nudges.
+
+**Ten steps and no eleventh.** The scale is written as `--fs-*` tokens and as the `.t-*`
+classes in `globals.css` — `.t-micro .t-meta .t-body .t-lede .t-row .t-record .t-readout
+.t-page`, with `.eyebrow` covering 11. Spelling a size by hand (`text-[19px]`) is how a
+ten-step system ended up with twenty sizes in use: every one of them was a private
+decision that no neighbouring screen could see.
+
+The scale must NOT be declared as `theme.fontSize` in `tailwind.config`. `cn()` merges
+through `tailwind-merge`, which reads `text-<word>` as a colour and drops it when a colour
+follows — `text-body … text-plate` silently lost its size and every button in the product
+rendered at the browser's 16px. Verified and reverted on 2026-08-13.
 
 ### Shape & depth
 
@@ -94,6 +121,17 @@ Scale (revised — v1 clustered everything between 13 and 28px, so nothing could
   and estimate documents, and the header plate of a record. **Lists are ruled rows** — a
   3px status spine, a bottom hairline, and air. Sections open with a rule; they do not
   close in a box.
+
+### Space
+
+One grid: **4 / 8 / 12 / 16 / 24 / 40** (`--sp-1 … --sp-10`). Half steps exist only to sit
+a line on a neighbour's baseline. The rhythm: 4 between a title and its detail, 12/16
+inside a row, 16 between blocks in a section, 40 between sections — and a section opens
+with a rule, never with a box.
+
+Two widths, and no third. An index screen runs the full deck; a record or a form runs
+`.page-doc` (980px); prose stops at `.measure` (62ch). Before this was written down the
+page title started at seven different x positions across the record screens.
 
 ## Signature element — the ticket plate
 
@@ -145,6 +183,10 @@ page entrance, never on scroll, never re-triggered. `prefers-reduced-motion` col
 - Designed hovers: plate lifts by border darkening + 1px translate, never by shadow.
 - No fade-up carpets. No scroll reveals — this is a working tool, not a landing page.
 - `prefers-reduced-motion` kills all transforms.
+- **The focus ring is never animated.** A transition is spelled with the properties it
+  moves — `background-color, border-color, color, transform`. `transition-all` also
+  animates the outline, and a control interpolates it from its resting state: the wrong
+  colour and the wrong thickness for the first 140ms of every keyboard step.
 
 ## Anti-slop guarantees
 
@@ -330,3 +372,52 @@ One trap worth writing down: a stale service worker (`hp-shell-v1`) kept serving
 chunk through server restarts, so three screenshot cycles were spent looking at code that
 no longer existed. When a change refuses to appear, unregister the worker and drop its
 caches before doubting the code.
+
+### Revision 4, 2026-08-13 — the foundation, measured
+
+A polish wave opened with a measurement instead of an opinion: every screen in both roles
+at 1440 and 390, with a DOM probe counting sizes, radii, shadows, control heights, numbers
+in the wrong face and labels with nothing to label (`var/polish/base/audit.mjs`).
+
+What the measurement said. Zero shadows, one radius, zero contrast failures — the three
+laws this document shouts about were being kept. What had drifted was everything the
+document had left implicit: **twenty type sizes** in a ten-step scale, **fifteen button
+heights** on the desk, form controls at 32/34/38/39/40px because nine screens each kept a
+private copy of `const field = "w-full px-3 py-2 …"`, the page title starting at seven
+different x positions, 149 numbers set in the proportional face, eight dates printed
+`2026-07-27` beside fifteen printed `Jul 27, 2026`, and 110 labels of which one was
+attached to its field.
+
+The rule this proves: **a law that is not a token is not a law.** Colour and radius held
+because they were tokens; type, space, width and control geometry drifted because they
+were sentences. So they became tokens too — `--fs-*`, `--sp-*`, `.t-*`, `.control`,
+`.chip`, `.actions`, `.page-doc`, `.measure` — and the primitives grew the parts screens
+were re-inventing: `Num`, `Stamp`, `Chip`, `BackLink`, `ErrorNote`, `TableWrap`, `Th`, a
+fourth `quiet` button rank, an `Empty` that says what to do next, a `Field` that hands the
+control its own class, and `railToneFor` with three rail-weight twins so a status word can
+be printed on the navy chrome at 7.7:1 instead of 3.0.
+
+Three defects the pixels caught that no static check could:
+
+1. **`transition-all` animated the focus ring.** A control inherits its resting outline —
+   `medium` width in its own text colour — so for the first 140ms the keyboard ring on the
+   VOID button was a 3px rose rectangle and on a ghost button a grey one. Buttons now name
+   their transitioned properties, and the focus rule names them again, so no screen can
+   re-introduce it.
+2. **The focus rule was reshaping what it focused.** It set `border-radius: var(--r)` on
+   the element, which squared off every `rounded-full` avatar and lamp the moment it took
+   focus. Removed; the outline follows the element's own radius.
+3. **The type scale, declared through Tailwind, deleted itself.** See the Type section:
+   `tailwind-merge` reads `text-body` as a colour. Every button in the product was
+   rendering at 16px and 42px tall, and `tsc`, `lint` and the 354 tests were all green.
+
+Two cycles on the shared parts (`var/polish/base/*-specimen-*.png` — a specimen sheet of
+every primitive on one deck, shot at 1440 and 390 with a keyboard-focus frame), plus a
+before/after sweep of all 23 screens in both roles. Cycle 1 moved the page action under
+the title on the phone and let the lane head wrap instead of shrink; cycle 2 fixed the
+focus ring and turned the empty state from a centred poster into a left-aligned status
+line that names the next move. Gates: `tsc` clean, `next lint` clean, **354 of 354 tests**.
+
+One trap worth writing down beside the service worker: `npm run test` and a running dev
+server share `dev.db`. Run together they produce up to five red files and a shifting
+skipped-test count; run apart, the suite is green. Kill the server before the gate.

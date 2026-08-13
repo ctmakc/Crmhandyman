@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { formatCents } from "@/lib/money";
 import { docRef } from "@/lib/document";
 
@@ -54,6 +54,21 @@ export function textToneFor(status?: string | null) {
 }
 
 /**
+ * The same status word on the NAVY chrome — the rail, the phone's bottom bar, a
+ * toast. The deck twins above are darkened for light ground and land at 2.6–3.2:1
+ * there, which outdoors is nothing at all. These are opened up instead: 7.7–8.7:1.
+ * Amber keeps its own value; it is already the brightest thing on the chrome.
+ */
+export function railToneFor(status?: string | null) {
+  const tone = spineFor(status);
+  if (tone === "var(--rose)") return "var(--rose-rail)";
+  if (tone === "var(--sky)") return "var(--sky-rail)";
+  if (tone === "var(--emerald)") return "var(--emerald-rail)";
+  if (tone === "var(--slate)") return "var(--slate-rail)";
+  return tone;
+}
+
+/**
  * Page header. The display size carries the hierarchy the old 28px could not —
  * the title has to outweigh every number on the deck, or nothing dominates.
  */
@@ -69,16 +84,35 @@ export function PageHead({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-6">
-      <div>
+    /**
+     * The action sits beside the title on the desk and under the block on the
+     * phone. Side by side at 390px it squeezed the sub-line into three lines and
+     * pushed a 155px button against the edge of the screen.
+     */
+    <div className="flex flex-col items-stretch gap-4 md:flex-row md:items-end md:justify-between md:gap-6">
+      <div className="min-w-0">
         <div className="eyebrow">{eyebrow}</div>
-        <h1 className="mt-2.5 text-[34px] font-black leading-[0.92] tracking-[-0.025em] text-ink md:text-[44px]">
+        <h1 className="mt-2.5 t-page font-black tracking-[-0.025em] text-ink">
           {title}
         </h1>
-        {sub && <p className="mt-3 max-w-[54ch] text-[14px] text-ink-2">{sub}</p>}
+        {sub && <p className="measure t-lede mt-3 text-ink-2">{sub}</p>}
       </div>
-      {action && <div className="shrink-0 pb-1.5">{action}</div>}
+      {action && <div className="actions shrink-0 md:pb-1.5">{action}</div>}
     </div>
+  );
+}
+
+/**
+ * The way back out of a record. Six record screens had written their own
+ * `← ALL JOBS` link, at four different sizes, and the field rule that grows an
+ * 11px link to a 44px target only finds it if it carries `.eyebrow`.
+ */
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+      <span aria-hidden>←</span>
+      {label}
+    </Link>
   );
 }
 
@@ -93,17 +127,24 @@ export function LaneHead({
   lamp?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 pb-2.5">
-      <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+    /**
+     * `right` holds a count on some screens and a search box on others. The head
+     * wraps instead of shrinking: at 390px the title used to fold onto two lines
+     * ("ON THE GO ·" / "2") to make room for a search field. Now the title keeps
+     * its line and anything that does not fit takes the next one.
+     */
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 pb-2.5">
+      <h2 className="t-meta flex shrink-0 items-center gap-2 font-bold uppercase leading-none tracking-[0.1em] text-ink">
         {lamp && (
           <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
             style={{ background: lamp }}
           />
         )}
         {title}
       </h2>
-      {right}
+      {right && <div className="flex min-w-0 flex-wrap items-center gap-2">{right}</div>}
     </div>
   );
 }
@@ -182,6 +223,74 @@ export function Money({
   );
 }
 
+/**
+ * ANY OTHER NUMBER. Money has `Money`, gauges have `Readout`, and everything
+ * else — counts, ages, quantities, percentages, hours, invoice and phone
+ * numbers — was falling back to the body face. The audit of 2026-08-13 counted
+ * 149 numbers printed in proportional Chivo, where a column of them no longer
+ * lines up and a `1` is narrower than a `7`.
+ */
+export function Num({
+  children,
+  className,
+  tone,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  tone?: string;
+}) {
+  return (
+    <span className={cn("mono", className)} style={tone ? { color: tone } : undefined}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A DATE, printed the one way. Eight places called `toLocaleDateString("en-CA")`
+ * and printed `2026-07-27` next to a screen that printed `Jul 27, 2026` for the
+ * same day. A date is a number, so it is mono like every other number.
+ */
+export function Stamp({
+  date,
+  withTime,
+  className,
+  tone,
+}: {
+  date: Date | string | null | undefined;
+  withTime?: boolean;
+  className?: string;
+  tone?: string;
+}) {
+  if (!date) return <span className={cn("mono", className)}>—</span>;
+  return (
+    <span className={cn("mono", className)} style={tone ? { color: tone } : undefined}>
+      {withTime ? formatDateTime(date) : formatDate(date)}
+    </span>
+  );
+}
+
+/**
+ * A fact about a record that is not its status — an equipment kind, a source, a
+ * tag. Recessed rather than framed: eight hairline rectangles in a row rebuild
+ * the box grid that the 2026-07-27 revision took out.
+ */
+export function Chip({
+  children,
+  className,
+  title,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <span className={cn("chip", className)} title={title}>
+      {children}
+    </span>
+  );
+}
+
 /** The plate: a flat surface with a hairline. No shadow, radius 3. */
 export function Plate({
   children,
@@ -202,7 +311,7 @@ export function PlateHead({
 }) {
   return (
     <div className="flex items-center justify-between border-b border-line px-4 py-3">
-      <h2 className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
+      <h2 className="t-body font-bold uppercase tracking-[0.06em] text-ink">
         {title}
       </h2>
       {right}
@@ -291,20 +400,20 @@ export function WoNumber({
   date?: Date | string | null;
 }) {
   return (
-    <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
+    <span className="mono eyebrow tracking-[0.08em] text-ink-3">
       {docRef(prefix, id, date)}
     </span>
   );
 }
 
-/** Buttons: three ranks, one radius, no gradients. */
+/** Buttons: four ranks, one radius, two heights, no gradients. */
 export function Button({
   children,
   variant = "primary",
   className,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "ghost" | "danger";
+  variant?: ButtonVariant;
 }) {
   return (
     <button
@@ -316,7 +425,9 @@ export function Button({
   );
 }
 
-export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary") {
+export type ButtonVariant = "primary" | "ghost" | "danger" | "quiet";
+
+export function buttonClass(variant: ButtonVariant = "primary") {
   /**
    * `min-h-[44px]` below the `md` breakpoint is the whole field-mode promise: the
    * button rendered at 38px, which is a mis-tap with a glove on. The desk keeps
@@ -325,20 +436,58 @@ export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary")
    * Disabled used to be `opacity-50`, which put the label at 1.9:1 — outdoors a
    * disabled CALL simply vanished instead of reading as unavailable. It is a
    * recessed surface now: legible, and obviously not live.
+   *
+   * `quiet` is the fourth rank, and it exists because the ranks stopped at three.
+   * Screens that needed a row-scale control (the call sheet's CONTACTED / VERIFY /
+   * REJECT, the estimate's line actions) each wrote their own, and the desk ended
+   * up with buttons at 11, 14, 16, 23, 25, 27, 30, 31, 32, 38, 48 and 54px. This
+   * one is the row-scale rank, and it is the last one.
    */
   const base =
-    "inline-flex min-h-[44px] items-center justify-center gap-2 rounded border px-3.5 py-2 text-[13px] font-bold uppercase tracking-[0.05em] transition-all duration-[140ms] ease-instrument md:min-h-0 disabled:cursor-not-allowed disabled:border-line disabled:bg-sunk disabled:text-ink-3";
+    /* The transition names its properties. `transition-all` also animates the
+       focus outline, which made the keyboard ring fade in from the button's own
+       colour at the browser's own thickness. */
+    "inline-flex min-h-[44px] items-center justify-center gap-2 rounded border font-bold uppercase transition-[background-color,border-color,color,transform] duration-fast ease-instrument md:min-h-0 disabled:cursor-not-allowed disabled:border-line disabled:bg-sunk disabled:text-ink-3";
+  /**
+   * The height is arithmetic, not an accident: 20 of line box + 16 of padding +
+   * 2 of border = 38px on the desk, the same 38 as `.control`, so a button and
+   * the field beside it sit on one line. The quiet rank works out at 26.
+   */
+  const deskScale = "t-body px-3.5 py-2 leading-[20px] tracking-[0.05em]";
   if (variant === "primary")
     return cn(
       base,
+      deskScale,
       "border-navy-900 bg-navy-900 text-plate hover:bg-navy-800 active:translate-y-px"
     );
   if (variant === "danger")
-    return cn(base, "border-line bg-plate text-rose hover:border-rose active:translate-y-px");
+    return cn(
+      base,
+      deskScale,
+      "border-line bg-plate text-rose hover:border-rose active:translate-y-px"
+    );
+  if (variant === "quiet")
+    return cn(
+      base,
+      "mono t-micro px-2 py-1 leading-[16px] tracking-[0.08em]",
+      "border-line bg-plate text-ink-2 hover:border-ink-3 hover:text-ink active:translate-y-px"
+    );
   return cn(
     base,
+    deskScale,
     "border-line bg-plate text-ink-2 hover:border-ink-3 hover:text-ink active:translate-y-px"
   );
+}
+
+/**
+ * THE CONTROL — every input, select and textarea in the product.
+ * Nine screens had copied `w-full mt-1.5 px-3 py-2 text-[13px]` into a local
+ * `const field`, and the copies had drifted apart: 32, 34, 38, 39 and 40px tall
+ * on the same desk. `Field` hands this down automatically; a bare control that
+ * lives outside a `Field` (a search box, a filter) asks for it by name.
+ */
+export function controlClass(className?: string) {
+  return cn("control", className);
 }
 
 /**
@@ -372,11 +521,73 @@ export function Skeleton({ lines = 4 }: { lines?: number }) {
   );
 }
 
-/** Empty state — a quiet line on the deck, not a dashed box. */
-export function Empty({ children }: { children: React.ReactNode }) {
+/**
+ * EMPTY IS A STATE, NOT A FAULT.
+ *
+ * The old version printed one mono line and stopped, so a fresh desk said
+ * `NO MONEY IN THIS PERIOD` and left the owner to guess whether that was a
+ * result or a broken screen. An empty lane now says what is missing on the
+ * first line and what to do about it on the second, and carries the button that
+ * does it when there is one.
+ *
+ * The first line stays in `children` so the twenty-eight existing calls keep
+ * working unchanged; `hint` and `action` are what a polished screen adds.
+ */
+export function Empty({
+  children,
+  hint,
+  action,
+  className,
+}: {
+  children: React.ReactNode;
+  /** What the person does next, in his words. One sentence, no full stop needed. */
+  hint?: string;
+  action?: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="border-t border-line py-9 text-center" role="status">
+    /* Left, on the row's own indent. Centred, the line broke wherever the column
+       happened to end ("NO INVOICES ON THIS / JOB") and read as a poster in the
+       middle of a working deck. Everything else here is left-aligned; an empty
+       lane is a status line, and status lines start where the rows start. */
+    <div
+      className={cn("border-t border-line py-7 pl-5 pr-4", className)}
+      role="status"
+    >
       <p className="eyebrow">{children}</p>
+      {hint && <p className="measure t-body mt-2.5 text-ink-2">{hint}</p>}
+      {action && <div className="actions mt-4">{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * SOMETHING DID NOT WORK.
+ *
+ * Named, not apologised for: the line says what failed and what the person can
+ * do, and it is announced as well as drawn. `Something went wrong` and
+ * `Error: undefined` are the two things this exists to keep off the screen.
+ */
+export function ErrorNote({
+  children,
+  retry,
+  className,
+}: {
+  /** «That invoice could not be sent — the email address on the client is blank.» */
+  children: React.ReactNode;
+  retry?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className={cn("border-l-2 py-2 pl-3", className)}
+      style={{ borderColor: "var(--rose)" }}
+    >
+      <p className="t-body" style={{ color: "var(--rose-ink)" }}>
+        {children}
+      </p>
+      {retry && <div className="mt-2">{retry}</div>}
     </div>
   );
 }
@@ -404,9 +615,21 @@ export function Field({
   required?: boolean;
   hint?: string;
   error?: string;
-  /** Receives the id and the description wiring; spread them onto the control. */
+  /**
+   * Receives the id, the description wiring AND the control's own class. Spread
+   * the whole object onto the input and add nothing:
+   *
+   *     <Field id="pay-amount" label="Amount" required error={amountError}>
+   *       {(f) => <input {...f} type="number" step="0.01" value={amount}
+   *                      onChange={(e) => setAmount(e.target.value)} />}
+   *     </Field>
+   *
+   * A local `className` still wins if it is spelled after the spread, which is
+   * how a money field asks for `mono text-right`.
+   */
   children: (props: {
     id: string;
+    className: string;
     "aria-describedby"?: string;
     "aria-invalid"?: boolean;
     required?: boolean;
@@ -418,7 +641,7 @@ export function Field({
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
   return (
     <div className={className}>
-      <label className="eyebrow" htmlFor={id}>
+      <label className="eyebrow block" htmlFor={id}>
         {label}
         {required && (
           <>
@@ -430,27 +653,69 @@ export function Field({
       </label>
       {children({
         id,
+        className: cn("control mt-1.5", error && "border-rose"),
         "aria-describedby": describedBy,
         "aria-invalid": error ? true : undefined,
         required,
       })}
       {hint && (
-        <p id={hintId} className="mt-1 text-[12px] text-ink-2">
+        <p id={hintId} className="t-meta mt-1 text-ink-2">
           {hint}
         </p>
       )}
       {/* The message is spoken as well as shown — a red line nobody hears is not
-          an error report. */}
+          an error report. It names the field's problem: «Enter an amount above
+          zero», never «Invalid input». */}
       {error && (
         <p
           id={errorId}
           role="alert"
-          className="mono mt-1 border-l-2 py-1 pl-2 text-[12px]"
+          className="mono t-meta mt-1 border-l-2 py-1 pl-2"
           style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
         >
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   TABLES — only two documents in the product are a table (the printed invoice
+   and the admin roster). Both were wider than a phone and both lost their right
+   hand columns off the edge of the screen. The wrapper gives the box its own
+   scroller without depending on the `:has()` rule in globals.css.
+   -------------------------------------------------------------------------- */
+export function TableWrap({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("w-full overflow-x-auto", className)}>{children}</div>;
+}
+
+/** A column heading. `scope` is what tells a screen reader which cells it owns. */
+export function Th({
+  children,
+  className,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  align?: "left" | "right";
+}) {
+  return (
+    <th
+      scope="col"
+      className={cn(
+        "eyebrow whitespace-nowrap border-b border-line px-3 py-2",
+        align === "right" ? "text-right" : "text-left",
+        className
+      )}
+    >
+      {children}
+    </th>
   );
 }
