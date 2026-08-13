@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { jobMoney } from "@/lib/margin";
-import { Client, cents, round2, signedIn, type Workspace } from "./harness/client";
+import { Client, cents, inCents, signedIn, toDollars, type Workspace } from "./harness/client";
 
 /**
  * Scenario A — the money chain, one workspace, over HTTP.
@@ -11,7 +11,13 @@ import { Client, cents, round2, signedIn, type Workspace } from "./harness/clien
  * Four cent-level defects were found here and pinned as failing assertions; they are
  * closed and the assertions now stand as regression guards. Their docblocks keep the
  * story of what went wrong, because that is what a reader needs when one turns red.
+ *
+ * The API speaks dollars — that is its contract. Every assertion converts through the
+ * application's own door (`cents`, `inCents`) rather than doing its own arithmetic.
  */
+
+/** An amount a client can actually transfer: whole cents, nothing hiding underneath. */
+const isPayable = (dollars: number) => toDollars(cents(dollars)) === dollars;
 
 const YEAR = new Date().getFullYear();
 const seq = (number: string) => Number(number.slice(-4));
@@ -179,7 +185,7 @@ describe.sequential("Scenario A — lead to settled invoice", () => {
   });
 
   it("settling the last cent flips it to PAID and stamps paidAt", async () => {
-    const owing = round2(TOTAL - FIRST_PAYMENT);
+    const owing = toDollars(cents(TOTAL) - cents(FIRST_PAYMENT));
     const res = await admin.put(`/api/invoices/${state.invoiceId}`, {
       action: "pay",
       amount: owing,
@@ -206,24 +212,25 @@ describe.sequential("Scenario A — lead to settled invoice", () => {
     const project = await admin.get(`/api/projects/${state.projectId}`);
     expect(project.status).toBe(200);
 
-    // The same function the job card renders from, fed the API's own payload.
-    const money = jobMoney(project.body);
-    expect(cents(money.quoted)).toBe(cents(TOTAL));
-    expect(cents(money.invoiced)).toBe(cents(TOTAL));
-    expect(cents(money.collected)).toBe(cents(TOTAL));
-    expect(cents(money.costs)).toBe(cents(MATERIALS));
-    expect(cents(money.margin)).toBe(cents(TOTAL - MATERIALS));
-    expect(money.outstanding).toBe(0);
-    expect(money.unbilled).toBe(0);
+    // The same function the job card renders from, fed the API's own payload through
+    // the same conversion the card does.
+    const money = jobMoney(inCents(project.body));
+    expect(money.quotedCents).toBe(cents(TOTAL));
+    expect(money.invoicedCents).toBe(cents(TOTAL));
+    expect(money.collectedCents).toBe(cents(TOTAL));
+    expect(money.costsCents).toBe(cents(MATERIALS));
+    expect(money.marginCents).toBe(cents(TOTAL) - cents(MATERIALS));
+    expect(money.outstandingCents).toBe(0);
+    expect(money.unbilledCents).toBe(0);
   });
 
   it("the month's books move by exactly what was received", async () => {
     const summary = await revenueThisMonth();
-    expect(cents(summary.totalRevenue - baseline)).toBe(cents(TOTAL));
+    expect(cents(summary.totalRevenue) - cents(baseline)).toBe(cents(TOTAL));
     expect(cents(summary.totalRevenue)).toBe(
-      cents(summary.payments.reduce((s, p) => s + p.amount, 0)),
+      summary.payments.reduce((s, p) => s + cents(p.amount), 0),
     );
-    expect(cents(summary.netProfit)).toBe(cents(summary.totalRevenue - summary.totalExpenses));
+    expect(cents(summary.netProfit)).toBe(cents(summary.totalRevenue) - cents(summary.totalExpenses));
     expect(summary.expenses.some((e) => cents(e.amount) === cents(MATERIALS))).toBe(true);
   });
 
@@ -298,22 +305,22 @@ describe.sequential("Scenario A — deposit splits", () => {
       expect(deposit.number).not.toBe(balance.number);
       expect(seq(balance.number)).toBe(seq(deposit.number) + 1);
 
-      expect(cents(deposit.total)).toBe(cents(round2(whole * rate)));
-      expect(cents(deposit.total + balance.total)).toBe(cents(whole));
+      expect(cents(deposit.total)).toBe(Math.round(cents(whole) * rate));
+      expect(cents(deposit.total) + cents(balance.total)).toBe(cents(whole));
       // Each half has to be a sum a client can actually transfer.
-      expect(deposit.total).toBe(round2(deposit.total));
-      expect(balance.total).toBe(round2(balance.total));
+      expect(isPayable(deposit.total)).toBe(true);
+      expect(isPayable(balance.total)).toBe(true);
     });
   }
 
   /**
    * Was E2E-M1 — the split and the single invoice disagreed by a cent, so the same job
    * cost a different amount depending on how it was paperworked. The halves are cut out
-   * of the already-rounded whole and the balance takes the remainder.
+   * of the whole in cents and the balance takes the remainder.
    */
   it("split halves match the single invoice for the same job", async () => {
     const { whole, deposit, balance } = await split(242.5, 0.5);
-    expect(cents(deposit.total + balance.total)).toBe(cents(round2(whole)));
+    expect(cents(deposit.total) + cents(balance.total)).toBe(cents(whole));
   });
 
   it("both halves can be settled and the job shows the whole amount collected", async () => {
@@ -328,11 +335,11 @@ describe.sequential("Scenario A — deposit splits", () => {
     }
 
     const project = await admin.get(`/api/projects/${projectId}`);
-    const collected = (project.body.payments as Array<{ amount: number }>).reduce(
-      (s, p) => s + p.amount,
+    const collectedCents = (project.body.payments as Array<{ amount: number }>).reduce(
+      (s, p) => s + cents(p.amount),
       0,
     );
-    expect(cents(collected)).toBe(cents(whole));
+    expect(collectedCents).toBe(cents(whole));
   });
 });
 
@@ -395,8 +402,8 @@ describe.sequential("Scenario A — voiding and numbering", () => {
     expect(all.some((i) => i.status === "VOID")).toBe(true);
     expect(all.some((i) => i.status === "DRAFT")).toBe(true);
 
-    const money = jobMoney(project.body);
-    expect(cents(money.invoiced)).toBe(cents(issued.reduce((s, i) => s + i.total, 0)));
+    const money = jobMoney(inCents(project.body));
+    expect(money.invoicedCents).toBe(issued.reduce((s, i) => s + cents(i.total), 0));
   });
 });
 
@@ -427,7 +434,7 @@ describe.sequential("Scenario A — money that must survive the round trip", () 
 
     const short = await admin.put(`/api/invoices/${invoice.body.id}`, {
       action: "pay",
-      amount: round2(invoice.body.total - 0.01),
+      amount: toDollars(cents(invoice.body.total) - 1),
       method: "CASH",
     });
     expect(short.body.status).toBe("PARTIAL");
@@ -457,8 +464,48 @@ describe.sequential("Scenario A — money that must survive the round trip", () 
       projectId,
       estimateId: estimate.body.id,
     });
-    expect(created.body.total).toBe(round2(created.body.total));
-    expect(created.body.tax).toBe(round2(created.body.tax));
+    expect(isPayable(created.body.total)).toBe(true);
+    expect(isPayable(created.body.tax)).toBe(true);
+  });
+
+  /**
+   * The column that moved to Int, over HTTP.
+   *
+   * A thousand lines at a rate that is not a round cent: the subtotal on the saved
+   * estimate has to equal the sum of the amounts printed against those lines, and the
+   * invoice torn off it has to carry the same number. Summed as floats, the two drift
+   * apart and no screen agrees with any other.
+   */
+  it("a thousand lines still add up to the invoice they are billed on", async () => {
+    const lineItems = Array.from({ length: 1000 }, (_, i) => ({
+      description: `Board run ${i + 1}`,
+      qty: 1,
+      unit: "lf",
+      unitPrice: 1.85,
+    }));
+
+    const estimate = await admin.post(`/api/projects/${projectId}/estimate`, {
+      lineItems,
+      taxRate: TAX_RATE,
+    });
+    expect(estimate.status).toBe(201);
+
+    const lines = JSON.parse(estimate.body.lineItems) as Array<{ qty: number; unitPrice: number }>;
+    const linesCents = lines.reduce((s, l) => s + Math.round(l.qty * cents(l.unitPrice)), 0);
+
+    expect(linesCents).toBe(cents(1850));
+    expect(cents(estimate.body.subtotal)).toBe(linesCents);
+    expect(cents(estimate.body.total)).toBe(
+      cents(estimate.body.subtotal) + cents(estimate.body.tax),
+    );
+
+    const invoice = await admin.post("/api/invoices", {
+      projectId,
+      estimateId: estimate.body.id,
+    });
+    expect(cents(invoice.body.subtotal)).toBe(linesCents);
+    expect(cents(invoice.body.total)).toBe(cents(estimate.body.total));
+    expect(isPayable(invoice.body.total)).toBe(true);
   });
 
   /**

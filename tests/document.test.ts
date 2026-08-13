@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderDocument, type DocumentSpec } from "@/lib/document";
+import { toCents } from "@/lib/money";
 
 /**
  * The printed estimate and invoice. This HTML is what actually leaves the shop —
@@ -15,10 +16,12 @@ const doc = (over: Partial<DocumentSpec> = {}): DocumentSpec => ({
   businessName: "Korvex Developments",
   clientName: "Jane Doe",
   jobTitle: "Basement reno",
-  lineItems: [{ description: "Installation labour", qty: 8, unit: "hr", unitPrice: 115 }],
-  subtotal: 920,
-  tax: 119.6,
-  total: 1039.6,
+  lineItems: [
+    { description: "Installation labour", qty: 8, unit: "hr", unitPriceCents: toCents(115) },
+  ],
+  subtotalCents: toCents(920),
+  taxCents: toCents(119.6),
+  totalCents: toCents(1039.6),
   issuedAt: new Date(2026, 7, 1),
   dueDate: new Date(2099, 0, 1),
   ...over,
@@ -33,26 +36,33 @@ describe("renderDocument — money on paper", () => {
   });
 
   it("shows the remaining balance on the stub after a deposit", () => {
-    const html = renderDocument(doc({ amountPaid: 500 }));
+    const html = renderDocument(doc({ amountPaidCents: toCents(500) }));
     expect(html).toContain("OWING");
     expect(html).toContain("−$500.00");
     expect(html).toContain("$539.60");
   });
 
   it("never prints a negative amount due when a client overpays", () => {
-    const html = renderDocument(doc({ amountPaid: 1100 }));
+    const html = renderDocument(doc({ amountPaidCents: toCents(1100) }));
     expect(html).toContain("$0.00");
     expect(html).not.toContain("-$60.40");
   });
 
   it("leaves the paid block off an invoice with nothing paid", () => {
-    expect(renderDocument(doc({ amountPaid: 0 }))).not.toContain("OWING");
+    expect(renderDocument(doc({ amountPaidCents: 0 }))).not.toContain("OWING");
   });
 
   it("renders a credit line at a negative rate", () => {
     const html = renderDocument(
       doc({
-        lineItems: [{ description: "Less deposit invoice INV-2026-0006", qty: 1, unit: "ea", unitPrice: -1300 }],
+        lineItems: [
+          {
+            description: "Less deposit invoice INV-2026-0006",
+            qty: 1,
+            unit: "ea",
+            unitPriceCents: toCents(-1300),
+          },
+        ],
       })
     );
     expect(html).toContain("-$1,300.00");
@@ -63,7 +73,7 @@ describe("renderDocument — money on paper", () => {
   });
 
   it("never stamps a settled invoice or an estimate as overdue", () => {
-    const settled = doc({ dueDate: new Date(2020, 0, 1), amountPaid: 1039.6 });
+    const settled = doc({ dueDate: new Date(2020, 0, 1), amountPaidCents: toCents(1039.6) });
     expect(renderDocument(settled)).not.toContain("OVERDUE");
     const estimate = doc({ kind: "ESTIMATE", dueDate: new Date(2020, 0, 1), validUntil: new Date(2020, 1, 1) });
     expect(renderDocument(estimate)).not.toContain("OVERDUE");
@@ -97,7 +107,9 @@ describe("renderDocument — escaping", () => {
   it("escapes line descriptions and notes, the free-text a client can influence", () => {
     const html = renderDocument(
       doc({
-        lineItems: [{ description: '12" duct <run>', qty: 1, unit: "ea", unitPrice: 100 }],
+        lineItems: [
+          { description: '12" duct <run>', qty: 1, unit: "ea", unitPriceCents: toCents(100) },
+        ],
         notes: 'Access via <side gate> & "back lane"',
       })
     );

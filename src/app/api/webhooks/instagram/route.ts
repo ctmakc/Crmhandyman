@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyFbWebhookSignature } from "@/lib/integrations/facebook";
+import { notifyNewLead } from "@/lib/notify";
+import { defangStamps } from "@/lib/lead-notes";
+import { readTextCapped } from "@/lib/request-body";
+import { throttle, throttleVerify, tokenMatches } from "../guard";
+
+/** A messaging delivery is a few kilobytes of JSON; this is orders of magnitude over it. */
+const MAX_BODY_BYTES = 256 * 1024;
 
 // Instagram webhook verification (same Meta platform)
 export async function GET(req: NextRequest) {
+  const limited = throttleVerify(req, "instagram");
+  if (limited) return limited;
+
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
 
-  if (mode === "subscribe" && token === process.env.META_WEBHOOK_VERIFY_TOKEN) {
+  if (mode === "subscribe" && tokenMatches(searchParams.get("hub.verify_token"), process.env.META_WEBHOOK_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 });
   }
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
@@ -17,17 +26,23 @@ export async function GET(req: NextRequest) {
 
 // Instagram message webhook
 export async function POST(req: NextRequest) {
-  const rawBody = await req.text();
+  const limited = throttle(req, "instagram");
+  if (limited) return limited;
 
   // Instagram rides the same Meta app as the Facebook hook, and was the one of the two
   // that never checked the signature — anyone could post invented enquiries into it.
-  if (process.env.META_APP_SECRET) {
-    const valid = verifyFbWebhookSignature(
-      rawBody,
-      req.headers.get("x-hub-signature-256") || "",
-      process.env.META_APP_SECRET
-    );
-    if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  // Missing secret means refuse: an unverifiable delivery is an anonymous one.
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) {
+    console.warn("[webhook] META_APP_SECRET is unset — Instagram delivery refused");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  const rawBody = await readTextCapped(req, MAX_BODY_BYTES);
+  if (rawBody === null) return NextResponse.json({ error: "Body too large" }, { status: 413 });
+
+  if (!verifyFbWebhookSignature(rawBody, req.headers.get("x-hub-signature-256") || "", secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   let body: {
@@ -89,16 +104,19 @@ export async function POST(req: NextRequest) {
       });
       if (existing) continue;
 
-      await prisma.lead.create({
+      const created = await prisma.lead.create({
         data: {
           tenantId: integration.tenantId,
           name: `Instagram User ${senderId.slice(-6)}`,
           source: "INSTAGRAM",
           sourceLeadId: `ig_${senderId}`,
-          notes: `Instagram message: "${event.message.text}"`,
+          notes: defangStamps(`Instagram message: "${event.message.text}"`),
           status: "NEW",
         },
       });
+
+      // Somebody is typing in a DM right now — this is the most perishable lead of all.
+      await notifyNewLead(integration.tenantId, created.id);
     }
   }
 

@@ -18,6 +18,8 @@ import {
   textToneFor,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import { LeadWait } from "@/components/LeadClock";
+import { waitRank } from "@/lib/lead-clock";
 
 interface Lead {
   id: string;
@@ -29,6 +31,9 @@ interface Lead {
   jobType?: string;
   status: string;
   createdAt: string;
+  /** Both feed the response clock: the first touch is read out of them. */
+  updatedAt?: string;
+  notes?: string;
   assignedTo?: { name: string };
   project?: { id: string; title: string; status: string };
 }
@@ -52,44 +57,6 @@ const SOURCES = [
  * instead of falling through to neutral slate.
  */
 const toneKey = (s: string) => (s === "VERIFIED" ? "QUALIFIED" : s);
-
-const DAY = 86_400_000;
-
-function daysSince(iso: string, now: number) {
-  return Math.max(0, Math.floor((now - new Date(iso).getTime()) / DAY));
-}
-
-/** The age tally: one tick per day on the sheet, going rose past three days. */
-function AgeTally({ days }: { days: number }) {
-  const tone = days > 3 ? "var(--rose-ink)" : "var(--ink-3)";
-  return (
-    <span
-      className="flex shrink-0 items-center gap-2"
-      title={`${days} day${days === 1 ? "" : "s"} on the sheet`}
-    >
-      <span className="flex items-end gap-[2px]" aria-hidden="true">
-        {Array.from({ length: Math.min(days, 7) }).map((_, i) => (
-          <span
-            key={i}
-            className="inline-block h-[7px] w-px"
-            style={{ background: tone }}
-          />
-        ))}
-        {days > 7 && (
-          <span className="mono text-[10px] leading-none" style={{ color: tone }}>
-            +
-          </span>
-        )}
-      </span>
-      <span
-        className="mono text-[11px] font-bold tracking-[0.08em]"
-        style={{ color: tone }}
-      >
-        {days}D
-      </span>
-    </span>
-  );
-}
 
 const field =
   "w-full mt-1.5 px-3 py-2 text-[13px] text-ink placeholder:text-ink-3";
@@ -213,12 +180,14 @@ export default function LeadsPage() {
     ? leads.filter((l) => l.status === statusFilter)
     : leads;
 
-  /* Left lane — the call sheet. Oldest first: the longest-waiting call is on top. */
+  /* Left lane — the call sheet, sorted by the response clock: everything still worth
+     calling first, longest wait on top, then the unanswered leads that have gone cold,
+     then the ones already worked. Age used to order this lane, which put a three-day-old
+     answered lead above a fresh unanswered one; ordering purely by wait then handed the
+     top of the sheet to a four-month-old row for good. */
   const callSheet = visible
     .filter((l) => l.status === "NEW" || l.status === "CONTACTED")
-    .sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    .sort((a, b) => waitRank(b, now) - waitRank(a, now));
 
   /* Right lane — worked. Verified up top, the closed book compressed below. */
   const verified = visible.filter((l) => l.status === "VERIFIED");
@@ -469,7 +438,7 @@ export default function LeadsPage() {
                           .join(" · ")}
                       </p>
                     </div>
-                    <AgeTally days={daysSince(lead.createdAt, now)} />
+                    <LeadWait lead={lead} />
                   </div>
                   {/* The outcome cluster — under the tally on desktop, wrapping
                       below the detail line on a phone. */}
@@ -549,7 +518,10 @@ export default function LeadsPage() {
                       {[lead.jobType, lead.city].filter(Boolean).join(" · ")}
                     </span>
                   </p>
-                  <div className="mt-2 flex justify-end">
+                  {/* The reading stays on a worked lead: it is the proof the desk is
+                      fast, and the only place that number can be seen afterwards. */}
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <LeadWait lead={lead} />
                     <button
                       type="button"
                       className={actPrimary}

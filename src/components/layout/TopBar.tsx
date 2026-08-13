@@ -62,18 +62,27 @@ export default function TopBar({ user }: TopBarProps) {
           }
           className="hidden items-center gap-2 border border-line px-2.5 py-1.5 text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink md:flex"
         >
-          <Search className="h-3.5 w-3.5" strokeWidth={2} />
+          <Search className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           <span className="mono text-[11px] tracking-[0.06em]">Jump</span>
-          <span className="mono text-[10px] tracking-[0.08em] opacity-60">⌘K</span>
+          {/* The shortcut hint sat at opacity-60 — 2.4:1, and it is the one thing on
+              the button a new dispatcher has to read. The 10px size already tells
+              you it is secondary. */}
+          <span className="mono text-[10px] tracking-[0.08em]">⌘K</span>
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {/* The only door to your own account — the crew never reaches /settings. */}
+        {/* The only door to your own account — the crew never reaches /settings.
+            Below `sm` the name is hidden and the initials plate is all that is left,
+            so the link needs a spoken name and a thumb-sized box of its own. */}
         <Link
           href="/account"
-          className="flex items-center gap-3 transition-colors duration-[140ms] ease-instrument hover:text-ink"
+          aria-label={`Account — ${user?.name || user?.email || "signed in"}`}
+          className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-3 transition-colors duration-[140ms] ease-instrument hover:text-ink sm:min-h-0 sm:min-w-0 sm:justify-start"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate">
+          <span
+            aria-hidden
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-plate"
+          >
             {initials}
           </span>
           <span className="hidden text-[13px] font-medium text-ink-2 sm:inline">
@@ -82,9 +91,10 @@ export default function TopBar({ user }: TopBarProps) {
         </Link>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1.5 border border-line px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink"
+          aria-label="Sign out"
+          className="flex min-w-[44px] items-center justify-center gap-1.5 border border-line px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink sm:min-w-0"
         >
-          <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
+          <LogOut className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           <span className="hidden sm:inline">Sign out</span>
         </button>
       </div>

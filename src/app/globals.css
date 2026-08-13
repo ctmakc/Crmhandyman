@@ -22,10 +22,22 @@
 
   --ink: #131a26;
   --ink-2: #45536c;
-  --ink-3: #5d6b82;
+  /* Tuned so 11px eyebrows clear AA on the deck AND on the recessed lane: at the
+     old #5d6b82 an eyebrow on --sunk sat at 4.33:1, which is where the settings
+     index and every zebra lane live. 4.61 on sunk / 5.02 on deck / 5.58 on plate. */
+  --ink-3: #59677d;
   /* Text on the navy rail needs its own value — ink-3 is tuned for the light
      deck and drops below AA against navy-900. */
   --rail-ink: #97a3b8;
+  /* A control boundary is not a separator. --line reads at 1.2:1 against the plate,
+     which is enough to divide two rows and not enough to tell a man in a glove where
+     the field is. Inputs, selects and textareas use this instead: 3.5:1 on plate,
+     3.2:1 on the deck, so the box that takes typing can be found in sunlight. */
+  --field-line: #7a8899;
+  /* Focus is drawn, never assumed: the ring is a token like everything else, so it
+     looks the same in every browser instead of whatever the engine ships. */
+  --focus: var(--ink);
+  --focus-rail: var(--plate);
 
   --amber: #ffb020;
   --amber-ink: #7a5200;
@@ -293,18 +305,151 @@ input,
 select,
 textarea {
   background: var(--plate);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-line);
   border-radius: var(--r);
   color: var(--ink);
   transition: border-color var(--t-fast) var(--ease);
 }
 
+/* Resting focus darkens the boundary; the ring itself is the :focus-visible rule
+   below. The old version killed the outline outright and put back a 1px inset
+   box-shadow — a keyboard user could not tell a focused field from a resting one,
+   and the shadow broke the no-shadow law on the way. */
 input:focus,
 select:focus,
 textarea:focus {
-  outline: none;
   border-color: var(--navy-800);
-  box-shadow: inset 0 0 0 1px var(--navy-800);
+}
+
+/* --------------------------------------------------------------------------
+   FOCUS — the ring is part of the design, not a browser default.
+   Two strokes: --focus on light surfaces, --focus-rail on the navy chrome. Both
+   are 2px with a 2px offset, so the indicator clears WCAG 2.4.13 thickness and
+   survives being read at arm's length on a phone in the sun.
+   -------------------------------------------------------------------------- */
+:where(a, button, select, textarea, summary, [role="button"], [tabindex]):focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r);
+}
+
+/* On the navy rail the dark ring disappears into the chrome. */
+.focus-rail:focus-visible {
+  outline-color: var(--focus-rail);
+}
+
+/* The rail item is flush to the edges, so the ring is drawn inside it. */
+.focus-inset:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Skip link: the first tab stop on every page, parked off-screen until focused.
+   Without it the keyboard reaches the day's work on tab 14. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+  background: var(--plate);
+  color: var(--ink);
+  border: 1px solid var(--navy-900);
+  border-radius: var(--r);
+  padding: 10px 14px;
+}
+
+/* Announced, never drawn. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   THE PHONE — one hand, a glove, and a driveway.
+   Every rule below is scoped to the phone width or a touch pointer, so the
+   dispatcher's 1440px desk keeps its density.
+   -------------------------------------------------------------------------- */
+@media (max-width: 767px), (pointer: coarse) {
+  /* 44px is the floor for anything that takes a tap. Buttons across the product
+     were rendering at 23–38px. */
+  button,
+  [role="button"],
+  select,
+  textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]) {
+    min-height: 44px;
+  }
+
+  /* A list row is a tap target too — a one-line ledger entry was 37px. */
+  .row {
+    min-height: 48px;
+  }
+
+  /* Mono eyebrows used as links ("ALL JOBS →", "BOOK ALL", the back links) are
+     11px tall. Growing them would move the baseline they are aligned on, so the
+     hit area is extended by a pseudo-element instead and nothing shifts. */
+  a.eyebrow,
+  button.eyebrow {
+    position: relative;
+  }
+
+  a.eyebrow::after,
+  button.eyebrow::after {
+    content: "";
+    position: absolute;
+    inset: -16px -8px;
+  }
+
+  /* A phone number is the product's most important target — the whole business
+     case is answering a lead before the shop down the road does — and it was
+     rendering as an 18px line of text. Same pseudo-element trick, no reflow. */
+  a[href^="tel:"] {
+    position: relative;
+  }
+
+  a[href^="tel:"]::after {
+    content: "";
+    position: absolute;
+    inset: -13px -8px;
+  }
+
+  /* Same trick for bare icon controls — the task delete and the member remove
+     were 14px and 16px squares. */
+  button:has(> svg:only-child),
+  a:has(> svg:only-child) {
+    position: relative;
+  }
+
+  button:has(> svg:only-child)::after,
+  a:has(> svg:only-child)::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* A document table is wider than the phone. Unscrolled it simply loses its right
+     hand columns — the invoice printed its line rates and hid every line amount.
+     Give the box around a table its own scroller. */
+  div:has(> table),
+  section:has(> table) {
+    overflow-x: auto;
+  }
 }
 
 ::placeholder {

@@ -14,8 +14,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
-import { isOverdue, daysOverdue, owingOf } from "@/lib/invoice-state";
+import { formatCents, inCents, type InCents } from "@/lib/money";
+import { isOverdue, daysOverdue, owingCents } from "@/lib/invoice-state";
 import {
   PageHead,
   LaneHead,
@@ -26,7 +26,8 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 
-interface Invoice {
+/** What the API serves — dollars, because that is what an API client reads. */
+interface ApiInvoice {
   id: string;
   number: string;
   clientName: string;
@@ -37,6 +38,9 @@ interface Invoice {
   dueDate: string | null;
   project: { id: string; title: string } | null;
 }
+
+/** What this screen works in. Every band subtotal below is an integer sum of integers. */
+type Invoice = InCents<ApiInvoice>;
 
 const STATUSES = ["DRAFT", "SENT", "PARTIAL", "PAID", "VOID"];
 /** "overdue" is derived, so it is filtered client-side rather than sent to the API. */
@@ -63,7 +67,7 @@ interface Band {
   lamp: string;
   rows: Invoice[];
   /** Band subtotal under the double rule. */
-  sub: number;
+  subCents: number;
   subLabel: string;
   subTone?: string;
 }
@@ -81,8 +85,9 @@ export default function InvoicesPage() {
     if (statusFilter && statusFilter !== OVERDUE) params.set("status", statusFilter);
     fetch(`/api/invoices?${params}`)
       .then((r) => r.json())
-      .then((d) => {
-        setInvoices(Array.isArray(d) ? d : []);
+      .then((d: ApiInvoice[]) => {
+        // The one door on this screen: dollars off the wire, cents from here on.
+        setInvoices(Array.isArray(d) ? inCents(d) : []);
         setLoading(false);
       });
   }, [search, statusFilter]);
@@ -94,21 +99,21 @@ export default function InvoicesPage() {
   /* ------------------------------------------------------------------
      The aging bar — where the book's money sits, by state.
      ------------------------------------------------------------------ */
-  const overdueAmt = live.filter((i) => isOverdue(i)).reduce((s, i) => s + owingOf(i), 0);
-  const partialAmt = live
+  const overdueCents = live.filter((i) => isOverdue(i)).reduce((s, i) => s + owingCents(i), 0);
+  const partialCents = live
     .filter((i) => i.status === "PARTIAL" && !isOverdue(i))
-    .reduce((s, i) => s + owingOf(i), 0);
-  const openAmt = live
+    .reduce((s, i) => s + owingCents(i), 0);
+  const openCents = live
     .filter((i) => (i.status === "SENT" && !isOverdue(i)) || i.status === "DRAFT")
-    .reduce((s, i) => s + owingOf(i), 0);
-  const collected = live.reduce((s, i) => s + i.amountPaid, 0);
+    .reduce((s, i) => s + owingCents(i), 0);
+  const collectedCents = live.reduce((s, i) => s + i.amountPaidCents, 0);
 
   const segments = [
-    { key: "OVERDUE", amt: overdueAmt, bar: "var(--rose)", ink: "var(--rose-ink)" },
-    { key: "PARTIAL", amt: partialAmt, bar: "var(--amber)", ink: "var(--amber-ink)" },
-    { key: "OPEN", amt: openAmt, bar: "var(--sky)", ink: "var(--sky-ink)" },
-    { key: "COLLECTED", amt: collected, bar: "var(--emerald)", ink: "var(--emerald-ink)" },
-  ].filter((s) => s.amt > 0.005);
+    { key: "OVERDUE", amt: overdueCents, bar: "var(--rose)", ink: "var(--rose-ink)" },
+    { key: "PARTIAL", amt: partialCents, bar: "var(--amber)", ink: "var(--amber-ink)" },
+    { key: "OPEN", amt: openCents, bar: "var(--sky)", ink: "var(--sky-ink)" },
+    { key: "COLLECTED", amt: collectedCents, bar: "var(--emerald)", ink: "var(--emerald-ink)" },
+  ].filter((s) => s.amt > 0);
   const barTotal = segments.reduce((s, x) => s + x.amt, 0);
 
   /* ------------------------------------------------------------------
@@ -129,7 +134,7 @@ export default function InvoicesPage() {
       label: "Overdue",
       lamp: "var(--rose)",
       rows: overdueRows,
-      sub: overdueRows.reduce((s, i) => s + owingOf(i), 0),
+      subCents: overdueRows.reduce((s, i) => s + owingCents(i), 0),
       subLabel: "Owed",
       subTone: "var(--rose-ink)",
     },
@@ -138,7 +143,7 @@ export default function InvoicesPage() {
       label: "Awaiting payment",
       lamp: "var(--sky)",
       rows: awaitingRows,
-      sub: awaitingRows.reduce((s, i) => s + owingOf(i), 0),
+      subCents: awaitingRows.reduce((s, i) => s + owingCents(i), 0),
       subLabel: "Owed",
     },
     {
@@ -146,7 +151,7 @@ export default function InvoicesPage() {
       label: "Drafts",
       lamp: "var(--slate)",
       rows: draftRows,
-      sub: draftRows.reduce((s, i) => s + i.total, 0),
+      subCents: draftRows.reduce((s, i) => s + i.totalCents, 0),
       subLabel: "Drafted",
     },
     {
@@ -154,7 +159,7 @@ export default function InvoicesPage() {
       label: "Settled",
       lamp: "var(--emerald)",
       rows: settledRows,
-      sub: settledRows.reduce((s, i) => s + i.amountPaid, 0),
+      subCents: settledRows.reduce((s, i) => s + i.amountPaidCents, 0),
       subLabel: "Collected",
       subTone: "var(--emerald-ink)",
     },
@@ -197,13 +202,13 @@ export default function InvoicesPage() {
     const overdue = band.key === "overdue";
     const settled = band.key === "settled";
     const voided = inv.status === "VOID";
-    const amount = settled
+    const amountCents = settled
       ? voided
-        ? inv.total
-        : inv.amountPaid
+        ? inv.totalCents
+        : inv.amountPaidCents
       : band.key === "drafts"
-        ? inv.total
-        : owingOf(inv);
+        ? inv.totalCents
+        : owingCents(inv);
     return (
       <Row
         key={inv.id}
@@ -237,7 +242,7 @@ export default function InvoicesPage() {
             {overdue ? `${daysOverdue(inv)}D LATE` : dueLabel(inv)}
           </span>
           <Money
-            value={amount}
+            cents={amountCents}
             className="shrink-0 text-[14px]"
             tone={
               settled
@@ -258,7 +263,7 @@ export default function InvoicesPage() {
       <div className="flex justify-end">
         <div className="rule-double mt-1 flex min-w-[170px] items-baseline justify-between gap-6 pt-1.5">
           <span className="eyebrow">{band.subLabel}</span>
-          <Money value={band.sub} className="text-[13px]" tone={band.subTone} />
+          <Money cents={band.subCents} className="text-[13px]" tone={band.subTone} />
         </div>
       </div>
     );
@@ -280,7 +285,7 @@ export default function InvoicesPage() {
           aria-label={
             barTotal > 0
               ? `Receivables aging: ${segments
-                  .map((s) => `${s.key.toLowerCase()} ${formatCurrency(s.amt)}`)
+                  .map((s) => `${s.key.toLowerCase()} ${formatCents(s.amt)}`)
                   .join(", ")}`
               : "No money on the books yet"
           }
@@ -303,7 +308,7 @@ export default function InvoicesPage() {
                 <span className="eyebrow" style={{ color: s.ink }}>
                   {s.key}
                 </span>
-                <Money value={s.amt} className="text-[13px]" tone={s.ink} />
+                <Money cents={s.amt} className="text-[13px]" tone={s.ink} />
               </div>
             ))
           ) : (

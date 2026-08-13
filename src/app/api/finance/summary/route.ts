@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
+import { inDollars } from "@/lib/money";
 
 export async function GET(req: NextRequest) {
   const guard = await requireAdmin();
@@ -34,9 +35,20 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const netProfit = totalRevenue - totalExpenses;
+  // Added as integers, so the month's total is the sum of the lines under it and the
+  // P&L cannot disagree with the ledger it was built from.
+  const totalRevenueCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
+  const totalExpensesCents = expenses.reduce((sum, e) => sum + e.amountCents, 0);
+  const netProfitCents = totalRevenueCents - totalExpensesCents;
 
-  return NextResponse.json({ totalRevenue, totalExpenses, netProfit, projectCount, payments, expenses });
+  return NextResponse.json(
+    inDollars({
+      totalRevenueCents,
+      totalExpensesCents,
+      netProfitCents,
+      projectCount,
+      payments,
+      expenses,
+    })
+  );
 }

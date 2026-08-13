@@ -4,7 +4,8 @@ import { requireAdmin, requireUser } from "@/lib/guard";
 import { record, money, day, jobLabel } from "@/lib/audit";
 import { scopedProjectId } from "@/lib/scope";
 import { parseDayInput } from "@/lib/dates";
-import { round2 } from "@/lib/money";
+import { inDollars, parseCents } from "@/lib/money";
+import { PAYMENT_METHODS, badChoice, choice } from "@/lib/enums";
 
 export async function POST(req: NextRequest) {
   // The crew collects at the door and buys materials on the way, so recording is
@@ -22,16 +23,23 @@ export async function POST(req: NextRequest) {
   if (!project.ok || !project.value)
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  const amount = round2(Number(body.amount));
-  if (!Number.isFinite(amount) || amount <= 0)
+  // Dollars from the form, cents from here on.
+  const amountCents = parseCents(body.amount);
+  if (amountCents === null || amountCents <= 0)
     return NextResponse.json({ error: "An amount is required" }, { status: 400 });
+
+  // A method the shop does not take used to reach the enum column and answer 500 —
+  // the tech at the door read that as "the payment did not go through".
+  const method = choice(PAYMENT_METHODS, body.method);
+  if (method === null)
+    return NextResponse.json(badChoice("payment method", PAYMENT_METHODS), { status: 400 });
 
   const payment = await prisma.payment.create({
     data: {
       tenantId,
       projectId: project.value,
-      amount,
-      method: body.method || "CASH",
+      amountCents,
+      method: method ?? "CASH",
       date: parseDayInput(body.date) ?? new Date(),
       notes: body.notes,
     },
@@ -44,12 +52,16 @@ export async function POST(req: NextRequest) {
     entity: "Payment",
     entityId: payment.id,
     summary:
-      `Recorded ${money(payment.amount)} by ${payment.method.replace(/_/g, " ")} on ` +
+      `Recorded ${money(payment.amountCents)} by ${payment.method.replace(/_/g, " ")} on ` +
       `${day(payment.date)} against ${await jobLabel(tenantId, payment.projectId)}`,
-    meta: { amount: payment.amount, method: payment.method, projectId: payment.projectId },
+    meta: {
+      amountCents: payment.amountCents,
+      method: payment.method,
+      projectId: payment.projectId,
+    },
   });
 
-  return NextResponse.json(payment, { status: 201 });
+  return NextResponse.json(inDollars(payment), { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -78,10 +90,10 @@ export async function DELETE(req: NextRequest) {
       entity: "Payment",
       entityId: doomed.id,
       summary:
-        `Deleted a ${money(doomed.amount)} ${doomed.method.replace(/_/g, " ")} payment taken ` +
+        `Deleted a ${money(doomed.amountCents)} ${doomed.method.replace(/_/g, " ")} payment taken ` +
         `${day(doomed.date)} on ${await jobLabel(tenantId, doomed.projectId)}`,
       meta: {
-        amount: doomed.amount,
+        amountCents: doomed.amountCents,
         method: doomed.method,
         date: doomed.date,
         projectId: doomed.projectId,

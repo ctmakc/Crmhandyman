@@ -2,66 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
 import { record, money } from "@/lib/audit";
-import { round2 } from "@/lib/money";
+import {
+  inDollars,
+  lineItemsFromInput,
+  lineItemsJsonInDollars,
+  lineItemsToJson,
+  parseLineItems,
+  parseTaxRate,
+  quoteTotals,
+  shareOfCents,
+  type LineItem,
+} from "@/lib/money";
 import { parseDayInput } from "@/lib/dates";
-
-export interface LineItem {
-  description: string;
-  qty: number;
-  unit: string;
-  unitPrice: number;
-}
+import { createInvoice } from "@/lib/invoice-number";
 
 /**
- * Sequential, human-quotable invoice number, scoped per tenant per year.
- *
- * Derived from the highest number already issued rather than from a count, so a
- * voided or manually removed row cannot make the sequence reuse a number. Callers
- * must go through `createInvoice`, which retries on the unique-constraint race.
+ * One door out of this route: cents become dollars and the stored lines are re-priced
+ * into dollars, because paper, bookkeeper and API client all read dollars.
  */
-async function nextNumber(tenantId: string) {
-  const year = new Date().getFullYear();
-  const prefix = `INV-${year}-`;
-
-  /**
-   * Compared as numbers, not as text. The padding is four wide, so the ten-thousandth
-   * invoice of a year sorts BELOW the nine-thousandth as a string ("INV-2026-10000" <
-   * "INV-2026-9999") and its tail reads "0000" — the sequence restarted at one and
-   * every retry then hit the unique constraint, answering 500 for the rest of the year.
-   */
-  const issued = await prisma.invoice.findMany({
-    where: { tenantId, number: { startsWith: prefix } },
-    select: { number: true },
-  });
-
-  const seq = issued.reduce((top, i) => Math.max(top, Number(i.number.slice(prefix.length)) || 0), 0);
-  return `${prefix}${String(seq + 1).padStart(4, "0")}`;
-}
-
-/** Prisma's unique-constraint violation. */
-const isDuplicateNumber = (e: unknown) =>
-  typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
-
-/**
- * Two invoices created in the same instant compute the same number and the second
- * insert violates `@@unique([tenantId, number])`. Rather than 500, take the next
- * number and try again.
- */
-async function createInvoice(
-  tenantId: string,
-  data: Omit<Parameters<typeof prisma.invoice.create>[0]["data"], "number" | "tenantId">
-) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      return await prisma.invoice.create({
-        data: { ...data, tenantId, number: await nextNumber(tenantId) } as never,
-      });
-    } catch (e) {
-      if (!isDuplicateNumber(e) || attempt === 4) throw e;
-    }
-  }
-  throw new Error("Could not allocate an invoice number");
-}
+const invoiceOut = <T extends { lineItems: string }>(invoice: T) => ({
+  ...inDollars(invoice),
+  lineItems: lineItemsJsonInDollars(invoice.lineItems),
+});
 
 export async function GET(req: NextRequest) {
   const guard = await requireAdmin();
@@ -83,17 +45,19 @@ export async function GET(req: NextRequest) {
         : {}),
     },
     include: {
-      payments: { select: { amount: true } },
+      payments: { select: { amountCents: true } },
       project: { select: { id: true, title: true } },
     },
     orderBy: { issuedAt: "desc" },
   });
 
   return NextResponse.json(
-    invoices.map((inv) => ({
-      ...inv,
-      amountPaid: inv.payments.reduce((s, p) => s + p.amount, 0),
-    }))
+    invoices.map((inv) =>
+      invoiceOut({
+        ...inv,
+        amountPaidCents: inv.payments.reduce((s, p) => s + p.amountCents, 0),
+      })
+    )
   );
 }
 
@@ -112,7 +76,7 @@ export async function POST(req: NextRequest) {
   });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  let lineItems: LineItem[] = body.lineItems ?? [];
+  let lineItems: LineItem[] = lineItemsFromInput(body.lineItems);
   let notes: string | undefined = body.notes;
   let estimateId: string | undefined = body.estimateId;
 
@@ -121,7 +85,7 @@ export async function POST(req: NextRequest) {
       where: { id: estimateId, projectId: project.id, tenantId },
     });
     if (!estimate) return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
-    lineItems = JSON.parse(estimate.lineItems) as LineItem[];
+    lineItems = parseLineItems(estimate.lineItems);
     notes = notes ?? estimate.notes ?? undefined;
   } else {
     estimateId = undefined;
@@ -130,13 +94,16 @@ export async function POST(req: NextRequest) {
   if (!lineItems.length)
     return NextResponse.json({ error: "An invoice needs at least one line" }, { status: 400 });
 
-  // Rounded here, once, and every number downstream is derived from these three.
-  // Unrounded, an invoice went out for 274.025: a third of a cent the client cannot
-  // transfer, and a CSV row whose columns no longer add up to their own total.
-  const subtotal = round2(lineItems.reduce((sum, i) => sum + i.qty * i.unitPrice, 0));
-  const taxRate = body.taxRate ?? 0.13;
-  const tax = round2(subtotal * taxRate);
-  const total = round2(subtotal + tax);
+  // Priced once, in cents, by the same function the estimate screen previews with.
+  // Unrounded floats used to bill 274.025 — a third of a cent the client cannot
+  // transfer, and a CSV row whose columns no longer added up to their own total.
+  const taxRate = parseTaxRate(body.taxRate);
+  if (taxRate === null)
+    return NextResponse.json(
+      { error: "Tax rate is a fraction between 0 and 0.3 — 13% is 0.13", field: "taxRate" },
+      { status: 400 }
+    );
+  const { subtotalCents, taxCents, totalCents } = quoteTotals(lineItems, taxRate);
 
   const dueDate =
     parseDayInput(body.dueDate) ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -160,32 +127,32 @@ export async function POST(req: NextRequest) {
 
   if (depositRate > 0) {
     /**
-     * The halves are cut out of the ALREADY ROUNDED whole, and the second half takes
-     * whatever the first one left. Rounding each half on its own let the two invoices
-     * add up to a cent more than the same job billed in one — the same work costing a
-     * different amount depending on how it was paperworked.
+     * The halves are cut out of the whole and the second half takes whatever the first
+     * one left, so the two invoices add up to the single invoice for the same job to
+     * the cent. Rounding each half on its own made the same work cost a different
+     * amount depending on how it was paperworked.
      */
-    const depositSubtotal = round2(subtotal * depositRate);
-    const depositTax = round2(depositSubtotal * taxRate);
-    const balanceSubtotal = round2(subtotal - depositSubtotal);
-    const balanceTax = round2(tax - depositTax);
+    const depositSubtotalCents = shareOfCents(subtotalCents, depositRate);
+    const depositTaxCents = shareOfCents(depositSubtotalCents, taxRate);
+    const balanceSubtotalCents = subtotalCents - depositSubtotalCents;
+    const balanceTaxCents = taxCents - depositTaxCents;
 
     const pct = Math.round(depositRate * 100);
 
     const deposit = await createInvoice(tenantId, {
       ...base,
         kind: "DEPOSIT",
-        lineItems: JSON.stringify([
+        lineItems: lineItemsToJson([
           {
             description: `Deposit — ${pct}% of ${project.title}`,
             qty: 1,
             unit: "ea",
-            unitPrice: depositSubtotal,
+            unitPriceCents: depositSubtotalCents,
           },
         ]),
-        subtotal: depositSubtotal,
-        tax: depositTax,
-        total: round2(depositSubtotal + depositTax),
+        subtotalCents: depositSubtotalCents,
+        taxCents: depositTaxCents,
+        totalCents: depositSubtotalCents + depositTaxCents,
         notes: `${pct}% deposit. Work is scheduled once this is settled.`,
         // A deposit is due before the truck rolls, not on net-14 terms.
         dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
@@ -194,18 +161,18 @@ export async function POST(req: NextRequest) {
     const balance = await createInvoice(tenantId, {
       ...base,
         kind: "BALANCE",
-        lineItems: JSON.stringify([
+        lineItems: lineItemsToJson([
           ...lineItems,
           {
             description: `Less deposit invoice ${deposit.number}`,
             qty: 1,
             unit: "ea",
-            unitPrice: -depositSubtotal,
+            unitPriceCents: -depositSubtotalCents,
           },
         ]),
-        subtotal: balanceSubtotal,
-        tax: balanceTax,
-        total: round2(balanceSubtotal + balanceTax),
+        subtotalCents: balanceSubtotalCents,
+        taxCents: balanceTaxCents,
+        totalCents: balanceSubtotalCents + balanceTaxCents,
         notes: notes ?? `Balance after the ${pct}% deposit.`,
         dueDate,
     });
@@ -219,7 +186,7 @@ export async function POST(req: NextRequest) {
       entity: "Invoice",
       entityId: deposit.id,
       summary:
-        `Issued ${deposit.number} (${money(deposit.total)}) to ${project.clientName} — ` +
+        `Issued ${deposit.number} (${money(deposit.totalCents)}) to ${project.clientName} — ` +
         `${pct}% deposit on ${project.title}`,
       meta: { kind: "DEPOSIT", split: true, balanceNumber: balance.number, estimateId },
     });
@@ -230,20 +197,23 @@ export async function POST(req: NextRequest) {
       entity: "Invoice",
       entityId: balance.id,
       summary:
-        `Issued ${balance.number} (${money(balance.total)}) to ${project.clientName} — ` +
+        `Issued ${balance.number} (${money(balance.totalCents)}) to ${project.clientName} — ` +
         `balance on ${project.title} after deposit ${deposit.number}`,
       meta: { kind: "BALANCE", split: true, depositNumber: deposit.number, estimateId },
     });
 
-    return NextResponse.json({ ...deposit, balance, split: true }, { status: 201 });
+    return NextResponse.json(
+      { ...invoiceOut(deposit), balance: invoiceOut(balance), split: true },
+      { status: 201 }
+    );
   }
 
   const invoice = await createInvoice(tenantId, {
     ...base,
-    lineItems: JSON.stringify(lineItems),
-    subtotal,
-    tax,
-    total,
+    lineItems: lineItemsToJson(lineItems),
+    subtotalCents,
+    taxCents,
+    totalCents,
     notes,
     dueDate,
   });
@@ -255,10 +225,10 @@ export async function POST(req: NextRequest) {
     entity: "Invoice",
     entityId: invoice.id,
     summary:
-      `Issued ${invoice.number} (${money(invoice.total)}) to ${project.clientName} — ${project.title}` +
+      `Issued ${invoice.number} (${money(invoice.totalCents)}) to ${project.clientName} — ${project.title}` +
       (estimateId ? ", torn off the accepted estimate" : ""),
-    meta: { kind: "FULL", subtotal, tax, taxRate, estimateId },
+    meta: { kind: "FULL", subtotalCents, taxCents, taxRate, estimateId },
   });
 
-  return NextResponse.json(invoice, { status: 201 });
+  return NextResponse.json(invoiceOut(invoice), { status: 201 });
 }

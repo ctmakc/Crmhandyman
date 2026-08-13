@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, X } from "lucide-react";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   Row,
@@ -14,7 +15,8 @@ import {
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
-interface Client {
+/** The card as the API serves it: dollars. */
+interface ApiClient {
   id: string;
   name: string;
   phone?: string | null;
@@ -29,6 +31,9 @@ interface Client {
   owing: number;
   lastSeen: string | null;
 }
+
+/** What this screen works in. */
+type Client = InCents<ApiClient>;
 
 /* --------------------------------------------------------------------------
    THE DEVICE (DESIGN.md revision 3): the card index / rolodex.
@@ -73,8 +78,9 @@ export default function ClientsPage() {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     const res = await fetch(`/api/clients?${params}`);
+    // The one door on this screen: dollars off the wire, cents in the index.
     const data = await res.json();
-    setClients(Array.isArray(data) ? data : []);
+    setClients(Array.isArray(data) ? inCents(data as ApiClient[]) : []);
     setLoading(false);
   }
 
@@ -100,7 +106,7 @@ export default function ClientsPage() {
     }
   }
 
-  const owingTotal = clients.reduce((s, c) => s + c.owing, 0);
+  const owingTotalCents = clients.reduce((s, c) => s + c.owingCents, 0);
   const withIron = clients.filter((c) => c.equipmentCount > 0).length;
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
@@ -146,8 +152,8 @@ export default function ClientsPage() {
           { label: "With equipment", value: String(withIron) },
           {
             label: "Owing us",
-            value: formatCurrency(owingTotal),
-            tone: owingTotal > 0 ? "var(--rose-ink)" : "var(--emerald)",
+            value: formatCents(owingTotalCents),
+            tone: owingTotalCents > 0 ? "var(--rose-ink)" : "var(--emerald)",
           },
         ].map((r) => (
           <div key={r.label} className="flex items-baseline gap-2.5">
@@ -305,7 +311,7 @@ export default function ClientsPage() {
                     className="!pt-[19px]"
                     // Green means "worked for, settled up" — a name with no jobs yet is neutral.
                     status={
-                      c.owing > 0.005
+                      c.owingCents > 0
                         ? "OVERDUE"
                         : c.openJobs > 0
                           ? "IN_PROGRESS"
@@ -330,12 +336,12 @@ export default function ClientsPage() {
                       <p className="min-w-0 truncate text-[15px] font-bold leading-tight text-ink">
                         {c.name}
                       </p>
-                      {c.owing > 0.005 ? (
+                      {c.owingCents > 0 ? (
                         <span
                           className="mono shrink-0 text-right text-[12px] font-medium tabular-nums"
                           style={{ color: "var(--rose-ink)" }}
                         >
-                          OWES {formatCurrency(c.owing)}
+                          OWES {formatCents(c.owingCents)}
                         </span>
                       ) : c.lastSeen ? (
                         <span className="mono shrink-0 text-right text-[11px] text-ink-3">
@@ -387,7 +393,7 @@ export default function ClientsPage() {
                           +{c.equipmentCount - c.equipmentKinds.length}
                         </span>
                       )}
-                      {c.owing > 0.005 && c.lastSeen && (
+                      {c.owingCents > 0 && c.lastSeen && (
                         <span className="mono text-[12px] text-ink-3">
                           LAST {new Date(c.lastSeen).toLocaleDateString("en-CA")}
                         </span>

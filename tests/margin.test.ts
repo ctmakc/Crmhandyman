@@ -1,94 +1,105 @@
 import { describe, it, expect } from "vitest";
 import { jobMoney, marginTone, marginVerdict, SPLIT_PLANS } from "@/lib/margin";
+import { toCents } from "@/lib/money";
 
 /**
  * Job economics. The one rule worth a test suite: margin is measured against what was
  * COLLECTED. Every regression here reads as "this job made money" while the cash is
  * still on the street.
+ *
+ * Amounts are cents, so the dollars a shop would say out loud are written through
+ * `toCents` — the same door the API uses.
  */
 
 describe("jobMoney", () => {
   it("measures margin against collected, never against invoiced", () => {
     const m = jobMoney({
-      estimates: [{ total: 10_000, status: "ACCEPTED" }],
-      invoices: [{ total: 10_000, status: "SENT" }],
-      payments: [{ amount: 4_000 }],
-      expenses: [{ amount: 3_000 }],
+      estimates: [{ totalCents: toCents(10_000), status: "ACCEPTED" }],
+      invoices: [{ totalCents: toCents(10_000), status: "SENT" }],
+      payments: [{ amountCents: toCents(4_000) }],
+      expenses: [{ amountCents: toCents(3_000) }],
     });
-    expect(m.invoiced).toBe(10_000);
-    expect(m.collected).toBe(4_000);
-    expect(m.margin).toBe(1_000);
+    expect(m.invoicedCents).toBe(toCents(10_000));
+    expect(m.collectedCents).toBe(toCents(4_000));
+    expect(m.marginCents).toBe(toCents(1_000));
     expect(m.marginPct).toBeCloseTo(25, 10);
     // Invoiced-based margin would read 7000 / 70% here.
   });
 
   it("reports no percentage when nothing has been collected", () => {
-    const m = jobMoney({ invoices: [{ total: 5_000, status: "SENT" }], expenses: [{ amount: 900 }] });
-    expect(m.collected).toBe(0);
-    expect(m.margin).toBe(-900);
+    const m = jobMoney({ invoices: [{ totalCents: toCents(5_000), status: "SENT" }], expenses: [{ amountCents: toCents(900) }] });
+    expect(m.collectedCents).toBe(toCents(0));
+    expect(m.marginCents).toBe(toCents(-900));
     expect(m.marginPct).toBeNull();
   });
 
   it("returns zeroes for an empty job instead of NaN", () => {
     const m = jobMoney({});
-    expect(m).toMatchObject({ quoted: 0, invoiced: 0, collected: 0, costs: 0, margin: 0, marginPct: null });
+    expect(m).toMatchObject({
+      quotedCents: 0,
+      invoicedCents: 0,
+      collectedCents: 0,
+      costsCents: 0,
+      marginCents: 0,
+      marginPct: null,
+    });
   });
 
   it("keeps a void invoice out of the billed total", () => {
     const m = jobMoney({
       invoices: [
-        { total: 3_000, status: "VOID" },
-        { total: 2_800, status: "SENT" },
+        { totalCents: toCents(3_000), status: "VOID" },
+        { totalCents: toCents(2_800), status: "SENT" },
       ],
-      payments: [{ amount: 2_800 }],
+      payments: [{ amountCents: toCents(2_800) }],
     });
-    expect(m.invoiced).toBe(2_800);
-    expect(m.outstanding).toBe(0);
+    expect(m.invoicedCents).toBe(toCents(2_800));
+    expect(m.outstandingCents).toBe(toCents(0));
   });
 
   it("signals money billed but not banked", () => {
     const m = jobMoney({
-      invoices: [{ total: 6_000, status: "SENT" }],
-      payments: [{ amount: 2_000 }],
+      invoices: [{ totalCents: toCents(6_000), status: "SENT" }],
+      payments: [{ amountCents: toCents(2_000) }],
     });
-    expect(m.outstanding).toBe(4_000);
+    expect(m.outstandingCents).toBe(toCents(4_000));
   });
 
   it("never shows negative outstanding when a client overpays", () => {
     const m = jobMoney({
-      invoices: [{ total: 1_000, status: "PAID" }],
-      payments: [{ amount: 1_050 }],
+      invoices: [{ totalCents: toCents(1_000), status: "PAID" }],
+      payments: [{ amountCents: toCents(1_050) }],
     });
-    expect(m.outstanding).toBe(0);
-    expect(m.margin).toBe(1_050);
+    expect(m.outstandingCents).toBe(toCents(0));
+    expect(m.marginCents).toBe(toCents(1_050));
   });
 
   it("signals work quoted and accepted but never billed", () => {
     const m = jobMoney({
-      estimates: [{ total: 5_000, status: "ACCEPTED" }],
-      invoices: [{ total: 2_000, status: "SENT" }],
+      estimates: [{ totalCents: toCents(5_000), status: "ACCEPTED" }],
+      invoices: [{ totalCents: toCents(2_000), status: "SENT" }],
     });
-    expect(m.quoted).toBe(5_000);
-    expect(m.unbilled).toBe(3_000);
+    expect(m.quotedCents).toBe(toCents(5_000));
+    expect(m.unbilledCents).toBe(toCents(3_000));
   });
 
   it("shows no unbilled leak when a change order billed above the quote", () => {
     const m = jobMoney({
-      estimates: [{ total: 5_000, status: "ACCEPTED" }],
-      invoices: [{ total: 6_200, status: "SENT" }],
+      estimates: [{ totalCents: toCents(5_000), status: "ACCEPTED" }],
+      invoices: [{ totalCents: toCents(6_200), status: "SENT" }],
     });
-    expect(m.unbilled).toBe(0);
+    expect(m.unbilledCents).toBe(toCents(0));
   });
 
   it("quotes from the accepted estimate, ignoring drafts and rejects", () => {
     const m = jobMoney({
       estimates: [
-        { total: 9_000, status: "DRAFT" },
-        { total: 5_000, status: "ACCEPTED" },
-        { total: 7_500, status: "REJECTED" },
+        { totalCents: toCents(9_000), status: "DRAFT" },
+        { totalCents: toCents(5_000), status: "ACCEPTED" },
+        { totalCents: toCents(7_500), status: "REJECTED" },
       ],
     });
-    expect(m.quoted).toBe(5_000);
+    expect(m.quotedCents).toBe(toCents(5_000));
   });
 
   it("quotes one accepted estimate, not the sum of every accepted revision", () => {
@@ -96,25 +107,25 @@ describe("jobMoney", () => {
     // quote and invent an "unbilled" leak the size of the whole job.
     const m = jobMoney({
       estimates: [
-        { total: 6_400, status: "ACCEPTED" },
-        { total: 5_000, status: "ACCEPTED" },
+        { totalCents: toCents(6_400), status: "ACCEPTED" },
+        { totalCents: toCents(5_000), status: "ACCEPTED" },
       ],
-      invoices: [{ total: 6_400, status: "SENT" }],
+      invoices: [{ totalCents: toCents(6_400), status: "SENT" }],
     });
-    expect(m.quoted).toBe(6_400);
-    expect(m.unbilled).toBe(0);
+    expect(m.quotedCents).toBe(toCents(6_400));
+    expect(m.unbilledCents).toBe(toCents(0));
   });
 
   it("does not count a draft invoice as billed", () => {
     // A draft is paper nobody has seen. Counted as invoiced, it hid the "quoted but
     // never billed" signal and reported money on the street that was never sent.
     const m = jobMoney({
-      estimates: [{ total: 5_000, status: "ACCEPTED" }],
-      invoices: [{ total: 5_000, status: "DRAFT" }],
+      estimates: [{ totalCents: toCents(5_000), status: "ACCEPTED" }],
+      invoices: [{ totalCents: toCents(5_000), status: "DRAFT" }],
     });
-    expect(m.invoiced).toBe(0);
-    expect(m.unbilled).toBe(5_000);
-    expect(m.outstanding).toBe(0);
+    expect(m.invoicedCents).toBe(toCents(0));
+    expect(m.unbilledCents).toBe(toCents(5_000));
+    expect(m.outstandingCents).toBe(toCents(0));
   });
 
   it("falls back to the first estimate in the list when none was accepted", () => {
@@ -123,26 +134,26 @@ describe("jobMoney", () => {
     // changes the quoted number on the job card.
     const m = jobMoney({
       estimates: [
-        { total: 7_500, status: "SENT" },
-        { total: 4_000, status: "DRAFT" },
+        { totalCents: toCents(7_500), status: "SENT" },
+        { totalCents: toCents(4_000), status: "DRAFT" },
       ],
     });
-    expect(m.quoted).toBe(7_500);
+    expect(m.quotedCents).toBe(toCents(7_500));
   });
 
   it("counts every payment on the job, including a deposit paid before the balance", () => {
     const m = jobMoney({
       invoices: [
-        { total: 2_000, status: "PAID" },
-        { total: 8_000, status: "SENT" },
+        { totalCents: toCents(2_000), status: "PAID" },
+        { totalCents: toCents(8_000), status: "SENT" },
       ],
-      payments: [{ amount: 2_000 }, { amount: 3_000 }],
-      expenses: [{ amount: 1_200 }, { amount: 800 }],
+      payments: [{ amountCents: toCents(2_000) }, { amountCents: toCents(3_000) }],
+      expenses: [{ amountCents: toCents(1_200) }, { amountCents: toCents(800) }],
     });
-    expect(m.collected).toBe(5_000);
-    expect(m.costs).toBe(2_000);
-    expect(m.margin).toBe(3_000);
-    expect(m.outstanding).toBe(5_000);
+    expect(m.collectedCents).toBe(toCents(5_000));
+    expect(m.costsCents).toBe(toCents(2_000));
+    expect(m.marginCents).toBe(toCents(3_000));
+    expect(m.outstandingCents).toBe(toCents(5_000));
   });
 });
 
@@ -161,18 +172,18 @@ describe("marginVerdict", () => {
 
   it("distinguishes an untouched job from one that is underwater", () => {
     expect(verdict({})).toMatch(/Nothing booked/);
-    expect(verdict({ expenses: [{ amount: 400 }] })).toMatch(/underwater/);
+    expect(verdict({ expenses: [{ amountCents: toCents(400) }] })).toMatch(/underwater/);
   });
 
   it("calls out costs above collections", () => {
-    expect(verdict({ payments: [{ amount: 1_000 }], expenses: [{ amount: 1_400 }] })).toMatch(
+    expect(verdict({ payments: [{ amountCents: toCents(1_000) }], expenses: [{ amountCents: toCents(1_400) }] })).toMatch(
       /Costs exceed/
     );
   });
 
   it("separates a thin margin from a healthy one at 15%", () => {
-    expect(verdict({ payments: [{ amount: 1_000 }], expenses: [{ amount: 860 }] })).toMatch(/Thin/);
-    expect(verdict({ payments: [{ amount: 1_000 }], expenses: [{ amount: 850 }] })).toBe("Healthy");
+    expect(verdict({ payments: [{ amountCents: toCents(1_000) }], expenses: [{ amountCents: toCents(860) }] })).toMatch(/Thin/);
+    expect(verdict({ payments: [{ amountCents: toCents(1_000) }], expenses: [{ amountCents: toCents(850) }] })).toBe("Healthy");
   });
 });
 

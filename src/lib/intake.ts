@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { defangStamps } from "@/lib/lead-notes";
 
 /**
  * Public lead intake from a contractor's own landing page.
@@ -180,7 +181,9 @@ export function parseIntakePayload(body: unknown): ParsedIntake {
 export function renderIntakeNotes(channel: string, lead: IntakeLead): string {
   const lines = [channel, ""];
   for (const answer of lead.answers) lines.push(`${answer.label}: ${answer.value}`);
-  return lines.join("\n").trim().slice(0, 4000);
+  // The desk's call-log stamp is defanged out of visitor text: it shares this column,
+  // and the response clock reads it as «somebody has already called this person».
+  return defangStamps(lines.join("\n").trim().slice(0, 4000));
 }
 
 /**

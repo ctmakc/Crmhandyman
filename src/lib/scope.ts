@@ -52,3 +52,45 @@ export async function scopedUserId(
   });
   return owned ? { ok: true, value: owned.id } : { ok: false };
 }
+
+/**
+ * Resolves an optional clientId to a customer this workspace owns.
+ *
+ * The job form posts `clientId` when the dispatcher picks an existing customer, and the
+ * route took it as fact. A stranger posting the victim's clientId hung a whole job — with
+ * its payments, its costs and its lifetime value — off the victim's customer record, on
+ * the victim's own screen, and the row carried the attacker's tenant so it could not be
+ * deleted from the other side.
+ */
+export async function scopedClientId(
+  tenantId: string,
+  raw: unknown
+): Promise<Scoped<string | undefined>> {
+  if (absent(raw)) return { ok: true, value: undefined };
+  if (typeof raw !== "string") return { ok: false };
+
+  const owned = await prisma.client.findFirst({
+    where: { id: raw, tenantId },
+    select: { id: true },
+  });
+  return owned ? { ok: true, value: owned.id } : { ok: false };
+}
+
+/**
+ * Resolves an optional equipmentId to a unit this workspace services. A service contract
+ * pointed at a stranger's furnace read its make, model and serial straight back out
+ * through the contract list.
+ */
+export async function scopedEquipmentId(
+  tenantId: string,
+  raw: unknown
+): Promise<Scoped<string | undefined>> {
+  if (absent(raw)) return { ok: true, value: undefined };
+  if (typeof raw !== "string") return { ok: false };
+
+  const owned = await prisma.equipment.findFirst({
+    where: { id: raw, tenantId },
+    select: { id: true },
+  });
+  return owned ? { ok: true, value: owned.id } : { ok: false };
+}

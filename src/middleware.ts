@@ -14,6 +14,18 @@ const PUBLIC_PATHS = [
   "/api/register",
   "/_next",
   "/favicon.ico",
+  /**
+   * The installable shell. These four carry no workspace data — a script, a manifest, a
+   * static «no connection» card and four icons — and every one of them is needed BEFORE
+   * a session exists: a tech installs the app from the login screen, and a phone whose
+   * cookie expired overnight has to be told that rather than shown a browser error.
+   * Behind the redirect, an update to the worker fetched HTML where it expected
+   * JavaScript and failed without saying so.
+   */
+  "/sw.js",
+  "/manifest.json",
+  "/offline.html",
+  "/icons",
 ];
 
 // Simple in-memory cache for tenant resolution (resets on cold start)

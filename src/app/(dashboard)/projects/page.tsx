@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, X } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents, inCents, type InCents } from "@/lib/money";
+import { conflictsFor, formatDuration, spanDays } from "@/lib/schedule";
 import {
   PageHead,
   LaneHead,
@@ -28,19 +30,27 @@ interface ClientOption {
   city?: string | null;
 }
 
-interface Project {
+/** The payload as the API serves it: dollars. */
+interface ApiProject {
   id: string;
   title: string;
   clientName: string;
   address: string;
   status: string;
   createdAt?: string;
-  scheduledDate?: string;
+  scheduledDate?: string | null;
   jobType?: string;
+  /** Who drives there, and for how long — the board dispatches, so it needs both. */
+  assignedToId?: string | null;
+  assignedTo?: { id: string; name: string } | null;
+  durationMinutes?: number | null;
   payments: { amount: number }[];
   estimates: { total: number; status: string }[];
   tasks: { id: string; status: string }[];
 }
+
+/** What this screen works in. */
+type Project = InCents<ApiProject>;
 
 const STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
@@ -51,8 +61,65 @@ const STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
    one-line drawer entries. Three lanes, three renderings, one toolbox.
    -------------------------------------------------------------------------- */
 
-const paidOf = (p: Project) => p.payments.reduce((s, x) => s + x.amount, 0);
-const estOf = (p: Project) => p.estimates[0]?.total ?? null;
+const paidCentsOf = (p: Project) => p.payments.reduce((s, x) => s + x.amountCents, 0);
+const estCentsOf = (p: Project) => p.estimates[0]?.totalCents ?? null;
+
+/** Everything a row needs to hand a job to somebody without opening it. */
+interface Dispatch {
+  crew: Array<{ id: string; name: string }>;
+  assign: (project: Project, userId: string) => void;
+  /** Jobs the same person already holds while this one runs. */
+  clashesOn: (project: Project) => Project[];
+}
+
+/**
+ * THE CREW PICKER — dispatch from the board.
+ *
+ * The board is where a dispatcher works the morning: opening every job card to hand it
+ * to somebody is four taps per job, so the assignment lives on the row. It sits above
+ * the row's stretched link, otherwise choosing a name would navigate away mid-choice.
+ * Hidden entirely when the crew list is empty — the endpoint behind it is the owner's,
+ * and a worker gets nothing back from it.
+ */
+function CrewPicker({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
+  if (!dispatch.crew.length) return null;
+  const clashes = dispatch.clashesOn(project);
+  const runs = spanDays(project);
+
+  return (
+    <span className="relative z-[1] flex shrink-0 items-center gap-2">
+      {runs > 1 && (
+        <span className="mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
+          {formatDuration(project.durationMinutes)}
+        </span>
+      )}
+      {clashes.length > 0 && (
+        <span
+          className="mono text-[10px] uppercase tracking-[0.08em]"
+          style={{ color: "var(--rose-ink)" }}
+          title={`Also on ${clashes.map((c) => c.title).join(", ")} at this time`}
+        >
+          ! double
+        </span>
+      )}
+      <select
+        aria-label={`Crew on ${project.title}`}
+        value={project.assignedToId ?? ""}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => dispatch.assign(project, e.target.value)}
+        className="mono px-2 py-1 text-[11px] uppercase tracking-[0.06em]"
+        style={clashes.length ? { borderColor: "var(--rose)" } : undefined}
+      >
+        <option value="">— UNCREWED —</option>
+        {dispatch.crew.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
 
 /** Booked jobs group under a day-numeral rail cell, undated ones at the end. */
 function groupByDate(jobs: Project[]) {
@@ -76,20 +143,30 @@ function groupByDate(jobs: Project[]) {
 }
 
 /** ON THE GO — the full work order in your hand: crew tally + EST→PAID fill. */
-function LiveTicket({ project }: { project: Project }) {
-  const paid = paidOf(project);
-  const est = estOf(project);
-  const pct = est && est > 0 ? Math.min(paid / est, 1) * 100 : 0;
+function LiveTicket({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
+  const paidCents = paidCentsOf(project);
+  const estCents = estCentsOf(project);
+  const pct = estCents && estCents > 0 ? Math.min(paidCents / estCents, 1) * 100 : 0;
   const done = project.tasks.filter((t) => t.status === "DONE").length;
   return (
-    <Ticket href={`/projects/${project.id}`} status={project.status} className="px-5 py-4">
+    <Ticket status={project.status} className="ticket-hover px-5 py-4">
+      {/* Stretched link: the plate still opens the work order, while the crew select
+          on it stays a real control — no <select> inside an <a>. */}
+      <Link
+        href={`/projects/${project.id}`}
+        className="absolute inset-0"
+        aria-label={`Open ${project.title}`}
+      />
       <div className="flex items-baseline justify-between gap-3">
         <WoNumber id={project.id} date={project.createdAt} />
-        {project.scheduledDate && (
-          <span className="mono text-[11px] text-ink-3">
-            {project.scheduledDate.slice(0, 10)}
-          </span>
-        )}
+        <span className="flex items-center gap-3">
+          {project.scheduledDate && (
+            <span className="mono text-[11px] text-ink-3">
+              {project.scheduledDate.slice(0, 10)}
+            </span>
+          )}
+          <CrewPicker project={project} dispatch={dispatch} />
+        </span>
       </div>
       <p className="mt-2 text-[17px] font-black leading-tight tracking-[-0.01em] text-ink">
         {project.title}
@@ -126,10 +203,10 @@ function LiveTicket({ project }: { project: Project }) {
         </div>
         <div className="mt-1.5 flex items-baseline gap-1.5">
           <span className="mono text-[11px] font-bold" style={{ color: "var(--emerald-ink)" }}>
-            PAID {formatCurrency(paid)}
+            PAID {formatCents(paidCents)}
           </span>
           <span className="mono text-[11px] text-ink-3">
-            / EST {est != null ? formatCurrency(est) : "—"}
+            / EST {estCents != null ? formatCents(estCents) : "—"}
           </span>
         </div>
       </div>
@@ -138,11 +215,16 @@ function LiveTicket({ project }: { project: Project }) {
 }
 
 /** BOOKED — a standard ruled row, hanging to the right of its date rail. */
-function BookedRow({ project }: { project: Project }) {
-  const est = estOf(project);
+function BookedRow({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
+  const estCents = estCentsOf(project);
   const done = project.tasks.filter((t) => t.status === "DONE").length;
   return (
-    <Row href={`/projects/${project.id}`} status={project.status}>
+    <Row status={project.status} className="row-hover">
+      <Link
+        href={`/projects/${project.id}`}
+        className="absolute inset-0"
+        aria-label={`Open ${project.title}`}
+      />
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0">
           <WoNumber id={project.id} date={project.createdAt} />
@@ -153,17 +235,20 @@ function BookedRow({ project }: { project: Project }) {
             {project.clientName} · {project.address}
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          {est != null && (
-            <div className="mono text-[12px] text-ink-2">
-              EST <Money value={est} className="text-[13px]" />
-            </div>
-          )}
-          {project.tasks.length > 0 && (
-            <div className="mono mt-1 text-[11px] text-ink-3">
-              CREW {done}/{project.tasks.length}
-            </div>
-          )}
+        <div className="flex shrink-0 items-center gap-4">
+          <div className="text-right">
+            {estCents != null && (
+              <div className="mono text-[12px] text-ink-2">
+                EST <Money cents={estCents} className="text-[13px]" />
+              </div>
+            )}
+            {project.tasks.length > 0 && (
+              <div className="mono mt-1 text-[11px] text-ink-3">
+                CREW {done}/{project.tasks.length}
+              </div>
+            )}
+          </div>
+          <CrewPicker project={project} dispatch={dispatch} />
         </div>
       </div>
     </Row>
@@ -172,9 +257,9 @@ function BookedRow({ project }: { project: Project }) {
 
 /** CLOSED — the drawer: one compressed ledger line per order. */
 function ClosedRow({ project }: { project: Project }) {
-  const paid = paidOf(project);
-  const est = estOf(project);
-  const money = paid > 0 ? paid : est ?? 0;
+  const paidCents = paidCentsOf(project);
+  const estCents = estCentsOf(project);
+  const moneyCents = paidCents > 0 ? paidCents : estCents ?? 0;
   return (
     <Row href={`/projects/${project.id}`} status={project.status} className="!py-2">
       <div className="flex min-w-0 items-baseline gap-3 text-[13px]">
@@ -190,8 +275,8 @@ function ClosedRow({ project }: { project: Project }) {
           >
             {project.status.replace("_", " ")}
           </span>
-          {money > 0 ? (
-            <Money value={money} className="text-[13px]" tone="var(--ink-3)" />
+          {moneyCents > 0 ? (
+            <Money cents={moneyCents} className="text-[13px]" tone="var(--ink-3)" />
           ) : (
             <span className="mono text-[13px] text-ink-3">—</span>
           )}
@@ -209,6 +294,8 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  /** The owner's crew list. A worker gets 401 here, and the pickers stay off his board. */
+  const [crew, setCrew] = useState<Array<{ id: string; name: string }>>([]);
   const [form, setForm] = useState({
     clientId: "",
     clientName: "",
@@ -226,7 +313,8 @@ export default function ProjectsPage() {
     if (search) params.set("q", search);
     if (statusFilter) params.set("status", statusFilter);
     const res = await fetch(`/api/projects?${params}`);
-    const data = await res.json();
+    // The one door on this screen: dollars off the wire, cents on the board.
+    const data = inCents((await res.json()) as ApiProject[]);
     setProjects(data);
     setLoading(false);
   }
@@ -235,6 +323,63 @@ export default function ProjectsPage() {
     fetchProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
+
+  useEffect(() => {
+    fetch("/api/settings/users")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCrew(Array.isArray(d) ? d : []))
+      .catch(() => null);
+  }, []);
+
+  /**
+   * Dispatch from the board.
+   *
+   * The warning is computed against the jobs already on this screen and shown as a
+   * confirm — a mover really does run two short jobs back to back, so the answer to a
+   * collision is «are you sure», never «no». The server re-checks and answers with the
+   * same list, which is what keeps two dispatchers on two phones honest.
+   */
+  const dispatch: Dispatch = {
+    crew,
+    clashesOn: (project) => conflictsFor(project, projects),
+    assign: async (project, userId) => {
+      const clashes = userId
+        ? conflictsFor({ ...project, assignedToId: userId }, projects)
+        : [];
+
+      if (clashes.length) {
+        const who = crew.find((c) => c.id === userId)?.name ?? "That tech";
+        const list = clashes.map((c) => `· ${c.title} — ${c.clientName}`).join("\n");
+        if (!confirm(`${who} is already booked at this time:\n\n${list}\n\nBook anyway?`)) {
+          // Snap the select back to what is actually saved.
+          setProjects((prev) => [...prev]);
+          return;
+        }
+      }
+
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...project, assignedToId: userId || null }),
+      });
+
+      /**
+       * The server checked the whole workspace, this screen only checked what it is
+       * currently showing: a status filter or a search hides the very job that collides.
+       * Whatever the board missed comes back in the answer and is said out loud.
+       */
+      const saved = res.ok ? ((await res.json()) as { conflicts?: Array<{ title: string }> }) : null;
+      const missed = (saved?.conflicts ?? []).length;
+      toast(
+        !userId
+          ? "Assignment cleared"
+          : missed && !clashes.length
+            ? `Job assigned — also on ${saved!.conflicts!.map((c) => c.title).join(", ")} at this time`
+            : "Job assigned"
+      );
+      fetchProjects();
+    },
+  };
 
   // Arriving from a client record: open the form with that client already chosen.
   const presetClient = searchParams.get("client");
@@ -457,7 +602,7 @@ export default function ProjectsPage() {
               ) : (
                 <div className="flex flex-col gap-3">
                   {live.map((p) => (
-                    <LiveTicket key={p.id} project={p} />
+                    <LiveTicket key={p.id} project={p} dispatch={dispatch} />
                   ))}
                 </div>
               )}
@@ -489,7 +634,7 @@ export default function ProjectsPage() {
                       </div>
                       <div>
                         {g.items.map((p) => (
-                          <BookedRow key={p.id} project={p} />
+                          <BookedRow key={p.id} project={p} dispatch={dispatch} />
                         ))}
                       </div>
                     </div>

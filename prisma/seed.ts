@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import bcrypt from "bcryptjs";
+import { lineItemsFromInput, lineItemsToJson, quoteTotals, toCents } from "../src/lib/money";
 
 const adapter = new PrismaBetterSqlite3({
   url: process.env.DATABASE_URL ?? "file:./dev.db",
@@ -101,22 +102,34 @@ async function main() {
     },
   });
 
-  // Sample estimate
+  // Sample estimate. Sample money is written like real money: dollars in, cents stored.
+  const estimateLines = lineItemsFromInput([
+    { description: "Drywall materials", qty: 10, unit: "sheet", unitPrice: 25 },
+    { description: "Labour - drywall", qty: 8, unit: "hr", unitPrice: 75 },
+    { description: "Paint (2 coats)", qty: 2, unit: "room", unitPrice: 350 },
+  ]);
+
+  /**
+   * The money is re-written on every run, not left alone like the rest of the sample.
+   *
+   * `update: {}` means an existing row keeps whatever it was seeded with the first time.
+   * The lines above were edited once; the stored subtotal was not, so the demo estimate
+   * printed three amounts adding to $1,550.00 under a subtotal of $1,750.00 — a document
+   * that does not add up, in the workspace shown to prospective customers. The lines and
+   * their totals come from one call to `quoteTotals`, so they cannot drift apart again.
+   */
   await prisma.estimate.upsert({
     where: { id: "estimate-sample-1" },
-    update: {},
+    update: {
+      lineItems: lineItemsToJson(estimateLines),
+      ...quoteTotals(estimateLines, 0.13),
+    },
     create: {
       id: "estimate-sample-1",
       tenantId: tenant.id,
       projectId: project.id,
-      lineItems: JSON.stringify([
-        { description: "Drywall materials", qty: 10, unit: "sheet", unitPrice: 25 },
-        { description: "Labour - drywall", qty: 8, unit: "hr", unitPrice: 75 },
-        { description: "Paint (2 coats)", qty: 2, unit: "room", unitPrice: 350 },
-      ]),
-      subtotal: 1750,
-      tax: 227.5,
-      total: 1977.5,
+      lineItems: lineItemsToJson(estimateLines),
+      ...quoteTotals(estimateLines, 0.13),
       notes: "Price includes GST. Valid for 30 days.",
       status: "SENT",
     },
@@ -163,7 +176,7 @@ async function main() {
       id: "payment-sample-1",
       tenantId: tenant.id,
       projectId: project.id,
-      amount: 500,
+      amountCents: toCents(500),
       method: "E_TRANSFER",
       notes: "Deposit 50%",
     },
@@ -177,7 +190,7 @@ async function main() {
       id: "expense-sample-1",
       tenantId: tenant.id,
       projectId: project.id,
-      amount: 250,
+      amountCents: toCents(250),
       category: "MATERIALS",
       description: "Home Depot - drywall and supplies",
     },

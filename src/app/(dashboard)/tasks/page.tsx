@@ -108,8 +108,11 @@ export default function TasksPage() {
           <div className="eyebrow">New crew task</div>
           <form onSubmit={handleAddTask} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className="eyebrow">Title *</label>
+              <label className="eyebrow" htmlFor="task-title">
+                Title *
+              </label>
               <input
+                id="task-title"
                 required
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -117,8 +120,11 @@ export default function TasksPage() {
               />
             </div>
             <div>
-              <label className="eyebrow">Assign to</label>
+              <label className="eyebrow" htmlFor="task-assignee">
+                Assign to
+              </label>
               <select
+                id="task-assignee"
                 value={form.assignedToId}
                 onChange={(e) => setForm({ ...form, assignedToId: e.target.value })}
                 className={field}
@@ -132,8 +138,11 @@ export default function TasksPage() {
               </select>
             </div>
             <div>
-              <label className="eyebrow">Due date</label>
+              <label className="eyebrow" htmlFor="task-due">
+                Due date
+              </label>
               <input
+                id="task-due"
                 type="date"
                 value={form.dueDate}
                 onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
@@ -141,8 +150,11 @@ export default function TasksPage() {
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="eyebrow">Description</label>
+              <label className="eyebrow" htmlFor="task-description">
+                Description
+              </label>
               <textarea
+                id="task-description"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
@@ -232,7 +244,12 @@ export default function TasksPage() {
                         </span>
                       )}
                     </div>
+                    {/* The only way to move a task from a phone — drag is a desk gesture.
+                        Named after the task it moves, because a reader landing on eight
+                        of these otherwise hears «combo box» eight times with nothing to
+                        tell them apart. */}
                     <select
+                      aria-label={`Move «${task.title}» to another lane`}
                       value={task.status}
                       onChange={(e) => handleStatusChange(task.id, e.target.value)}
                       className="mono mt-2 w-full px-2 py-1 text-[11px] uppercase tracking-[0.06em] md:hidden"

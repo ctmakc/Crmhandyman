@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
 import { dayStamp } from "@/lib/dates";
 import { jobMoney } from "@/lib/margin";
+import { dollarText } from "@/lib/money";
+import { loadChannelReport, type VerticalFilter } from "@/lib/attribution";
+import { TRADES } from "@/lib/price-book";
 
 /**
  * CSV for the bookkeeper.
@@ -10,6 +13,9 @@ import { jobMoney } from "@/lib/margin";
  * Excel-safe on purpose: a leading `=`, `+`, `-` or `@` in a cell is executed as a
  * formula by Excel and Sheets, which is both a broken export and a real injection
  * vector. Those cells get a leading apostrophe.
+ *
+ * Money is stored in cents and printed here in dollars — `dollarText` is the only
+ * place that conversion happens, so a row's columns still add up to its own total.
  */
 const csvCell = (v: unknown) => {
   if (v === null || v === undefined) return "";
@@ -28,7 +34,7 @@ const csv = (rows: Array<Array<unknown>>) =>
  */
 const day = dayStamp;
 
-const KINDS = ["invoices", "payments", "expenses", "jobs"] as const;
+const KINDS = ["invoices", "payments", "expenses", "jobs", "channels"] as const;
 type Kind = (typeof KINDS)[number];
 
 export async function GET(req: NextRequest, { params }: { params: { kind: string } }) {
@@ -54,18 +60,18 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
   if (kind === "invoices") {
     const invoices = await prisma.invoice.findMany({
       where: { tenantId, issuedAt: { gte: from, lte: to } },
-      include: { payments: { select: { amount: true } }, project: { select: { title: true } } },
+      include: { payments: { select: { amountCents: true } }, project: { select: { title: true } } },
       orderBy: { issuedAt: "asc" },
     });
     rows = [
       ["Number", "Kind", "Status", "Client", "Job", "Issued", "Due", "Subtotal", "Tax", "Total", "Paid", "Owing"],
       ...invoices.map((i) => {
-        const paid = i.payments.reduce((s, p) => s + p.amount, 0);
+        const paidCents = i.payments.reduce((s, p) => s + p.amountCents, 0);
         return [
           i.number, i.kind, i.status, i.clientName, i.project.title,
           day(i.issuedAt), day(i.dueDate),
-          i.subtotal.toFixed(2), i.tax.toFixed(2), i.total.toFixed(2),
-          paid.toFixed(2), (i.total - paid).toFixed(2),
+          dollarText(i.subtotalCents), dollarText(i.taxCents), dollarText(i.totalCents),
+          dollarText(paidCents), dollarText(i.totalCents - paidCents),
         ];
       }),
     ];
@@ -83,7 +89,7 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
     rows = [
       ["Date", "Amount", "Method", "Client", "Job", "Invoice", "Notes"],
       ...payments.map((p) => [
-        day(p.date), p.amount.toFixed(2), p.method,
+        day(p.date), dollarText(p.amountCents), p.method,
         p.project.clientName, p.project.title, p.invoice?.number ?? "", p.notes ?? "",
       ]),
     ];
@@ -98,7 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
     rows = [
       ["Date", "Amount", "Category", "Job", "Description"],
       ...expenses.map((e) => [
-        day(e.date), e.amount.toFixed(2), e.category,
+        day(e.date), dollarText(e.amountCents), e.category,
         e.project?.title ?? "General overhead", e.description ?? "",
       ]),
     ];
@@ -109,10 +115,10 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
       where: { tenantId, createdAt: { lte: to } },
       include: {
         // Newest first: jobMoney reads the live accepted price off the head of the list.
-        estimates: { select: { total: true, status: true }, orderBy: { createdAt: "desc" } },
-        invoices: { select: { total: true, status: true } },
-        payments: { select: { amount: true } },
-        expenses: { select: { amount: true } },
+        estimates: { select: { totalCents: true, status: true }, orderBy: { createdAt: "desc" } },
+        invoices: { select: { totalCents: true, status: true } },
+        payments: { select: { amountCents: true } },
+        expenses: { select: { amountCents: true } },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -124,10 +130,44 @@ export async function GET(req: NextRequest, { params }: { params: { kind: string
         return [
           j.title, j.clientName, j.address, j.status,
           day(j.scheduledDate), day(j.completedDate),
-          m.quoted.toFixed(2), m.invoiced.toFixed(2), m.collected.toFixed(2), m.costs.toFixed(2),
-          m.margin.toFixed(2), m.marginPct === null ? "" : m.marginPct.toFixed(1),
+          dollarText(m.quotedCents), dollarText(m.invoicedCents), dollarText(m.collectedCents),
+          dollarText(m.costsCents),
+          dollarText(m.marginCents), m.marginPct === null ? "" : m.marginPct.toFixed(1),
         ];
       }),
+    ];
+  }
+
+  if (kind === "channels") {
+    // Built by the same function the Reports screen renders from, so the sheet the owner
+    // reads and the file his bookkeeper opens cannot disagree about what a channel earned.
+    const verticalParam = searchParams.get("vertical") || "ALL";
+    const report = await loadChannelReport(tenantId, {
+      year,
+      month: month ?? null,
+      vertical: TRADES.includes(verticalParam as never)
+        ? (verticalParam as VerticalFilter)
+        : "ALL",
+    });
+
+    // An amount nobody entered stays an empty cell. A zero here would read as «this
+    // channel was free», which is the one conclusion the report exists to prevent.
+    const cash = (cents: number | null) => (cents === null ? "" : dollarText(cents));
+
+    const line = (c: (typeof report.channels)[number]) => [
+      c.label, c.leads, c.reached, c.unanswered, c.jobs,
+      dollarText(c.quotedCents), dollarText(c.invoicedCents), dollarText(c.collectedCents),
+      dollarText(c.costsCents), dollarText(c.marginCents),
+      cash(c.adSpendCents), cash(c.cplCents), cash(c.cpjCents), cash(c.netAfterAdsCents),
+      c.returnPerAdDollar === null ? "" : c.returnPerAdDollar.toFixed(2),
+      cash(c.avgTicketCents),
+      c.avgFirstReplyMins === null ? "" : c.avgFirstReplyMins,
+    ];
+
+    rows = [
+      ["Channel", "Leads", "Reached", "Unanswered", "Jobs", "Quoted", "Invoiced", "Collected", "Job costs", "Margin", "Ad spend", "Cost per lead", "Cost per job", "After ads", "Return per ad $", "Avg ticket", "First reply, min"],
+      ...report.channels.map(line),
+      line(report.totals),
     ];
   }
 

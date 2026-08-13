@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionTenant } from "@/lib/session";
+import { requireAdmin } from "@/lib/guard";
+import { createInvoice } from "@/lib/invoice-number";
 import { nextDueVisit, daysUntil, MONTH_NAMES } from "@/lib/contracts";
+import { DEFAULT_TAX_RATE, lineItemsToJson, quoteTotals } from "@/lib/money";
 
 /**
  * Turn due contract visits into real work orders.
@@ -16,9 +16,10 @@ import { nextDueVisit, daysUntil, MONTH_NAMES } from "@/lib/contracts";
  * already on the board is never booked again.
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  // It books work AND can bill for it — the owner's press, like the rest of the book.
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json().catch(() => ({}));
 
@@ -70,32 +71,35 @@ export async function POST(req: NextRequest) {
     });
 
     // Billing the visit up front is opt-in: many shops invoice after the tech reports.
-    if (c.autoInvoice && c.pricePerVisit > 0) {
+    if (c.autoInvoice && c.pricePerVisitCents > 0) {
       const lineItems = [
-        { description: `${c.name} — ${MONTH_NAMES[next.month]} visit`, qty: 1, unit: "ea", unitPrice: c.pricePerVisit },
+        {
+          description: `${c.name} — ${MONTH_NAMES[next.month]} visit`,
+          qty: 1,
+          unit: "ea",
+          unitPriceCents: c.pricePerVisitCents,
+        },
       ];
-      const subtotal = c.pricePerVisit;
-      const tax = subtotal * 0.13;
-      const year = new Date().getFullYear();
-      const count = await prisma.invoice.count({
-        where: { tenantId, number: { startsWith: `INV-${year}-` } },
-      });
-      await prisma.invoice.create({
-        data: {
-          tenantId,
+      // Priced by the same function as an estimate, so an auto-billed visit and a
+      // hand-written one for the same price come out to the same cent.
+      const { subtotalCents, taxCents, totalCents } = quoteTotals(lineItems, DEFAULT_TAX_RATE);
+      /**
+       * Numbered by the one allocator. Counting the rows instead handed the next visit a
+       * number a voided invoice had already taken — either a duplicate on a client's desk
+       * or a dead insert that booked the visit and lost its bill.
+       */
+      await createInvoice(tenantId, {
           projectId: project.id,
-          number: `INV-${year}-${String(count + 1).padStart(4, "0")}`,
           clientName: c.client.name,
           address: c.client.address,
           email: c.client.email,
-          lineItems: JSON.stringify(lineItems),
-          subtotal,
-          tax,
-          total: subtotal + tax,
+          lineItems: lineItemsToJson(lineItems),
+          subtotalCents,
+          taxCents,
+          totalCents,
           notes: `Scheduled maintenance under ${c.name}.`,
           status: "DRAFT",
           dueDate: new Date(next.date.getTime() + 14 * 86_400_000),
-        },
       });
     }
 

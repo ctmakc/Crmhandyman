@@ -1,6 +1,7 @@
 import type { Session } from "next-auth";
 import { prisma } from "@/lib/prisma";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 import { sessionTenant } from "@/lib/session";
 
 /**
@@ -32,9 +33,10 @@ export type AuditEntry = {
 
 /**
  * Formatters re-exported so a call site adds one import for the whole journal line.
- * Money in a summary must read exactly as it reads on the paper the client is holding.
+ * Money in a summary must read exactly as it reads on the paper the client is holding,
+ * so `money()` takes cents like every other formatter in the system.
  */
-export { formatCurrency as money, formatDate as day };
+export { formatCents as money, formatDate as day };
 
 /** Routes holding the raw session instead of a guard identity get their actor here. */
 export function actorFromSession(session: Session): AuditActor {

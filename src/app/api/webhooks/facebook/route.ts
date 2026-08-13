@@ -1,26 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchFbLead, extractLeadField, verifyFbWebhookSignature } from "@/lib/integrations/facebook";
+import { notifyNewLead } from "@/lib/notify";
+import { defangStamps } from "@/lib/lead-notes";
+import { readTextCapped } from "@/lib/request-body";
+import { throttle, throttleVerify, tokenMatches } from "../guard";
+
+/** A lead-ads delivery is a few kilobytes of JSON; this is orders of magnitude over it. */
+const MAX_BODY_BYTES = 256 * 1024;
 
 export async function GET(req: NextRequest) {
+  const limited = throttleVerify(req, "facebook");
+  if (limited) return limited;
+
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
 
-  if (mode === "subscribe" && token === process.env.META_WEBHOOK_VERIFY_TOKEN) {
+  if (mode === "subscribe" && tokenMatches(searchParams.get("hub.verify_token"), process.env.META_WEBHOOK_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 });
   }
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
 export async function POST(req: NextRequest) {
-  const rawBody = await req.text();
-  const signature = req.headers.get("x-hub-signature-256") || "";
+  const limited = throttle(req, "facebook");
+  if (limited) return limited;
 
-  if (process.env.META_APP_SECRET) {
-    const valid = verifyFbWebhookSignature(rawBody, signature, process.env.META_APP_SECRET);
-    if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  /**
+   * Fails closed, the way .env.example has always described it. While the check was
+   * conditional, a deployment that simply left META_APP_SECRET empty accepted invented
+   * lead ids from anyone — and each one costs a Graph API call under our own token.
+   */
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) {
+    console.warn("[webhook] META_APP_SECRET is unset — Facebook delivery refused");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  const rawBody = await readTextCapped(req, MAX_BODY_BYTES);
+  if (rawBody === null) return NextResponse.json({ error: "Body too large" }, { status: 413 });
+
+  const signature = req.headers.get("x-hub-signature-256") || "";
+  if (!verifyFbWebhookSignature(rawBody, signature, secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   let body: { entry?: Array<{ changes?: Array<{ value?: { leadgen_id?: string; page_id?: string } }> }> };
@@ -61,7 +84,7 @@ export async function POST(req: NextRequest) {
         const existing = await prisma.lead.findFirst({ where: { sourceLeadId: leadgenId, tenantId: integration.tenantId } });
         if (existing) continue;
 
-        await prisma.lead.create({
+        const created = await prisma.lead.create({
           data: {
             tenantId: integration.tenantId,
             name,
@@ -72,10 +95,16 @@ export async function POST(req: NextRequest) {
             source: "FACEBOOK",
             sourceLeadId: leadgenId,
             jobType: extractLeadField(fields, "job_type") || extractLeadField(fields, "service"),
-            notes: extractLeadField(fields, "message") || extractLeadField(fields, "comments"),
+            notes: defangStamps(
+              extractLeadField(fields, "message") || extractLeadField(fields, "comments") || ""
+            ),
             status: "NEW",
           },
         });
+
+        // A Lead Ad form is paid traffic: the call back is the product. Never allowed to
+        // fail the delivery — Meta would retry the whole batch over an SMTP hiccup.
+        await notifyNewLead(integration.tenantId, created.id);
       } catch (err) {
         console.error("Error processing FB lead:", err);
       }

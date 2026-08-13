@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
 import { scopedUserId } from "@/lib/scope";
 import { parseDayInput } from "@/lib/dates";
+import { inDollars, lineItemsJsonInDollars } from "@/lib/money";
+import { parseDuration } from "@/lib/schedule";
+import { doubleBooked } from "@/lib/schedule-db";
+import { PROJECT_STATUSES, badChoice, choice } from "@/lib/enums";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireUser();
@@ -21,7 +25,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       },
       invoices: {
         orderBy: { issuedAt: "desc" },
-        include: { payments: { select: { amount: true } } },
+        include: { payments: { select: { amountCents: true } } },
       },
       payments: { orderBy: { date: "desc" } },
       expenses: { orderBy: { date: "desc" } },
@@ -37,17 +41,47 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
    * work and its tasks; the money rides with `viewerRole` so the page knows what to draw.
    */
   if (role !== "ADMIN") {
+    /**
+     * ONE number survives the filter: what this job still owes.
+     *
+     * The tech collects at the door — that is his part of the money and always has been —
+     * and the screen he collects on showed him no figure at all, so every visit ended in
+     * a phone call to the office to ask how much. The role filter had taken the amount
+     * out along with the margin, the quoted price and the rest of the book. This is the
+     * balance on the paper the client is holding, and nothing else.
+     */
+    const dueAtDoorCents = project.invoices
+      .filter((i) => i.status === "SENT" || i.status === "PARTIAL")
+      .reduce(
+        (sum, i) => sum + (i.totalCents - i.payments.reduce((paid, p) => paid + p.amountCents, 0)),
+        0
+      );
+
     return NextResponse.json({
       ...project,
       estimates: [],
       invoices: [],
       payments: [],
       expenses: [],
+      // Out through the same door as every other amount — dollars, once.
+      ...inDollars({ dueAtDoorCents }),
       viewerRole: role,
     });
   }
 
-  return NextResponse.json({ ...project, viewerRole: role });
+  // Out in dollars, lines re-priced into dollars with them.
+  return NextResponse.json({
+    ...inDollars(project),
+    estimates: project.estimates.map((e) => ({
+      ...inDollars(e),
+      lineItems: lineItemsJsonInDollars(e.lineItems),
+    })),
+    invoices: project.invoices.map((i) => ({
+      ...inDollars(i),
+      lineItems: lineItemsJsonInDollars(i.lineItems),
+    })),
+    viewerRole: role,
+  });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
@@ -63,6 +97,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const assignee = await scopedUserId(tenantId, body.assignedToId);
   if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
 
+  // A status the schema has never heard of reached Prisma and answered 500 — the board
+  // showed a status button that silently did nothing.
+  const status = choice(PROJECT_STATUSES, body.status);
+  if (status === null)
+    return NextResponse.json(badChoice("job status", PROJECT_STATUSES), { status: 400 });
+
   /**
    * Who owns a job is the dispatcher's call. The crew select on the job card sends the
    * whole project back on every save, so a tech pressing «Start job» was also posting
@@ -70,6 +110,30 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
    */
   const assignedToId =
     role === "ADMIN" && "assignedToId" in body ? assignee.value ?? null : undefined;
+
+  /**
+   * How long the job runs is the same call as who runs it, and it travels the same way:
+   * the crew's screens post the whole project back on every save, so a tech pressing
+   * «Start job» must not be able to shorten a four-day renovation to nothing.
+   */
+  const durationMinutes =
+    role === "ADMIN" && "durationMinutes" in body ? parseDuration(body.durationMinutes) : undefined;
+
+  /**
+   * The day the work was finished, stamped by the act of finishing it.
+   *
+   * Nothing ever wrote this column: no screen sends `completedDate`, so every job in
+   * every workspace carried null — and the P&L, which counts a period's closed work by
+   * this date, read JOBS CLOSED 0 forever, on a month with revenue in it. The status is
+   * what a person actually sets, so the date follows the status. Moving a job back OUT
+   * of COMPLETED clears it, because a job that is running again was not finished.
+   */
+  const completedDate =
+    status === "COMPLETED"
+      ? existing.completedDate ?? new Date()
+      : status && status !== existing.status
+        ? null
+        : parseDayInput(body.completedDate);
 
   const project = await prisma.project.update({
     where: { id: params.id },
@@ -81,12 +145,18 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       title: body.title,
       description: body.description,
       jobType: body.jobType,
-      status: body.status,
+      status,
       scheduledDate: parseDayInput(body.scheduledDate),
-      completedDate: parseDayInput(body.completedDate),
+      completedDate,
       assignedToId,
+      durationMinutes,
     },
   });
 
-  return NextResponse.json(project);
+  /**
+   * The answer carries the double booking rather than refusing the save. Two short
+   * moving jobs on one man in one afternoon is a normal Saturday; the dispatcher has to
+   * be told, and then left to decide.
+   */
+  return NextResponse.json({ ...project, conflicts: await doubleBooked(tenantId, project) });
 }

@@ -155,6 +155,9 @@ page entrance, never on scroll, never re-triggered. `prefers-reduced-motion` col
 - Numbers are mono and tabular everywhere; money never sits in a proportional face.
 - Money is a **gauge readout**: the currency symbol is a unit mark at 62% size and 45%
   opacity so the digits carry the weight, the way a dial reads `12.4` and prints `PSI` small.
+- Money reaches a component as **whole cents** and is printed by `formatCents`; the
+  `<Money cents={…} />` prop is named for its unit. Handed dollars, every readout on the
+  screen would print a hundredth of the bill.
 
 ## Screenshot-critique log (design-engine loop)
 
@@ -290,3 +293,40 @@ instruments stayed; they gained hands:
 
 Loop: live smoke (inline outcome click, call-log append, chips) + screenshot pass desktop
 and 390px, zero console errors, contrast sweep over list + record pages: zero failures.
+
+### Revision 3.2, 2026-08-13 — the day rail learns who is out and for how long
+
+The week board was the one device that still reported a number nobody could act on:
+`4/2 OVER`, jobs divided by heads. It went red on a day where the crew was free and stayed
+quiet on a day where one man was booked twice, and it never named anybody. Two additions,
+both assembled from the existing toolbox — no new colour, no new radius, no new type:
+
+- **Load lines.** Under each day numeral, one mono line per person who is actually out
+  (`SAM C`, `×2` when he has more than one stop), in `--ink-2`. A man whose jobs overlap in
+  time turns `--rose-ink` and gains a leading `!`; work with nobody on it counts separately
+  in `--amber-ink` as `n UNCREWED`, because an unassigned job is a truck that does not
+  leave. The week head carries the same fact in one phrase: `1 DAY DOUBLE-BOOKED`.
+- **Run bars.** A job that holds more than one day is drawn once, as a bar over the columns
+  it occupies, laid on top of the seven-column grid at the band under the numerals and
+  stacked into lanes when two runs overlap. `◀` and `▶` mark a run that continues outside
+  this week. A mover's three-hour stop stays a stub inside its column — the two trades read
+  the same rail with their own ruler. The phone stack keeps the same information as
+  `day 2/4` on the job line plus the day's clash names in rose.
+
+The dispatch strip on the job card (DAY · START · TAKES · CREW) reuses the form language of
+every other screen — mono eyebrow above its control, 3px radius, no frame. The double-booking
+warning is a rule in `--rose` over a plain block: what collides, at what time, and two
+buttons. It reports; it never refuses.
+
+Loop, two cycles: **1** — the strip's labels sat inline beside their controls (`<span>` is
+inline, and only the other forms' `w-full` inputs had been forcing the stack); labels now
+own a `flex flex-col` label, and the duration options lost their prose so the select stops
+stretching. **2** — desktop and 390px re-shot, both correct: bars span the right columns,
+the clash line names the right man, the phone stack numbers the day of the run. Gate: `tsc`
+clean, `next lint` clean, 282 tests green, zero new console errors, and the only tones
+introduced are `--rose-ink` and `--amber-ink`, both already AA-verified text twins.
+
+One trap worth writing down: a stale service worker (`hp-shell-v1`) kept serving an old JS
+chunk through server restarts, so three screenshot cycles were spent looking at code that
+no longer existed. When a change refuses to appear, unregister the worker and drop its
+caches before doubting the code.

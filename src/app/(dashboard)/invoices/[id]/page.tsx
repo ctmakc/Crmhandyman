@@ -4,19 +4,21 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import {
+  formatCents,
+  inCents,
+  lineTotalCents,
+  parseLineItems,
+  toCents,
+  toDollars,
+  type InCents,
+  type LineItem,
+} from "@/lib/money";
 import { buttonClass, Empty, spineFor, textToneFor, Skeleton } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { isOverdue, daysOverdue, chaseStage } from "@/lib/invoice-state";
 
-interface LineItem {
-  description: string;
-  qty: number;
-  unit: string;
-  unitPrice: number;
-}
-
-interface Payment {
+interface ApiPayment {
   id: string;
   amount: number;
   method: string;
@@ -24,7 +26,8 @@ interface Payment {
   notes?: string | null;
 }
 
-interface Invoice {
+/** The payload as the API serves it: dollars. */
+interface ApiInvoice {
   id: string;
   number: string;
   clientName: string;
@@ -42,9 +45,12 @@ interface Invoice {
   reminderCount: number;
   remindedAt?: string | null;
   kind: string;
-  payments: Payment[];
+  payments: ApiPayment[];
   project: { id: string; title: string; jobType?: string | null } | null;
 }
+
+/** What this screen holds. */
+type Invoice = InCents<ApiInvoice>;
 
 const METHODS = ["E_TRANSFER", "CASH", "CHEQUE", "CARD"];
 
@@ -72,9 +78,11 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const load = useCallback(async () => {
     const res = await fetch(`/api/invoices/${params.id}`);
     if (res.ok) {
-      const data = await res.json();
+      // The one door on this screen: dollars off the wire, cents from here on. The pay
+      // field is the other direction — it is typed and posted in dollars.
+      const data = inCents((await res.json()) as ApiInvoice);
       setInvoice(data);
-      setPayAmount((data.total - data.amountPaid).toFixed(2));
+      setPayAmount(toDollars(data.totalCents - data.amountPaidCents).toFixed(2));
     }
     setLoading(false);
   }, [params.id]);
@@ -92,15 +100,16 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
     });
     await load();
     setBusy(false);
-    if (body.action === "pay") toast(`Payment of ${formatCurrency(Number(body.amount))} recorded`);
+    if (body.action === "pay")
+      toast(`Payment of ${formatCents(toCents(Number(body.amount)))} recorded`);
     else if (body.status) toast(`Invoice marked ${String(body.status).toLowerCase()}`);
   }
 
   if (loading) return <Skeleton lines={6} />;
   if (!invoice) return <Empty>Invoice not found</Empty>;
 
-  const items: LineItem[] = JSON.parse(invoice.lineItems);
-  const owing = invoice.total - invoice.amountPaid;
+  const items: LineItem[] = parseLineItems(invoice.lineItems);
+  const owingCents = invoice.totalCents - invoice.amountPaidCents;
   const overdue = isOverdue(invoice);
   const stage = chaseStage(invoice);
 
@@ -201,15 +210,19 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           </div>
         </div>
 
-        {/* Ruled rows — no zebra stripes, no card per line. */}
+        {/* Ruled rows — no zebra stripes, no card per line. Five money columns do not
+            fit a phone, so the table scrolls inside its own box rather than pushing the
+            page sideways; `scope` on the headers is what lets a reader say which column
+            an amount belongs to. */}
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-line">
-              <th className="eyebrow px-6 py-2.5 text-left">Description</th>
-              <th className="eyebrow px-3 py-2.5 text-right">Qty</th>
-              <th className="eyebrow px-3 py-2.5 text-left">Unit</th>
-              <th className="eyebrow px-3 py-2.5 text-right">Rate</th>
-              <th className="eyebrow px-6 py-2.5 text-right">Amount</th>
+              <th scope="col" className="eyebrow px-6 py-2.5 text-left">Description</th>
+              <th scope="col" className="eyebrow px-3 py-2.5 text-right">Qty</th>
+              <th scope="col" className="eyebrow px-3 py-2.5 text-left">Unit</th>
+              <th scope="col" className="eyebrow px-3 py-2.5 text-right">Rate</th>
+              <th scope="col" className="eyebrow px-6 py-2.5 text-right">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -219,38 +232,39 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                 <td className="mono px-3 py-3 text-right text-[13px] text-ink-2">{item.qty}</td>
                 <td className="px-3 py-3 text-[13px] text-ink-3">{item.unit}</td>
                 <td className="mono px-3 py-3 text-right text-[13px] text-ink-2">
-                  {formatCurrency(item.unitPrice)}
+                  {formatCents(item.unitPriceCents)}
                 </td>
                 <td className="mono px-6 py-3 text-right text-[14px] font-medium text-ink">
-                  {formatCurrency(item.qty * item.unitPrice)}
+                  {formatCents(lineTotalCents(item))}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
 
         <div className="flex justify-end px-6 py-5">
           <dl className="w-full max-w-[260px] space-y-2 text-[13px]">
             <div className="flex justify-between">
               <dt className="text-ink-2">Subtotal</dt>
-              <dd className="mono text-ink">{formatCurrency(invoice.subtotal)}</dd>
+              <dd className="mono text-ink">{formatCents(invoice.subtotalCents)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-ink-2">HST / GST</dt>
-              <dd className="mono text-ink">{formatCurrency(invoice.tax)}</dd>
+              <dd className="mono text-ink">{formatCents(invoice.taxCents)}</dd>
             </div>
             <div className="flex justify-between border-t border-line pt-2">
               <dt className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">Total</dt>
               <dd className="mono text-[19px] font-bold text-ink">
-                {formatCurrency(invoice.total)}
+                {formatCents(invoice.totalCents)}
               </dd>
             </div>
-            {invoice.amountPaid > 0 && (
+            {invoice.amountPaidCents > 0 && (
               <>
                 <div className="flex justify-between">
                   <dt className="text-ink-2">Paid</dt>
                   <dd className="mono" style={{ color: "var(--emerald-ink)" }}>
-                    −{formatCurrency(invoice.amountPaid)}
+                    −{formatCents(invoice.amountPaidCents)}
                   </dd>
                 </div>
                 <div className="flex justify-between border-t border-line pt-2">
@@ -259,9 +273,9 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                   </dt>
                   <dd
                     className="mono text-[19px] font-bold"
-                    style={{ color: owing > 0.005 ? "var(--rose-ink)" : "var(--emerald)" }}
+                    style={{ color: owingCents > 0 ? "var(--rose-ink)" : "var(--emerald)" }}
                   >
-                    {formatCurrency(Math.max(owing, 0))}
+                    {formatCents(Math.max(owingCents, 0))}
                   </dd>
                 </div>
               </>
@@ -289,9 +303,9 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
             <div className="eyebrow">Amount due</div>
             <p
               className="mono mt-1 text-[20px] font-bold"
-              style={{ color: owing > 0.005 ? "var(--ink)" : "var(--emerald)" }}
+              style={{ color: owingCents > 0 ? "var(--ink)" : "var(--emerald)" }}
             >
-              {formatCurrency(Math.max(owing, 0))}
+              {formatCents(Math.max(owingCents, 0))}
             </p>
           </div>
         </div>
@@ -350,7 +364,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               </select>
             </div>
             <button
-              disabled={busy || owing <= 0.005}
+              disabled={busy || owingCents <= 0}
               onClick={() => patch({ action: "pay", amount: Number(payAmount), method: payMethod })}
               className={buttonClass("primary")}
             >
@@ -369,7 +383,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                     {new Date(p.date).toLocaleDateString("en-CA")} · {p.method.replace("_", "-")}
                   </span>
                   <span className="mono text-[13px] font-medium" style={{ color: "var(--emerald-ink)" }}>
-                    {formatCurrency(p.amount)}
+                    {formatCents(p.amountCents)}
                   </span>
                 </div>
               ))}

@@ -26,7 +26,28 @@ box-shadows, every number in Chivo Mono.
   twice never double-books a visit. Optional draft invoice per visit.
 - **Field mode** (`/today`) — the tech's screen: today's stops, the equipment on site,
   and call / drive / start / finish in one tap each. Unclosed work carries forward.
-- **Crew load** — jobs per day against crew size, overbooked days flagged
+- **Field mode works with no signal** — the board is installable on a phone and keeps
+  the last answer it received, stamped with the time it arrived. Start and finish taken
+  in a basement queue up and send themselves when the signal returns; each one carries
+  the status the tech was looking at, so the dispatcher who cancelled the job an hour ago
+  wins and the tap comes back as a rejection he can read. Taking a payment and uploading
+  a photo stay online actions — replaying those would book the same $500 twice.
+- **New-lead alerts** (`Settings → Lead alerts`) — a lead arriving from a landing page,
+  a Meta form or the mail hook reaches the owner's own Telegram bot and inbox within
+  seconds, with the phone number in dialable form. Quiet hours hold the message and say
+  when it goes out; a burst folds into one digest. The bot token never leaves the server.
+  Every attempt is written to the action log, including the ones that failed.
+- **The response clock** — how long each lead has been waiting for a callback, on the
+  card as a stopwatch and on the sheet as a column that sorts it. The call sheet points
+  at today: live unanswered leads on top, cold ones below them, worked ones last.
+- **Ad channel report** (`/reports`, owner only) — leads → reached → jobs → invoiced →
+  collected → margin per channel, against the ad spend booked for that month: cost per
+  lead, cost per job, return on the ad dollar, and the average time to first reply.
+  Exports as CSV.
+- **Crew load and double booking** — the week rail counts the day by who actually holds
+  the work, names the man with two jobs at once, and counts a multi-day renovation on
+  every day it runs. A clash warns and lets the dispatcher through: two short moving
+  jobs in one afternoon is a normal Saturday.
 - **Tasks** — crew kanban (drag & drop), assign to workers
 - **Job economics** — quoted → invoiced → collected → costs → margin on every job.
   Margin is measured against what was *collected*, not what was billed: money still on
@@ -35,9 +56,13 @@ box-shadows, every number in Chivo Mono.
 - **Deposits** — an accepted estimate can be torn into two independently payable
   invoices (50/50, 30/70, 25/75). The deposit is a single percentage line; the balance
   carries the real items and subtracts the deposit. The halves sum to the whole exactly.
-- **Overdue reminders** — tone escalates with the age of the debt (nudge → call → final
-  notice). The attempt is always recorded, and if SMTP is not configured the desk says
-  so rather than pretending an email went out.
+- **Overdue reminders** — the first week carries no pressure (the bill goes out again
+  «for your records»), the nudge lands on day 7, the «when can we expect it» on day 14,
+  the stop-work notice on day 30. One ladder feeds both the lane and the letter, so they
+  cannot disagree. An invoice with no address on file moves to a CALL band with the
+  number, the balance and what the work was; the letter is still written, as the script
+  for that call. The attempt is always recorded, and one delivered reminder per invoice
+  per day is the ceiling.
 - **CSV export** — invoices, payments, expenses and per-job margin, Excel-safe
 - **Finance** — payments (cash, e-transfer, cheque, card), expenses by category, monthly P&L
 - **Renovation** — the third vertical: 53 reno line items priced for Ottawa, four whole-job
@@ -57,7 +82,9 @@ box-shadows, every number in Chivo Mono.
 - **Team** — admin + multiple workers, role-based access. The books, the paper, the
   export and the prices are the owner's; the field screens, photos and taking money at
   the door are the whole crew's. Everyone can change their own password on `/account`.
-- **Mobile-friendly** — the same deck works on a phone in a driveway
+- **Mobile-friendly** — the same deck works on a phone in a driveway: 44px targets in
+  the field, a visible focus ring, a skip link into the day's work, and every tone
+  doubled by something other than colour
 
 ## Quick Start
 
@@ -105,13 +132,26 @@ npm run test        # unit + end-to-end, one command
 ```
 
 Two suites under one runner. `unit` covers the money rules out of `src/lib` — tax and
-totals, invoice state, deposit splits, the moving calculator, local-day parsing. `e2e`
-boots the real application on a throwaway database and drives it over HTTP with real
-sessions: the whole chain from a landing-page lead to a settled invoice, and a second
-workspace failing to reach the first one through every route that takes an id.
+totals, invoice state, deposit splits, the moving calculator, local-day parsing, the
+response clock, the quiet-hours window and the enum guards. `e2e` boots the real
+application on a throwaway database and drives it over HTTP with real sessions: the whole
+chain from a landing-page lead to a settled invoice, and a second workspace failing to
+reach the first one through every route that takes an id.
 
 The end-to-end suite never touches `dev.db`. It builds its own database with
 `prisma migrate deploy` in a temp directory and deletes it on the way out.
+
+### Does the paper add up?
+
+```bash
+npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/check-money.ts
+```
+
+Read-only. Walks every estimate and invoice in the database and asserts the two promises
+printed on each one: the line amounts add up to the subtotal, and the subtotal plus tax
+is the total. Exits non-zero when one does not, so it can gate a release. Run it before
+handing a workspace to a client and after any import — a stored total nobody looks at is
+exactly where a document quietly stops adding up.
 
 ## Deployment
 

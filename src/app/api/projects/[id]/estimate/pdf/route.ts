@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
-import { docRef, renderDocument, DocLineItem } from "@/lib/document";
+import { docRef, renderDocument } from "@/lib/document";
+import { parseLineItems } from "@/lib/money";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireAdmin();
@@ -60,10 +61,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     phone: estimate.project.phone,
     email: estimate.project.email,
     jobTitle: estimate.project.title,
-    lineItems: JSON.parse(estimate.lineItems) as DocLineItem[],
-    subtotal: estimate.subtotal,
-    tax: estimate.tax,
-    total: estimate.total,
+    lineItems: parseLineItems(estimate.lineItems),
+    subtotalCents: estimate.subtotalCents,
+    taxCents: estimate.taxCents,
+    totalCents: estimate.totalCents,
     notes: estimate.notes,
     issuedAt: estimate.createdAt,
     validUntil: estimate.validUntil,

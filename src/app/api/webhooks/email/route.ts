@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { notifyNewLead } from "@/lib/notify";
+import { defangStamps } from "@/lib/lead-notes";
 import crypto from "crypto";
+import { declaredTooLarge } from "@/lib/request-body";
+import { throttle } from "../guard";
 
 /**
  * Fails closed. This used to return true when the signing key was absent, so a
@@ -57,8 +61,20 @@ function extractPhoneFromText(text: string): string | undefined {
   return match?.[0];
 }
 
+/** Mailgun refuses a message over 25 MB itself; past that the body is not a mail. */
+const MAX_BODY_BYTES = 30 * 1024 * 1024;
+
 // Mailgun inbound parse webhook
 export async function POST(req: NextRequest) {
+  // Before the multipart parse and before the signature: a refusal here costs a map
+  // lookup, while everything below it buffers a message and then queries the tenant.
+  const limited = throttle(req, "email");
+  if (limited) return limited;
+
+  if (declaredTooLarge(req, MAX_BODY_BYTES)) {
+    return NextResponse.json({ error: "Body too large" }, { status: 413 });
+  }
+
   const formData = await req.formData();
 
   const timestamp = formData.get("timestamp")?.toString() || "";
@@ -114,17 +130,21 @@ export async function POST(req: NextRequest) {
     if (existing) return NextResponse.json({ ok: true, deduped: true });
   }
 
-  await prisma.lead.create({
+  const created = await prisma.lead.create({
     data: {
       tenantId,
       name,
       email,
       phone,
       source: source as never,
-      notes: `Subject: ${subject}\n\n${bodyText.slice(0, 500)}`,
+      notes: defangStamps(`Subject: ${subject}\n\n${bodyText.slice(0, 500)}`),
       status: "NEW",
     },
   });
+
+  // A HomeStars enquiry is worth the same as a quiz answer, and it arrives while the
+  // owner is under a truck. Delivery failures stay inside this call.
+  await notifyNewLead(tenantId, created.id);
 
   return NextResponse.json({ ok: true });
 }

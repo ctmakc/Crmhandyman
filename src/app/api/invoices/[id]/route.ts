@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
 import { record, money } from "@/lib/audit";
-import { cents, round2 } from "@/lib/money";
+import { inDollars, lineItemsJsonInDollars, parseCents } from "@/lib/money";
 import { parseDayInput } from "@/lib/dates";
+
+/** One door out: amounts in dollars, lines in dollars. */
+const invoiceOut = <T extends { lineItems: string }>(invoice: T) => ({
+  ...inDollars(invoice),
+  lineItems: lineItemsJsonInDollars(invoice.lineItems),
+});
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireAdmin();
@@ -19,10 +25,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({
-    ...invoice,
-    amountPaid: invoice.payments.reduce((s, p) => s + p.amount, 0),
-  });
+  return NextResponse.json(
+    invoiceOut({
+      ...invoice,
+      amountPaidCents: invoice.payments.reduce((s, p) => s + p.amountCents, 0),
+    })
+  );
 }
 
 /**
@@ -37,15 +45,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.id, tenantId },
-    include: { payments: { select: { amount: true } } },
+    include: { payments: { select: { amountCents: true } } },
   });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
 
   if (body.action === "pay") {
-    const amount = round2(Number(body.amount));
-    if (!amount || amount <= 0)
+    // Dollars arrive from the desk and become cents here, once.
+    const amountCents = parseCents(body.amount);
+    if (!amountCents || amountCents <= 0)
       return NextResponse.json({ error: "Amount must be positive" }, { status: 400 });
 
     await prisma.payment.create({
@@ -53,15 +62,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         tenantId,
         projectId: invoice.projectId,
         invoiceId: invoice.id,
-        amount,
+        amountCents,
         method: body.method || "E_TRANSFER",
         notes: body.notes,
       },
     });
 
-    const paid = round2(invoice.payments.reduce((s, p) => s + p.amount, 0) + amount);
-    // Compare in whole cents — float sums otherwise leave $0.001 owing forever.
-    const settled = cents(paid) >= cents(invoice.total);
+    const paidCents = invoice.payments.reduce((s, p) => s + p.amountCents, 0) + amountCents;
+    // Whole cents on both sides: float sums used to leave $0.001 owing forever.
+    const settled = paidCents >= invoice.totalCents;
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
@@ -71,7 +80,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       },
     });
 
-    const owing = round2(invoice.total - paid);
+    const owingCents = invoice.totalCents - paidCents;
     await record({
       tenantId,
       actor: guard.identity,
@@ -79,13 +88,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       entity: "Invoice",
       entityId: invoice.id,
       summary:
-        `Took ${money(amount)} by ${String(body.method || "E_TRANSFER").replace(/_/g, " ")} ` +
+        `Took ${money(amountCents)} by ${String(body.method || "E_TRANSFER").replace(/_/g, " ")} ` +
         `on ${invoice.number} from ${invoice.clientName} — ` +
-        (settled ? "settled in full" : `${money(owing)} still owing`),
-      meta: { amount, method: body.method || "E_TRANSFER", paid, total: invoice.total, settled },
+        (settled ? "settled in full" : `${money(owingCents)} still owing`),
+      meta: {
+        amountCents,
+        method: body.method || "E_TRANSFER",
+        paidCents,
+        totalCents: invoice.totalCents,
+        settled,
+      },
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(invoiceOut(updated));
   }
 
   const data: Record<string, unknown> = {};
@@ -107,13 +122,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       entity: "Invoice",
       entityId: invoice.id,
       summary:
-        `Moved ${invoice.number} (${money(invoice.total)}) for ${invoice.clientName} ` +
+        `Moved ${invoice.number} (${money(invoice.totalCents)}) for ${invoice.clientName} ` +
         `from ${invoice.status} to ${body.status}`,
       meta: { from: invoice.status, to: body.status },
     });
   }
 
-  return NextResponse.json(updated);
+  return NextResponse.json(invoiceOut(updated));
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
@@ -136,9 +151,9 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     action: "invoice.void",
     entity: "Invoice",
     entityId: invoice.id,
-    summary: `Voided ${invoice.number} (${money(invoice.total)}) for ${invoice.clientName}`,
-    meta: { from: invoice.status, total: invoice.total },
+    summary: `Voided ${invoice.number} (${money(invoice.totalCents)}) for ${invoice.clientName}`,
+    meta: { from: invoice.status, totalCents: invoice.totalCents },
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json(invoiceOut(updated));
 }

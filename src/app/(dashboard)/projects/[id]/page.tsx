@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
+import { dayStamp } from "@/lib/dates";
+import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   Empty,
   buttonClass,
@@ -14,6 +16,14 @@ import {
   LaneHead,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import {
+  DEFAULT_SLOT_MINUTES,
+  DURATION_CHOICES,
+  conflictsFor,
+  formatDuration,
+  spanDays,
+  type ScheduleJob,
+} from "@/lib/schedule";
 import { jobMoney, marginTone, marginVerdict } from "@/lib/margin";
 import AddressHistory from "@/components/AddressHistory";
 import JobPhotos from "@/components/JobPhotos";
@@ -31,6 +41,8 @@ interface Project {
   clientId?: string | null;
   createdAt?: string;
   scheduledDate?: string;
+  /** How long the work holds the crew. Hours for a mover, days for a renovation. */
+  durationMinutes?: number | null;
   completedDate?: string;
   estimates: Estimate[];
   tasks: Task[];
@@ -42,9 +54,11 @@ interface Project {
   assignedTo?: { id: string; name: string } | null;
   /** Sent by the API: the crew is served a card with the money stripped out. */
   viewerRole?: "ADMIN" | "WORKER";
+  /** The one figure the crew keeps: what this job still owes, for collecting at the door. */
+  dueAtDoorCents?: number;
 }
 
-interface Estimate {
+interface ApiEstimate {
   id: string;
   status: string;
   total: number;
@@ -53,7 +67,7 @@ interface Estimate {
   createdAt: string;
 }
 
-interface Invoice {
+interface ApiInvoice {
   id: string;
   number: string;
   status: string;
@@ -61,6 +75,9 @@ interface Invoice {
   dueDate: string | null;
   payments: { amount: number }[];
 }
+
+type Estimate = InCents<ApiEstimate>;
+type Invoice = InCents<ApiInvoice>;
 
 interface Task {
   id: string;
@@ -70,7 +87,7 @@ interface Task {
   assignedTo: { id: string; name: string };
 }
 
-interface Payment {
+interface ApiPayment {
   id: string;
   amount: number;
   method: string;
@@ -78,12 +95,57 @@ interface Payment {
   notes?: string;
 }
 
-interface Expense {
+interface ApiExpense {
   id: string;
   amount: number;
   category: string;
   description?: string;
   date: string;
+}
+
+type Payment = InCents<ApiPayment>;
+type Expense = InCents<ApiExpense>;
+
+/** A neighbouring booking on the same day — enough of it to name the collision. */
+interface DayJob {
+  id: string;
+  title: string;
+  clientName: string;
+  status: string;
+  scheduledDate: string | null;
+  durationMinutes: number | null;
+  assignedToId: string | null;
+  assignedTo?: { id: string; name: string } | null;
+}
+
+/**
+ * A day and an optional clock, as the API takes them. A day on its own becomes local
+ * midnight, which is how this system spells «that day, time not agreed yet».
+ */
+function composeSlot(date: string, time: string): string | null {
+  if (!date) return null;
+  return time ? `${date}T${time}` : date;
+}
+
+/** `09:30` for a `<input type="time">` — the shop's local clock, never UTC. */
+function clockOf(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** `Aug 14 · 09:00–12:00`, or the day and its run when nobody named a time. */
+function whenLabel(job: { scheduledDate: string | null; durationMinutes?: number | null }) {
+  if (!job.scheduledDate) return "unscheduled";
+  const d = new Date(job.scheduledDate);
+  const day = formatDate(job.scheduledDate);
+  const runs = spanDays(job as ScheduleJob);
+  const timed = d.getHours() !== 0 || d.getMinutes() !== 0;
+
+  if (runs > 1) return `${day}${timed ? ` ${clockOf(d)}` : ""} · ${runs} days`;
+  if (!timed) return `${day} · anytime`;
+
+  const end = new Date(d.getTime() + (job.durationMinutes ?? DEFAULT_SLOT_MINUTES) * 60_000);
+  return `${day} · ${clockOf(d)}–${clockOf(end)}`;
 }
 
 const TABS = ["overview", "invoices", "crew", "money"] as const;
@@ -105,11 +167,27 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const [crew, setCrew] = useState<Array<{ id: string; name: string }>>([]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  /** The rest of that day's board — what a new assignment would collide with. */
+  const [daySchedule, setDaySchedule] = useState<DayJob[]>([]);
+  /** An assignment the dispatcher has been warned about and has not confirmed yet. */
+  const [pending, setPending] = useState<{ userId: string; clashes: DayJob[] } | null>(null);
+  /** The dispatch strip works on its own draft so a half-typed date never posts. */
+  const [slot, setSlot] = useState({ date: "", time: "", duration: "" });
 
   async function fetchProject() {
     const res = await fetch(`/api/projects/${params.id}`);
-    const data = await res.json();
+    // The one door on this screen: the API answers in dollars, the card works in cents.
+    // The two forms below are the other direction — they post what the owner typed.
+    const data = inCents(await res.json());
     setProject(data);
+    const booked = data.scheduledDate ? new Date(data.scheduledDate) : null;
+    setSlot({
+      date: booked ? dayStamp(booked) : "",
+      // Midnight is what a date-only booking lands on: nobody named a time, so the
+      // field reads ANYTIME rather than lying about a 12am appointment.
+      time: booked && (booked.getHours() || booked.getMinutes()) ? clockOf(booked) : "",
+      duration: data.durationMinutes ? String(data.durationMinutes) : "",
+    });
   }
 
   useEffect(() => {
@@ -121,14 +199,70 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function assignTo(userId: string) {
+  /** The rest of that day's board — every job running through it, this one aside. */
+  async function loadDay(date: string) {
+    if (!date) {
+      setDaySchedule([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/projects?window=day&date=${date}`);
+      const rows = res.ok ? await res.json() : null;
+      if (Array.isArray(rows)) setDaySchedule(rows.filter((j: DayJob) => j.id !== params.id));
+    } catch {
+      /* the warning goes quiet rather than the page */
+    }
+  }
+
+  // Reloaded whenever the job moves, because a warning computed against yesterday's
+  // board is worse than no warning at all.
+  useEffect(() => {
+    loadDay(slot.date);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slot.date, params.id]);
+
+  /** One door for every dispatch write: date, run length and who drives there. */
+  async function saveDispatch(patch: Record<string, unknown>, note: string) {
     await fetch(`/api/projects/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...project, assignedToId: userId || null }),
+      body: JSON.stringify({ ...project, ...patch }),
     });
-    toast(userId ? "Job assigned" : "Assignment cleared");
+    setPending(null);
+    toast(note);
     fetchProject();
+    // The day is re-read after every dispatch: another desk may have booked this tech
+    // while the card sat open, and the standing warning has to know about it.
+    loadDay(typeof patch.scheduledDate === "string" ? patch.scheduledDate.slice(0, 10) : slot.date);
+  }
+
+  /** This job as the schedule library reads it, with `who` standing in for the assignee. */
+  function asScheduled(who: string | null): ScheduleJob {
+    return {
+      id: params.id,
+      scheduledDate: composeSlot(slot.date, slot.time),
+      durationMinutes: slot.duration ? Number(slot.duration) : null,
+      assignedToId: who,
+      status: project?.status,
+    };
+  }
+
+  /**
+   * Assignment warns, never refuses. Two short moving jobs on one man in one afternoon
+   * is a normal Saturday — the dispatcher is told who else that man is already on and
+   * then puts him there anyway if he means it.
+   */
+  function assignTo(userId: string) {
+    if (!userId) {
+      saveDispatch({ assignedToId: null }, "Assignment cleared");
+      return;
+    }
+    const clashes = conflictsFor(asScheduled(userId), daySchedule);
+    if (clashes.length) {
+      setPending({ userId, clashes });
+      return;
+    }
+    saveDispatch({ assignedToId: userId }, "Job assigned");
   }
 
   async function handleStatusChange(status: string) {
@@ -178,13 +312,15 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
   if (!project) return <Skeleton lines={5} />;
 
-  const totalPaid = project.payments.reduce((s, p) => s + p.amount, 0);
-  const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
+  const paidCents = project.payments.reduce((s, p) => s + p.amountCents, 0);
+  const expensesCents = project.expenses.reduce((s, e) => s + e.amountCents, 0);
   const money = jobMoney(project);
   const invoices = project.invoices ?? [];
   // The API already withholds the numbers from a worker; the page stops drawing empty
   // frames around the hole and stops offering controls the answer would refuse.
   const ownerView = project.viewerRole !== "WORKER";
+  // What the current, saved assignment collides with — the card has to keep saying it.
+  const standingClashes = conflictsFor(asScheduled(project.assignedToId ?? null), daySchedule);
   const tabs = ownerView ? TABS : FIELD_TABS;
   const acceptedEstimate = project.estimates.find((e) => e.status === "ACCEPTED");
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
@@ -251,15 +387,84 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             </Link>
           )}
 
-          {/* The tech who owns this job. Field mode and the crew-load readout both
-              read this — until it is set, a worker's Today is empty. Dispatch is the
-              owner's call: the select used to sit here for the crew too, empty, and one
-              tap on «— Unassigned —» took the tech off his own work order. */}
-          {ownerView && (
-            <label className="ml-auto flex items-center gap-2">
+          {!ownerView && project.assignedTo && (
+            <span className="eyebrow ml-auto self-center">Crew · {project.assignedTo.name}</span>
+          )}
+        </div>
+
+        {/* THE DISPATCH STRIP — when it runs, how long it runs, who runs it.
+            Dispatch is the owner's call: the crew select used to sit here for the field
+            too, empty, and one tap on «— Unassigned —» took the tech off his own work
+            order. The date lived in the read-only list below, so a job could not be moved
+            at all once it was opened. */}
+        {ownerView && (
+          <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-3 border-t border-line pt-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="eyebrow">Day</span>
+              <input
+                type="date"
+                value={slot.date}
+                onChange={(e) => {
+                  const next = { ...slot, date: e.target.value };
+                  setSlot(next);
+                  if (next.date)
+                    saveDispatch(
+                      { scheduledDate: composeSlot(next.date, next.time) },
+                      "Job rebooked"
+                    );
+                }}
+                className="mono px-2.5 py-2 text-[12px]"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="eyebrow">Start</span>
+              <input
+                type="time"
+                value={slot.time}
+                onChange={(e) => {
+                  const next = { ...slot, time: e.target.value };
+                  setSlot(next);
+                  if (next.date)
+                    saveDispatch(
+                      { scheduledDate: composeSlot(next.date, next.time) },
+                      next.time ? `Start set ${next.time}` : "Start time cleared"
+                    );
+                }}
+                className="mono px-2.5 py-2 text-[12px]"
+              />
+            </label>
+
+            {/* Two trades, one ruler: a mover books hours of this day, a renovation
+                books days, and the week rail draws whatever comes out as one run. */}
+            <label className="flex flex-col gap-1.5">
+              <span className="eyebrow">Takes</span>
+              <select
+                value={slot.duration}
+                onChange={(e) => {
+                  setSlot({ ...slot, duration: e.target.value });
+                  saveDispatch(
+                    { durationMinutes: e.target.value ? Number(e.target.value) : null },
+                    e.target.value
+                      ? `Runs ${formatDuration(Number(e.target.value))}`
+                      : "Duration cleared"
+                  );
+                }}
+                className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
+              >
+                <option value="">— One stop —</option>
+                {DURATION_CHOICES.map((d) => (
+                  <option key={d.minutes} value={d.minutes}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1.5 sm:ml-auto">
               <span className="eyebrow">Crew</span>
               <select
-                value={project.assignedToId || ""}
+                value={pending?.userId ?? project.assignedToId ?? ""}
                 onChange={(e) => assignTo(e.target.value)}
                 className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
               >
@@ -271,11 +476,64 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 ))}
               </select>
             </label>
-          )}
-          {!ownerView && project.assignedTo && (
-            <span className="eyebrow ml-auto self-center">Crew · {project.assignedTo.name}</span>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* DOUBLE BOOKING — the warning is a report with a way forward, never a refusal.
+            Two short moving jobs on one man in one afternoon is a normal Saturday. */}
+        {ownerView && pending && (
+          <div
+            className="mt-4 border-t border-line pt-4"
+            style={{ borderTopColor: "var(--rose)" }}
+            role="alert"
+          >
+            <div className="eyebrow" style={{ color: "var(--rose-ink)" }}>
+              Double booking
+            </div>
+            <p className="mt-1.5 text-[13px] text-ink">
+              {crew.find((c) => c.id === pending.userId)?.name ?? "That tech"} is already on{" "}
+              {pending.clashes.length} job{pending.clashes.length === 1 ? "" : "s"} at the same
+              time:
+            </p>
+            <ul className="mt-2 space-y-1">
+              {pending.clashes.map((c) => (
+                <li key={c.id} className="text-[13px] text-ink-2">
+                  <Link
+                    href={`/projects/${c.id}`}
+                    className="font-medium text-ink underline underline-offset-4"
+                  >
+                    {c.title}
+                  </Link>{" "}
+                  · {c.clientName} ·{" "}
+                  <span className="mono text-[12px]">{whenLabel(c)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => saveDispatch({ assignedToId: pending.userId }, "Assigned anyway")}
+                className={buttonClass("danger")}
+              >
+                Assign anyway
+              </button>
+              <button onClick={() => setPending(null)} className={buttonClass("ghost")}>
+                Leave as is
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Already double booked, saved and true — the card says so on every visit,
+            not only in the second the dispatcher pressed the button. */}
+        {ownerView && !pending && standingClashes.length > 0 && (
+          <p
+            className="mono mt-3 border-t border-line pt-3 text-[11px] uppercase tracking-[0.08em]"
+            style={{ color: "var(--rose-ink)" }}
+          >
+            ! {project.assignedTo?.name ?? "This tech"} also holds{" "}
+            {standingClashes.map((c) => c.title).join(" · ")} at this time
+          </p>
+        )}
       </div>
 
       {/* Tabs — ruled, not pills. */}
@@ -305,7 +563,23 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               ["Phone", project.phone],
               ["Email", project.email],
               ["Job type", project.jobType],
-              ["Scheduled", project.scheduledDate ? formatDate(project.scheduledDate) : null],
+              [
+                "Scheduled",
+                project.scheduledDate
+                  ? whenLabel({
+                      scheduledDate: project.scheduledDate,
+                      durationMinutes: project.durationMinutes ?? null,
+                    })
+                  : null,
+              ],
+              [
+                "Crew",
+                project.assignedTo
+                  ? project.assignedTo.name
+                  : project.scheduledDate
+                    ? "Nobody assigned yet"
+                    : null,
+              ],
               ["From lead", project.lead ? `${project.lead.name} · ${project.lead.source}` : null],
             ]
               .filter(([, v]) => v)
@@ -330,10 +604,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             <LaneHead title="Job economics" />
             <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-4">
               {[
-                { label: "Quoted", value: formatCurrency(money.quoted) },
-                { label: "Invoiced", value: formatCurrency(money.invoiced) },
-                { label: "Collected", value: formatCurrency(money.collected), tone: "var(--emerald-ink)" },
-                { label: "Costs", value: formatCurrency(money.costs), tone: "var(--rose-ink)" },
+                { label: "Quoted", value: formatCents(money.quotedCents) },
+                { label: "Invoiced", value: formatCents(money.invoicedCents) },
+                {
+                  label: "Collected",
+                  value: formatCents(money.collectedCents),
+                  tone: "var(--emerald-ink)",
+                },
+                { label: "Costs", value: formatCents(money.costsCents), tone: "var(--rose-ink)" },
               ].map((r) => (
                 <div key={r.label}>
                   <div className="eyebrow">{r.label}</div>
@@ -351,14 +629,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               <div>
                 <div className="eyebrow">Margin — collected minus costs</div>
                 <p className="mt-1 text-[13px] text-ink-2">{marginVerdict(money)}</p>
-                {money.unbilled > 0.005 && (
+                {money.unbilledCents > 0 && (
                   <p className="mt-1 text-[13px]" style={{ color: "var(--amber-ink)" }}>
-                    {formatCurrency(money.unbilled)} quoted but never invoiced
+                    {formatCents(money.unbilledCents)} quoted but never invoiced
                   </p>
                 )}
-                {money.outstanding > 0.005 && (
+                {money.outstandingCents > 0 && (
                   <p className="mt-1 text-[13px]" style={{ color: "var(--rose-ink)" }}>
-                    {formatCurrency(money.outstanding)} billed and still on the street
+                    {formatCents(money.outstandingCents)} billed and still on the street
                   </p>
                 )}
               </div>
@@ -367,7 +645,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                   className="mono block text-[30px] font-bold leading-none"
                   style={{ color: marginTone(money.marginPct) }}
                 >
-                  {formatCurrency(money.margin)}
+                  {formatCents(money.marginCents)}
                 </span>
                 {money.marginPct !== null && (
                   <span
@@ -394,7 +672,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             </Empty>
           ) : (
             invoices.map((inv) => {
-              const paid = inv.payments.reduce((s, p) => s + p.amount, 0);
+              const paidCents = inv.payments.reduce((s, p) => s + p.amountCents, 0);
               return (
                 <Link
                   key={inv.id}
@@ -415,10 +693,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       {inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : "No due date"}
                     </span>
                     <span className="mono text-[16px] font-medium text-ink">
-                      {formatCurrency(inv.total)}
-                      {paid > 0 && paid < inv.total && (
+                      {formatCents(inv.totalCents)}
+                      {paidCents > 0 && paidCents < inv.totalCents && (
                         <span className="ml-2 text-[11px] text-ink-3">
-                          paid {formatCurrency(paid)}
+                          paid {formatCents(paidCents)}
                         </span>
                       )}
                     </span>
@@ -479,6 +757,22 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             {showPaymentForm && (
               <Plate className="p-4">
                 <form onSubmit={handleAddPayment} className="grid grid-cols-2 gap-4">
+                  {/* What to ask for. Without it the man at the door phoned the office
+                      for the figure on every visit — the role filter had taken the
+                      balance out along with the margin. */}
+                  {!ownerView && typeof project.dueAtDoorCents === "number" && (
+                    <div className="col-span-2 border-l-2 border-line bg-sunk px-3 py-2">
+                      <div className="eyebrow">Owing on this job</div>
+                      <div className="mono mt-0.5 text-[19px] font-bold text-ink">
+                        {formatCents(project.dueAtDoorCents)}
+                      </div>
+                      {project.dueAtDoorCents === 0 && (
+                        <p className="mt-0.5 text-[12px] text-ink-2">
+                          Nothing invoiced yet — take what the office told you to.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="eyebrow">Amount *</label>
                     <input
@@ -551,14 +845,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       {p.notes ? ` · ${p.notes}` : ""}
                     </span>
                     <span className="mono text-[14px] font-medium" style={{ color: "var(--emerald-ink)" }}>
-                      {formatCurrency(p.amount)}
+                      {formatCents(p.amountCents)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between px-1 py-2.5">
                   <span className="eyebrow">Total in</span>
                   <span className="mono text-[15px] font-bold" style={{ color: "var(--emerald-ink)" }}>
-                    {formatCurrency(totalPaid)}
+                    {formatCents(paidCents)}
                   </span>
                 </div>
               </div>
@@ -653,14 +947,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       {e.description ? ` · ${e.description}` : ""}
                     </span>
                     <span className="mono text-[14px] font-medium" style={{ color: "var(--rose-ink)" }}>
-                      {formatCurrency(e.amount)}
+                      {formatCents(e.amountCents)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between px-1 py-2.5">
                   <span className="eyebrow">Total out</span>
                   <span className="mono text-[15px] font-bold" style={{ color: "var(--rose-ink)" }}>
-                    {formatCurrency(totalExpenses)}
+                    {formatCents(expensesCents)}
                   </span>
                 </div>
               </div>

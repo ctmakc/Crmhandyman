@@ -3,8 +3,22 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
 import { record, money, jobLabel } from "@/lib/audit";
 import { parseDayInput } from "@/lib/dates";
-import { round2 } from "@/lib/money";
+import {
+  inDollars,
+  lineItemsFromInput,
+  lineItemsJsonInDollars,
+  lineItemsToJson,
+  parseTaxRate,
+  quoteTotals,
+} from "@/lib/money";
 import { docRef } from "@/lib/document";
+import { ESTIMATE_STATUSES, badChoice, choice } from "@/lib/enums";
+
+/** One door out: amounts in dollars, lines in dollars, the shape the desk has always read. */
+const estimateOut = <T extends { lineItems: string }>(estimate: T) => ({
+  ...inDollars(estimate),
+  lineItems: lineItemsJsonInDollars(estimate.lineItems),
+});
 
 /** The project must belong to the caller's tenant before anything is read or written onto it. */
 async function ownedProject(projectId: string, tenantId: string) {
@@ -26,7 +40,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(estimates);
+  return NextResponse.json(estimates.map(estimateOut));
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -38,35 +52,37 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
-  const lineItems = body.lineItems as Array<{
-    description: string;
-    qty: number;
-    unit: string;
-    unitPrice: number;
-  }>;
 
-  // Rounded before it is stored: a raw float product puts 31.525000000000002 on paper
-  // and the number the client is asked for stops being a number they can transfer.
-  const subtotal = round2(lineItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0));
-  const taxRate = body.taxRate ?? 0.13;
-  const tax = round2(subtotal * taxRate);
-  const total = round2(subtotal + tax);
+  // The form posts dollars; this is where they stop being dollars. Every amount below,
+  // and every amount stored, is a whole number of cents.
+  const lineItems = lineItemsFromInput(body.lineItems);
+
+  // A fraction, never a percentage. `13` here means 1300% and once produced a real
+  // invoice with $1,300.00 of tax on $100.00 of work.
+  const taxRate = parseTaxRate(body.taxRate);
+  if (taxRate === null)
+    return NextResponse.json(
+      { error: "Tax rate is a fraction between 0 and 0.3 — 13% is 0.13", field: "taxRate" },
+      { status: 400 }
+    );
+
+  const { subtotalCents, taxCents, totalCents } = quoteTotals(lineItems, taxRate);
 
   const estimate = await prisma.estimate.create({
     data: {
       tenantId,
       projectId: params.id,
-      lineItems: JSON.stringify(lineItems),
-      subtotal,
-      tax,
-      total,
+      lineItems: lineItemsToJson(lineItems),
+      subtotalCents,
+      taxCents,
+      totalCents,
       notes: body.notes,
       validUntil: parseDayInput(body.validUntil),
       status: "DRAFT",
     },
   });
 
-  return NextResponse.json(estimate, { status: 201 });
+  return NextResponse.json(estimateOut(estimate), { status: 201 });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
@@ -75,6 +91,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const { tenantId } = guard.identity;
 
   const body = await req.json();
+
+  const status = choice(ESTIMATE_STATUSES, body.status);
+  if (status === null)
+    return NextResponse.json(badChoice("estimate status", ESTIMATE_STATUSES), { status: 400 });
 
   // Scope by id AND tenant AND the project in the URL: accepting a bare body.id let
   // anyone flip another contractor's estimate to ACCEPTED.
@@ -88,38 +108,43 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const estimate = await prisma.estimate.update({
     where: { id: owned.id },
     data: {
-      status: body.status,
+      status,
       notes: body.notes,
     },
   });
 
-  if (body.status && body.status !== owned.status) {
+  if (status && status !== owned.status) {
     const ref = docRef("EST", estimate.id, estimate.createdAt);
     // An accepted price is the one a client argues about later, so the decision
     // words go in plainly instead of a FROM → TO transition.
     const verb =
-      body.status === "ACCEPTED"
+      status === "ACCEPTED"
         ? "accepted"
-        : body.status === "REJECTED"
+        : status === "REJECTED"
         ? "rejected"
-        : `moved from ${owned.status} to ${body.status}`;
+        : `moved from ${owned.status} to ${status}`;
     await record({
       tenantId,
       actor: guard.identity,
       action:
-        body.status === "ACCEPTED"
+        status === "ACCEPTED"
           ? "estimate.accept"
-          : body.status === "REJECTED"
+          : status === "REJECTED"
           ? "estimate.reject"
           : "estimate.status",
       entity: "Estimate",
       entityId: estimate.id,
       summary:
-        `Estimate ${ref} (${money(estimate.total)}) ${verb} on ` +
+        `Estimate ${ref} (${money(estimate.totalCents)}) ${verb} on ` +
         `${await jobLabel(tenantId, params.id)}`,
-      meta: { from: owned.status, to: body.status, total: estimate.total, projectId: params.id },
+      meta: {
+        from: owned.status,
+        to: status,
+        totalCents: estimate.totalCents,
+        projectId: params.id,
+      },
     });
   }
 
-  return NextResponse.json(estimate);
+  return NextResponse.json(estimateOut(estimate));
 }

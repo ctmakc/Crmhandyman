@@ -1,27 +1,30 @@
-import nodemailer from "nodemailer";
+import { mailer, smtpConfigured, smtpFrom } from "@/lib/mailer";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
+/**
+ * The estimate, as a PDF, to the client.
+ *
+ * With SMTP unset this used to build a transport anyway and hang on a host that does not
+ * exist. The caller gets a plain false instead, which is what the screen already knows
+ * how to say.
+ */
 export async function sendEstimateEmail(
   to: string,
   clientName: string,
   estimateId: string,
   pdfBuffer: Buffer
-) {
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || "HandymanCRM <noreply@example.com>",
+): Promise<boolean> {
+  if (!smtpConfigured()) return false;
+
+  // The name reached this shop through a public quiz form; it is escaped before it is
+  // put in markup, exactly as the printed document does it.
+  const name = clientName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  await mailer().sendMail({
+    from: smtpFrom(),
     to,
     subject: `Your Estimate from HandymanPro`,
     html: `
-      <p>Hi ${clientName},</p>
+      <p>Hi ${name},</p>
       <p>Please find your estimate attached. To accept or decline, please reply to this email.</p>
       <p>Thank you for your business!</p>
     `,
@@ -33,4 +36,5 @@ export async function sendEstimateEmail(
       },
     ],
   });
+  return true;
 }

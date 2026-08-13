@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 import { docRef } from "@/lib/document";
 
 /* ==========================================================================
@@ -125,16 +126,23 @@ export function Status({ value, tone }: { value: string; tone?: string }) {
 /**
  * A gauge readout. The currency symbol is a unit mark — it recedes so the digits
  * carry the weight, the way a dial reads "12.4" and prints "PSI" small.
+ *
+ * The recede is carried by size and by a neutral tone. It used to be carried by
+ * `opacity: .45`, which put the dollar sign at 1.9:1 on the deck — no opacity below
+ * 1 gets a rose or emerald readout to AA, so the unit mark keeps its own ink
+ * instead. The digits still hold the semantic colour, which is the point.
  */
 export function Readout({
   value,
   size = 30,
   tone,
+  unitTone = "var(--ink-3)",
   className,
 }: {
   value: string;
   size?: number;
   tone?: string;
+  unitTone?: string;
   className?: string;
 }) {
   const m = value.match(/^([^\d\-]*)(.*)$/);
@@ -145,19 +153,22 @@ export function Readout({
       className={cn("mono font-bold leading-none", className)}
       style={{ color: tone || "var(--ink)", fontSize: size, letterSpacing: "-0.03em" }}
     >
-      {unit && <span style={{ opacity: 0.45, fontSize: size * 0.62 }}>{unit}</span>}
+      {unit && <span style={{ color: unitTone, fontSize: size * 0.62 }}>{unit}</span>}
       {digits}
     </span>
   );
 }
 
-/** Money is always Chivo Mono, tabular, right-aligned. */
+/**
+ * Money is always Chivo Mono, tabular, right-aligned — and always cents. The prop is
+ * named for its unit: a screen that hands it dollars prints a hundredth of the bill.
+ */
 export function Money({
-  value,
+  cents,
   className,
   tone,
 }: {
-  value: number;
+  cents: number;
   className?: string;
   tone?: string;
 }) {
@@ -166,7 +177,7 @@ export function Money({
       className={cn("mono font-medium tabular-nums", className)}
       style={tone ? { color: tone } : undefined}
     >
-      {formatCurrency(value)}
+      {formatCents(cents)}
     </span>
   );
 }
@@ -306,8 +317,17 @@ export function Button({
 }
 
 export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary") {
+  /**
+   * `min-h-[44px]` below the `md` breakpoint is the whole field-mode promise: the
+   * button rendered at 38px, which is a mis-tap with a glove on. The desk keeps
+   * its density above `md`.
+   *
+   * Disabled used to be `opacity-50`, which put the label at 1.9:1 — outdoors a
+   * disabled CALL simply vanished instead of reading as unavailable. It is a
+   * recessed surface now: legible, and obviously not live.
+   */
   const base =
-    "inline-flex items-center justify-center gap-2 rounded border px-3.5 py-2 text-[13px] font-bold uppercase tracking-[0.05em] transition-all duration-[140ms] ease-instrument disabled:opacity-50";
+    "inline-flex min-h-[44px] items-center justify-center gap-2 rounded border px-3.5 py-2 text-[13px] font-bold uppercase tracking-[0.05em] transition-all duration-[140ms] ease-instrument md:min-h-0 disabled:cursor-not-allowed disabled:border-line disabled:bg-sunk disabled:text-ink-3";
   if (variant === "primary")
     return cn(
       base,
@@ -322,14 +342,27 @@ export function buttonClass(variant: "primary" | "ghost" | "danger" = "primary")
 }
 
 /**
+ * The same "not live" look for something that is not a `<button>`.
+ *
+ * `disabled:` only fires on a form control, so an `<a>` or a `<span>` dressed as a button
+ * never got the recessed treatment above and kept the old `opacity-40` — 1.9:1, which
+ * outdoors means the CALL button on the field board simply is not there. The field
+ * screen has both: a dead `tel:` link and a finished job's DONE badge.
+ */
+export const inertLook = "pointer-events-none border-line bg-sunk text-ink-3";
+
+/**
  * Loading skeleton. A bare "Loading…" on an empty deck reads as a broken page; ruled
  * placeholder rows read as "the desk is still fetching".
  */
 export function Skeleton({ lines = 4 }: { lines?: number }) {
   return (
-    <div className="lane" aria-busy="true" aria-label="Loading">
+    /* `aria-label` on a plain div is dropped by most screen readers; `role="status"`
+       plus real text is what actually says "the desk is still fetching". */
+    <div className="lane" role="status" aria-busy="true">
+      <span className="sr-only">Loading…</span>
       {Array.from({ length: lines }).map((_, i) => (
-        <div key={i} className="row">
+        <div key={i} className="row" aria-hidden>
           <div className="h-2 w-[86px] animate-pulse bg-sunk" />
           <div className="mt-2.5 h-3.5 w-[45%] animate-pulse bg-sunk" />
           <div className="mt-2 h-2.5 w-[62%] animate-pulse bg-sunk" />
@@ -342,8 +375,82 @@ export function Skeleton({ lines = 4 }: { lines?: number }) {
 /** Empty state — a quiet line on the deck, not a dashed box. */
 export function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-t border-line py-9 text-center">
+    <div className="border-t border-line py-9 text-center" role="status">
       <p className="eyebrow">{children}</p>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   FORMS — the label has to belong to the field.
+   Every form in the product writes `<label class="eyebrow">Amount</label>` next
+   to an input and nothing joins the two: the label is decoration, the tap on it
+   does nothing, and a screen reader announces "edit text, blank". Field does the
+   joining once. New and touched forms should use it; docs/A11Y.md carries the
+   list of the ones still to convert.
+   -------------------------------------------------------------------------- */
+export function Field({
+  id,
+  label,
+  required,
+  hint,
+  error,
+  children,
+  className,
+}: {
+  /** Explicit and stable: a generated one would differ between server and client. */
+  id: string;
+  label: string;
+  required?: boolean;
+  hint?: string;
+  error?: string;
+  /** Receives the id and the description wiring; spread them onto the control. */
+  children: (props: {
+    id: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
+    required?: boolean;
+  }) => React.ReactNode;
+  className?: string;
+}) {
+  const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className={className}>
+      <label className="eyebrow" htmlFor={id}>
+        {label}
+        {required && (
+          <>
+            {" "}
+            <span aria-hidden>*</span>
+            <span className="sr-only">(required)</span>
+          </>
+        )}
+      </label>
+      {children({
+        id,
+        "aria-describedby": describedBy,
+        "aria-invalid": error ? true : undefined,
+        required,
+      })}
+      {hint && (
+        <p id={hintId} className="mt-1 text-[12px] text-ink-2">
+          {hint}
+        </p>
+      )}
+      {/* The message is spoken as well as shown — a red line nobody hears is not
+          an error report. */}
+      {error && (
+        <p
+          id={errorId}
+          role="alert"
+          className="mono mt-1 border-l-2 py-1 pl-2 text-[12px]"
+          style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

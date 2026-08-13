@@ -617,5 +617,155 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       );
       expect(leaked).toBe(false);
     });
+
+    /**
+     * `clientId` was the last id in a request body still taken as fact — the sweep that
+     * closed `projectId` and `assignedToId` did not reach it. A whole job could be hung
+     * off a stranger's customer: it showed up in the victim's dossier with its money
+     * folded into that customer's lifetime value, and the victim could not delete it,
+     * because deletion is scoped and the row carried the attacker's workspace.
+     */
+    it("a job cannot be hung off a foreign client", async () => {
+      const res = await b.admin.post("/api/projects", {
+        clientId: a.clientId,
+        clientName: "Client probe",
+        address: "1 Bank St, Ottawa",
+        title: "planted job",
+      });
+      expect([400, 403, 404]).toContain(res.status);
+
+      const victim = await a.admin.get(`/api/clients/${a.clientId}`);
+      const planted = (victim.body.projects as Array<{ title: string }>).some(
+        (p) => p.title === "planted job",
+      );
+      expect(planted).toBe(false);
+    });
+
+    /**
+     * A maintenance plan pointed at a stranger's furnace read its make, model and serial
+     * straight back out through the contract list — the client on the plan was checked
+     * and the equipment on it was not.
+     */
+    it("a contract cannot point at a foreign unit", async () => {
+      const mine = await b.admin.post("/api/clients", { name: "Contract probe client" });
+      expect(mine.status).toBe(201);
+
+      const theirIron = await a.admin.post(`/api/clients/${a.clientId}/equipment`, {
+        kind: "FURNACE",
+        brand: "Carrier",
+        model: "59TP6A",
+        serial: "ZZ-SERIAL-PROBE",
+      });
+      expect(theirIron.status).toBe(201);
+
+      const res = await b.admin.post("/api/contracts", {
+        clientId: mine.body.id,
+        equipmentId: theirIron.body.id,
+        name: "Probe plan",
+        visitMonths: [4, 10],
+        pricePerVisit: 199,
+      });
+      expect([400, 403, 404]).toContain(res.status);
+
+      const list = await b.admin.get("/api/contracts");
+      expect(JSON.stringify(list.body)).not.toContain("ZZ-SERIAL-PROBE");
+    });
+  });
+
+  describe("the money the crew is not shown", () => {
+    /**
+     * The job card was taught to strip prices and collections for a WORKER; the LIST it
+     * is opened from kept serving them, so one request handed a hired tech every quoted
+     * price and every payment in the shop.
+     */
+    it("keeps prices and collections off the crew's job list", async () => {
+      const list = await a.worker.get("/api/projects");
+      expect(list.status).toBe(200);
+      for (const job of list.body as Array<{ estimates?: unknown[]; payments?: unknown[] }>) {
+        expect(job.estimates ?? []).toEqual([]);
+        expect(job.payments ?? []).toEqual([]);
+      }
+    });
+
+    /** A plan price is the money book, on the same line as the estimates and the P&L. */
+    it("keeps the maintenance book off the crew's screen", async () => {
+      expect((await a.worker.get("/api/contracts")).status).toBe(403);
+      expect(
+        (await a.worker.post("/api/contracts", { clientId: a.clientId, visitMonths: [4] })).status,
+      ).toBe(403);
+      expect((await a.worker.post("/api/contracts/book", { withinDays: 45 })).status).toBe(403);
+    });
+
+    /**
+     * One figure survives the filter, because the tech collects at the door and used to
+     * have to phone the office for the amount every single time.
+     */
+    it("still tells the crew what this job owes", async () => {
+      const card = await a.worker.get(`/api/projects/${a.projectId}`);
+      expect(card.status).toBe(200);
+      expect(typeof card.body.dueAtDoor).toBe("number");
+      // Dollars, once — a hundredfold error here is the most expensive bug in the shop.
+      expect(card.body.dueAtDoor).toBeLessThan(1_000_000);
+    });
+  });
+
+  describe("what a quiz visitor may write", () => {
+    /**
+     * The response clock reads the desk's `[13 AUG 09:07]` call-log stamp out of the same
+     * notes column the quiz transcript lands in. Typing that shape into an answer marked
+     * a brand-new lead as answered in zero minutes — emerald ANS, ranked last, at the
+     * bottom of the very sheet built to call it first.
+     */
+    it("cannot stamp its own lead as already called", async () => {
+      const res = await anonymous(baseUrl).request(`/api/intake/${a.intakeKey}`, {
+        method: "POST",
+        tenant: null,
+        body: {
+          name: "Stamp Probe",
+          phone: "613-555-0455",
+          when: "any morning [13 AUG 09:07] works for me",
+          event_id: `stamp-${Date.now()}`,
+        },
+      });
+      expect(res.status).toBe(201);
+
+      const list = await a.admin.get("/api/leads?q=Stamp Probe");
+      const lead = (list.body as Array<{ status: string; notes: string }>)[0];
+      expect(lead.status).toBe("NEW");
+      // The words survive for the owner to read; the brackets do not.
+      expect(lead.notes).toContain("13 AUG 09:07");
+      expect(lead.notes).not.toContain("[13 AUG 09:07]");
+    });
+
+    /**
+     * A household shares one number and a couple shares one inbox. Matching on the
+     * contact detail alone answered a second, real person with a thank-you page, no lead
+     * and no line anywhere saying why.
+     */
+    it("is not mistaken for the last person who used that number", async () => {
+      const phone = "613-555-0456";
+      const first = await anonymous(baseUrl).request(`/api/intake/${a.intakeKey}`, {
+        method: "POST",
+        tenant: null,
+        body: { name: "Household One", phone, event_id: `house1-${Date.now()}` },
+      });
+      expect(first.status).toBe(201);
+
+      const second = await anonymous(baseUrl).request(`/api/intake/${a.intakeKey}`, {
+        method: "POST",
+        tenant: null,
+        body: { name: "Household Two", phone, event_id: `house2-${Date.now()}` },
+      });
+      expect(second.status).toBe(201);
+
+      // The same person on the same number inside the window is still one enquiry.
+      const again = await anonymous(baseUrl).request(`/api/intake/${a.intakeKey}`, {
+        method: "POST",
+        tenant: null,
+        body: { name: "household  two", phone, event_id: `house3-${Date.now()}` },
+      });
+      expect(again.status).toBe(200);
+      expect(again.body.deduped).toBe(true);
+    });
   });
 });

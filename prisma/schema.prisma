@@ -7,37 +7,37 @@ datasource db {
 }
 
 model Tenant {
-  id           String      @id @default(cuid())
-  slug         String      @unique
-  businessName String
-  ownerEmail   String
+  id                  String               @id @default(cuid())
+  slug                String               @unique
+  businessName        String
+  ownerEmail          String
   /// What has to be on the paper. A Canadian invoice over $30 without the supplier's
   /// GST/HST number costs the customer their input tax credit, so a business client
   /// sends it back — the shop cannot bill HST it cannot evidence registering for.
-  businessAddress String?
-  businessPhone   String?
-  businessEmail   String?
-  hstNumber       String?
+  businessAddress     String?
+  businessPhone       String?
+  businessEmail       String?
+  hstNumber           String?
   /// Where the money goes: the e-Transfer address, cheque payee, deposit terms.
   paymentInstructions String?
-  plan         TenantPlan  @default(DEMO)
-  expiresAt    DateTime?
-  createdAt    DateTime    @default(now())
-  users        User[]
-  clients      Client[]
-  equipment    Equipment[]
-  contracts    ServiceContract[]
-  leads        Lead[]
-  projects     Project[]
-  estimates    Estimate[]
-  tasks        Task[]
-  invoices     Invoice[]
-  payments     Payment[]
-  expenses     Expense[]
-  integrations ChannelIntegration[]
-  auditLogs    AuditLog[]
-  photos       JobPhoto[]
-  intakeKeys   IntakeKey[]
+  plan                TenantPlan           @default(DEMO)
+  expiresAt           DateTime?
+  createdAt           DateTime             @default(now())
+  users               User[]
+  clients             Client[]
+  equipment           Equipment[]
+  contracts           ServiceContract[]
+  leads               Lead[]
+  projects            Project[]
+  estimates           Estimate[]
+  tasks               Task[]
+  invoices            Invoice[]
+  payments            Payment[]
+  expenses            Expense[]
+  integrations        ChannelIntegration[]
+  auditLogs           AuditLog[]
+  photos              JobPhoto[]
+  intakeKeys          IntakeKey[]
 }
 
 enum TenantPlan {
@@ -46,20 +46,22 @@ enum TenantPlan {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  name         String
-  email        String
-  password     String
-  role         Role      @default(WORKER)
-  assignedLeads Lead[]
+  id               String    @id @default(cuid())
+  tenantId         String
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  name             String
+  email            String
+  password         String
+  role             Role      @default(WORKER)
+  assignedLeads    Lead[]
   assignedProjects Project[] @relation("assignedProjects")
-  assignedTasks Task[]   @relation("assignedTasks")
-  createdTasks  Task[]   @relation("createdTasks")
-  createdAt    DateTime  @default(now())
+  assignedTasks    Task[]    @relation("assignedTasks")
+  createdTasks     Task[]    @relation("createdTasks")
+  createdAt        DateTime  @default(now())
 
   @@unique([email, tenantId])
+  /// The desk counts the crew on every load of the dashboard.
+  @@index([tenantId, role])
 }
 
 enum Role {
@@ -70,9 +72,9 @@ enum Role {
 /// The customer, not the string on a work order. One roof, one furnace history,
 /// one balance owing — jobs and leads point at this, they no longer re-type it.
 model Client {
-  id        String      @id @default(cuid())
+  id        String            @id @default(cuid())
   tenantId  String
-  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
   name      String
   phone     String?
   email     String?
@@ -83,8 +85,8 @@ model Client {
   projects  Project[]
   equipment Equipment[]
   contracts ServiceContract[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
   @@index([tenantId, name])
 }
@@ -92,14 +94,14 @@ model Client {
 /// What is actually installed at the address. HVAC lives on iron, not on tickets:
 /// the serial number and the warranty date are what a tech needs before the visit.
 model Equipment {
-  id            String        @id @default(cuid())
+  id            String            @id @default(cuid())
   tenantId      String
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  client        Client        @relation(fields: [clientId], references: [id])
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  client        Client            @relation(fields: [clientId], references: [id])
   clientId      String
-  project       Project?      @relation(fields: [projectId], references: [id])
+  project       Project?          @relation(fields: [projectId], references: [id])
   projectId     String?
-  kind          EquipmentKind @default(FURNACE)
+  kind          EquipmentKind     @default(FURNACE)
   brand         String?
   model         String?
   serial        String?
@@ -108,35 +110,40 @@ model Equipment {
   warrantyUntil DateTime?
   notes         String?
   contracts     ServiceContract[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([tenantId, clientId])
+  /// The iron on a client card, loaded through the client rather than the tenant.
+  @@index([clientId])
 }
 
 /// Recurring maintenance — the recurring revenue an HVAC shop actually lives on.
 /// `visitMonths` is a JSON array of 1-12 (e.g. [4,10] = spring and fall), which keeps
 /// the schedule readable in the database and avoids a cron owning the truth.
 model ServiceContract {
-  id            String     @id @default(cuid())
-  tenantId      String
-  tenant        Tenant     @relation(fields: [tenantId], references: [id])
-  client        Client     @relation(fields: [clientId], references: [id])
-  clientId      String
-  equipment     Equipment? @relation(fields: [equipmentId], references: [id])
-  equipmentId   String?
-  name          String
-  visitMonths   String
-  pricePerVisit Float
-  autoInvoice   Boolean    @default(false)
-  active        Boolean    @default(true)
-  startedOn     DateTime   @default(now())
-  notes         String?
-  projects      Project[]
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                 String     @id @default(cuid())
+  tenantId           String
+  tenant             Tenant     @relation(fields: [tenantId], references: [id])
+  client             Client     @relation(fields: [clientId], references: [id])
+  clientId           String
+  equipment          Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId        String?
+  name               String
+  visitMonths        String
+  /// Money is a whole number of cents (src/lib/money.ts). Float could not hold 0.1,
+  /// so a column of stored amounts stopped adding up to its own stored total.
+  pricePerVisitCents Int
+  autoInvoice        Boolean    @default(false)
+  active             Boolean    @default(true)
+  startedOn          DateTime   @default(now())
+  notes              String?
+  projects           Project[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   @@index([tenantId, active])
+  @@index([clientId])
 }
 
 enum EquipmentKind {
@@ -171,6 +178,16 @@ model Lead {
   project      Project?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  /**
+   * A season is five thousand leads. Without these the call sheet read every lead of
+   * every workspace on the box and then sorted the pile in a temporary B-tree, which is
+   * free at ten rows and is the whole cost of the screen at five thousand.
+   */
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  /// A client card lists the leads that address ever sent.
+  @@index([clientId])
 }
 
 enum LeadSource {
@@ -193,12 +210,12 @@ enum LeadStatus {
 }
 
 model Project {
-  id            String        @id @default(cuid())
+  id            String           @id @default(cuid())
   tenantId      String
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  lead          Lead?         @relation(fields: [leadId], references: [id])
-  leadId        String?       @unique
-  client        Client?       @relation(fields: [clientId], references: [id])
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  lead          Lead?            @relation(fields: [leadId], references: [id])
+  leadId        String?          @unique
+  client        Client?          @relation(fields: [clientId], references: [id])
   clientId      String?
   contract      ServiceContract? @relation(fields: [contractId], references: [id])
   contractId    String?
@@ -212,10 +229,14 @@ model Project {
   title         String
   description   String?
   jobType       String?
-  status        ProjectStatus @default(SCHEDULED)
+  status        ProjectStatus    @default(SCHEDULED)
   scheduledDate DateTime?
+  /// How long the work holds the crew, in minutes — the one ruler both trades read
+  /// (src/lib/schedule.ts). A mover books hours of a named day, a renovation books days;
+  /// null means nobody said, and the day rail treats the job as a single stop.
+  durationMinutes Int?
   completedDate DateTime?
-  assignedTo    User?         @relation("assignedProjects", fields: [assignedToId], references: [id])
+  assignedTo    User?            @relation("assignedProjects", fields: [assignedToId], references: [id])
   assignedToId  String?
   estimates     Estimate[]
   tasks         Task[]
@@ -224,8 +245,27 @@ model Project {
   payments      Payment[]
   expenses      Expense[]
   photos        JobPhoto[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  /**
+   * The job table is read by every screen in the product, each with its own sort:
+   * the yard by `updatedAt`, the day rail and the field board by `scheduledDate`, the
+   * bookkeeper's export by `createdAt`, the P&L by `completedDate`.
+   */
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, scheduledDate])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, completedDate])
+  /**
+   * The foreign keys, indexed by hand. SQLite indexes a primary key and nothing else,
+   * so `client.projects`, «my jobs» and the contract's booked visits each read the whole
+   * table — the relation loads underneath an `include` are exactly where that shows.
+   */
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([contractId])
 }
 
 enum ProjectStatus {
@@ -236,24 +276,29 @@ enum ProjectStatus {
 }
 
 model Estimate {
-  id         String         @id @default(cuid())
+  id            String         @id @default(cuid())
   /// Carried directly, not inferred through the project. Filtering on a join is
   /// one forgotten `include` away from serving another contractor's prices.
-  tenantId   String
-  tenant     Tenant         @relation(fields: [tenantId], references: [id])
-  project    Project        @relation(fields: [projectId], references: [id])
-  projectId  String
-  lineItems  String
-  subtotal   Float
-  tax        Float
-  total      Float
-  notes      String?
-  validUntil DateTime?
-  status     EstimateStatus @default(DRAFT)
-  pdfUrl     String?
-  createdAt  DateTime       @default(now())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  project       Project        @relation(fields: [projectId], references: [id])
+  projectId     String
+  /// JSON array of lines; each line carries `unitPriceCents`, so the amounts printed
+  /// down the page add up to the subtotal underneath them.
+  lineItems     String
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+  notes         String?
+  validUntil    DateTime?
+  status        EstimateStatus @default(DRAFT)
+  pdfUrl        String?
+  createdAt     DateTime       @default(now())
 
   @@index([tenantId, projectId])
+  /// A job card and the jobs export pull estimates by job alone; the composite above
+  /// starts with the tenant and cannot answer that.
+  @@index([projectId])
 }
 
 enum EstimateStatus {
@@ -278,6 +323,11 @@ model Task {
   dueDate      DateTime?
   status       TaskStatus @default(TODO)
   createdAt    DateTime   @default(now())
+
+  /// The open-task lamp on the dashboard, and a tech's own list.
+  @@index([tenantId, status])
+  @@index([projectId])
+  @@index([assignedToId])
 }
 
 enum TaskStatus {
@@ -287,36 +337,45 @@ enum TaskStatus {
 }
 
 model Invoice {
-  id         String        @id @default(cuid())
+  id            String        @id @default(cuid())
   /// A deposit and its balance are two invoices cut from one estimate — that is how
   /// a shop bills an install, and it keeps each half independently payable.
-  kind       InvoiceKind   @default(FULL)
-  remindedAt DateTime?
-  reminderCount Int        @default(0)
-  tenantId   String
-  tenant     Tenant        @relation(fields: [tenantId], references: [id])
-  project    Project       @relation(fields: [projectId], references: [id])
-  projectId  String
-  estimateId String?
-  number     String
-  clientName String
-  address    String?
-  email      String?
-  lineItems  String
-  subtotal   Float
-  tax        Float
-  total      Float
-  notes      String?
-  status     InvoiceStatus @default(DRAFT)
-  issuedAt   DateTime      @default(now())
-  dueDate    DateTime?
-  sentAt     DateTime?
-  paidAt     DateTime?
-  payments   Payment[]
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  kind          InvoiceKind   @default(FULL)
+  remindedAt    DateTime?
+  reminderCount Int           @default(0)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  project       Project       @relation(fields: [projectId], references: [id])
+  projectId     String
+  estimateId    String?
+  number        String
+  clientName    String
+  address       String?
+  email         String?
+  lineItems     String
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+  notes         String?
+  status        InvoiceStatus @default(DRAFT)
+  issuedAt      DateTime      @default(now())
+  dueDate       DateTime?
+  sentAt        DateTime?
+  paidAt        DateTime?
+  payments      Payment[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@unique([tenantId, number])
+  /**
+   * `@@unique([tenantId, number])` looks like it covers the tenant, and it does — but
+   * only to find the rows, never to order them, so the ledger still sorted the whole
+   * book by hand. The chase lane's question is narrower still: this workspace, still
+   * open, already past due.
+   */
+  @@index([tenantId, issuedAt])
+  @@index([tenantId, status, dueDate])
+  @@index([projectId])
 }
 
 enum InvoiceKind {
@@ -334,17 +393,23 @@ enum InvoiceStatus {
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  tenantId  String
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
-  project   Project       @relation(fields: [projectId], references: [id])
-  projectId String
-  invoice   Invoice?      @relation(fields: [invoiceId], references: [id])
-  invoiceId String?
-  amount    Float
-  method    PaymentMethod @default(CASH)
-  date      DateTime      @default(now())
-  notes     String?
+  id          String        @id @default(cuid())
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  project     Project       @relation(fields: [projectId], references: [id])
+  projectId   String
+  invoice     Invoice?      @relation(fields: [invoiceId], references: [id])
+  invoiceId   String?
+  amountCents Int
+  method      PaymentMethod @default(CASH)
+  date        DateTime      @default(now())
+  notes       String?
+
+  /// The book of money is always read by period, and every balance in the product is
+  /// the payments hanging off one invoice or one job.
+  @@index([tenantId, date])
+  @@index([invoiceId])
+  @@index([projectId])
 }
 
 enum PaymentMethod {
@@ -360,11 +425,14 @@ model Expense {
   tenant      Tenant          @relation(fields: [tenantId], references: [id])
   project     Project?        @relation(fields: [projectId], references: [id])
   projectId   String?
-  amount      Float
+  amountCents Int
   category    ExpenseCategory
   description String?
   date        DateTime        @default(now())
   receiptUrl  String?
+
+  @@index([tenantId, date])
+  @@index([projectId])
 }
 
 enum ExpenseCategory {
@@ -425,30 +493,30 @@ enum PhotoKind {
 /// Landing-page intake credential. Only the hash lives here; the key itself is shown once
 /// at creation, so a leaked database hands nobody a working lead endpoint.
 model IntakeKey {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
   label      String
-  keyHash    String   @unique
+  keyHash    String    @unique
   /// Stamped onto every lead this key brings in, so traffic can be told apart later.
   source     String
-  isActive   Boolean  @default(true)
+  isActive   Boolean   @default(true)
   lastUsedAt DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([tenantId, isActive])
 }
 
 model ChannelIntegration {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
   channel       String
   accessToken   String?
   pageId        String?
   webhookSecret String?
   config        String?
-  isActive      Boolean  @default(false)
+  isActive      Boolean   @default(false)
   lastSyncAt    DateTime?
 
   @@unique([tenantId, channel])

@@ -11,6 +11,9 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import { LeadClock } from "@/components/LeadClock";
+// The stamp the response clock reads. Written in one place so the two cannot drift.
+import { logStamp } from "@/lib/lead-notes";
 
 interface Lead {
   id: string;
@@ -35,12 +38,6 @@ interface Lead {
  */
 const toneKey = (s: string) => (s === "VERIFIED" ? "QUALIFIED" : s);
 
-const DAY = 86_400_000;
-
-function daysOnSheet(iso: string) {
-  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / DAY));
-}
-
 /** The rail the lead climbs. JOB is the CONVERTED end state. */
 const LADDER = [
   { status: "NEW", label: "NEW" },
@@ -49,21 +46,6 @@ const LADDER = [
   { status: "CONVERTED", label: "JOB" },
 ];
 
-/** Log timestamp, built client-side: [04 AUG 14:32]. */
-function logStamp() {
-  const d = new Date();
-  const day = String(d.getDate()).padStart(2, "0");
-  const mon = d
-    .toLocaleDateString("en-CA", { month: "short" })
-    .replace(/\./g, "")
-    .toUpperCase();
-  const time = d.toLocaleTimeString("en-CA", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  return `[${day} ${mon} ${time}]`;
-}
 
 /**
  * The status ladder — a horizontal rail of mono eyebrows joined by hairline
@@ -238,8 +220,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   if (!lead) return <Skeleton lines={4} />;
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
-  const age = daysOnSheet(lead.createdAt);
-  const ageTone = age > 3 ? "var(--rose-ink)" : "var(--ink-3)";
   const logLines = (lead.notes || "")
     .split("\n")
     .map((l) => l.trim())
@@ -269,13 +249,10 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
               {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
             </p>
           </div>
+          {/* THE RESPONSE CLOCK — the age of the lead was decoration; this is the number
+              the owner is judged by, and it runs while nobody has called back. */}
           <div className="text-right">
-            <span
-              className="mono text-[11px] font-bold tracking-[0.08em]"
-              style={{ color: ageTone }}
-            >
-              IN THE SHEET {age}D
-            </span>
+            <LeadClock lead={lead} />
             <p className="eyebrow mt-2">via {lead.source}</p>
           </div>
         </div>
@@ -518,9 +495,19 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
 
       {showConvertModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/70 p-4">
-          <div className="plate w-full max-w-md p-6">
+          {/* Announced as a dialog and named by its own heading, so a reader is told a
+              layer opened over the lead rather than that the page changed under them. */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="convert-lead-title"
+            className="plate w-full max-w-md p-6"
+          >
             <div className="eyebrow">New work order</div>
-            <h2 className="mt-2 text-[22px] font-black leading-none tracking-tight text-ink">
+            <h2
+              id="convert-lead-title"
+              className="mt-2 text-[22px] font-black leading-none tracking-tight text-ink"
+            >
               Open a job
             </h2>
             <form onSubmit={handleConvert} className="mt-5 space-y-4">

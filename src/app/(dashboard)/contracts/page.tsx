@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X, CalendarClock } from "lucide-react";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
+import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   Empty,
@@ -15,7 +16,8 @@ import {
 import { toast } from "@/components/ui/Toaster";
 import { CONTRACT_PLANS, MONTH_NAMES } from "@/lib/contracts";
 
-interface ContractRow {
+/** The plan as the API serves it: dollars. */
+interface ApiContractRow {
   id: string;
   name: string;
   active: boolean;
@@ -28,6 +30,9 @@ interface ContractRow {
   nextVisit: string | null;
   daysUntilNext: number | null;
 }
+
+/** What this screen works in. The form below stays in dollars — the owner types dollars. */
+type ContractRow = InCents<ApiContractRow>;
 
 interface ClientOption {
   id: string;
@@ -85,8 +90,9 @@ export default function ContractsPage() {
 
   const load = useCallback(async () => {
     const [cRes, clRes] = await Promise.all([fetch("/api/contracts"), fetch("/api/clients")]);
+    // The one door on this screen: dollars off the wire, cents on the board.
     const data = await cRes.json();
-    setRows(Array.isArray(data) ? data : []);
+    setRows(Array.isArray(data) ? inCents(data as ApiContractRow[]) : []);
     const cl = await clRes.json();
     setClients(Array.isArray(cl) ? cl : []);
     setLoading(false);
@@ -147,7 +153,10 @@ export default function ContractsPage() {
   const dueSoon = rows.filter(
     (r) => r.active && r.daysUntilNext !== null && r.daysUntilNext <= 45
   );
-  const annualValue = active.reduce((s, r) => s + r.pricePerVisit * r.visitMonths.length, 0);
+  const annualValueCents = active.reduce(
+    (s, r) => s + r.pricePerVisitCents * r.visitMonths.length,
+    0
+  );
   /** Visits due each month of the year, across every active plan. */
   const monthLoad = MONTH_ABBR.map(
     (_, i) => active.filter((r) => r.visitMonths.includes(i + 1)).length
@@ -246,7 +255,7 @@ export default function ContractsPage() {
           <span>
             BOOKED VALUE/YR{" "}
             <span className="font-bold" style={{ color: "var(--emerald-ink)" }}>
-              {formatCurrency(annualValue)}
+              {formatCents(annualValueCents)}
             </span>
           </span>
         </div>
@@ -412,7 +421,7 @@ export default function ContractsPage() {
                     </span>
                   </p>
                   <span className="mono shrink-0 text-[13px] font-medium tabular-nums text-ink">
-                    {formatCurrency(c.pricePerVisit)}
+                    {formatCents(c.pricePerVisitCents)}
                     <span className="text-[11px] text-ink-3"> /visit</span>
                   </span>
                 </div>

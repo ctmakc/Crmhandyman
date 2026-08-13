@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Printer, Send, Scissors, Calculator } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import {
+  formatCents,
+  inCents,
+  lineItemsFromInput,
+  lineTotalCents,
+  parseLineItems,
+  quoteTotals,
+  type InCents,
+} from "@/lib/money";
 import { PageHead, Empty, buttonClass, spineFor, textToneFor, WoNumber } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import {
@@ -29,6 +37,7 @@ import {
 } from "@/lib/renovation";
 import { SPLIT_PLANS } from "@/lib/margin";
 
+/** A line while it is being typed. The form is an edge, so it holds dollars. */
 interface LineItem {
   description: string;
   qty: number;
@@ -36,7 +45,8 @@ interface LineItem {
   unitPrice: number;
 }
 
-interface Estimate {
+/** A saved estimate as the API serves it: dollars. */
+interface ApiEstimate {
   id: string;
   status: string;
   lineItems: string;
@@ -46,6 +56,8 @@ interface Estimate {
   notes?: string;
   createdAt: string;
 }
+
+type Estimate = InCents<ApiEstimate>;
 
 interface Project {
   id: string;
@@ -108,7 +120,10 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
       fetch(`/api/projects/${params.id}/estimate`),
     ]);
     setProject(await projRes.json());
-    setEstimates(await estRes.json());
+    // The one door on this screen: saved estimates arrive in dollars and are held in
+    // cents. The builder above works the other way — it is a form, so it holds dollars
+    // until they are priced.
+    setEstimates(inCents((await estRes.json()) as ApiEstimate[]));
   }
 
   useEffect(() => {
@@ -116,9 +131,12 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const subtotal = lineItems.reduce((s, item) => s + item.qty * item.unitPrice, 0);
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  // Priced by the same function the API prices the saved estimate with, so the number
+  // on this screen is the number the client is billed — down to the cent.
+  const { subtotalCents, taxCents, totalCents } = quoteTotals(
+    lineItemsFromInput(lineItems),
+    taxRate
+  );
 
   function updateLineItem(index: number, field: keyof LineItem, value: string | number) {
     const updated = [...lineItems];
@@ -520,7 +538,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
             <dl className="w-full max-w-[280px] space-y-2 text-[13px]">
               <div className="flex justify-between">
                 <dt className="text-ink-2">Subtotal</dt>
-                <dd className="mono text-ink">{formatCurrency(subtotal)}</dd>
+                <dd className="mono text-ink">{formatCents(subtotalCents)}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-ink-2">
@@ -536,13 +554,13 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                     <option value={0.15}>15% HST (Atlantic)</option>
                   </select>
                 </dt>
-                <dd className="mono text-ink">{formatCurrency(tax)}</dd>
+                <dd className="mono text-ink">{formatCents(taxCents)}</dd>
               </div>
               <div className="flex justify-between border-t border-line pt-2">
                 <dt className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
                   Total
                 </dt>
-                <dd className="mono text-[19px] font-bold text-ink">{formatCurrency(total)}</dd>
+                <dd className="mono text-[19px] font-bold text-ink">{formatCents(totalCents)}</dd>
               </div>
             </dl>
           </div>
@@ -576,7 +594,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
       <div className="space-y-4">
         {estimates.length === 0 && !creating && <Empty>No estimates on this job yet</Empty>}
         {estimates.map((estimate) => {
-          const items = JSON.parse(estimate.lineItems) as LineItem[];
+          const items = parseLineItems(estimate.lineItems);
           return (
             <div
               key={estimate.id}
@@ -620,7 +638,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       </span>
                     </span>
                     <span className="mono text-[14px] text-ink">
-                      {formatCurrency(item.qty * item.unitPrice)}
+                      {formatCents(lineTotalCents(item))}
                     </span>
                   </div>
                 ))}
@@ -629,18 +647,18 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                   <dl className="w-full max-w-[240px] space-y-1.5 text-[13px]">
                     <div className="flex justify-between">
                       <dt className="text-ink-2">Subtotal</dt>
-                      <dd className="mono text-ink-2">{formatCurrency(estimate.subtotal)}</dd>
+                      <dd className="mono text-ink-2">{formatCents(estimate.subtotalCents)}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-ink-2">Tax</dt>
-                      <dd className="mono text-ink-2">{formatCurrency(estimate.tax)}</dd>
+                      <dd className="mono text-ink-2">{formatCents(estimate.taxCents)}</dd>
                     </div>
                     <div className="flex justify-between border-t border-line pt-1.5">
                       <dt className="text-[13px] font-bold uppercase tracking-[0.06em] text-ink">
                         Total
                       </dt>
                       <dd className="mono text-[17px] font-bold text-ink">
-                        {formatCurrency(estimate.total)}
+                        {formatCents(estimate.totalCents)}
                       </dd>
                     </div>
                   </dl>

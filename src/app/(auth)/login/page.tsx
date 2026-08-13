@@ -26,6 +26,25 @@ function LoginForm() {
     );
   }, [params]);
 
+  /**
+   * Where to land after signing in.
+   *
+   * The middleware puts the address the person was actually reaching for into
+   * `callbackUrl`, and this form threw it away and went to the dashboard every time. The
+   * morning that costs the most is the one the whole speed-of-response work is for: an
+   * alert arrives at 06:40, the tech taps the lead link, the overnight session has
+   * expired, and after signing in he is on the dispatch board hunting for the row instead
+   * of on the card with the phone number.
+   *
+   * Only a path on this site is honoured. An absolute URL — or anything starting `//`,
+   * which a browser reads as one — would turn the login screen into an open redirect
+   * somebody else can send our contractors through.
+   */
+  function landingFrom(raw: string | null): string {
+    if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
+    return raw;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -37,7 +56,7 @@ function LoginForm() {
       setError("That email and password do not match");
       setLoading(false);
     } else {
-      router.push("/");
+      router.push(landingFrom(params.get("callbackUrl")));
     }
   }
 
@@ -96,10 +115,18 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit} className="mt-7 space-y-4">
             <div>
-              <label className="eyebrow">Email</label>
+              {/* Tied to the field by id, so a screen reader announces the label and the
+                  refusal below together, and the phone offers the saved password. */}
+              <label className="eyebrow" htmlFor="login-email">
+                Email
+              </label>
               <input
+                id="login-email"
                 type="email"
                 required
+                autoComplete="username"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-error" : undefined}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
@@ -108,10 +135,16 @@ function LoginForm() {
             </div>
 
             <div>
-              <label className="eyebrow">Password</label>
+              <label className="eyebrow" htmlFor="login-password">
+                Password
+              </label>
               <input
+                id="login-password"
                 type="password"
                 required
+                autoComplete="current-password"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-error" : undefined}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
@@ -121,6 +154,8 @@ function LoginForm() {
 
             {error && (
               <p
+                id="login-error"
+                role="alert"
                 className="mono border-l-2 py-1 pl-3 text-[12px]"
                 style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
               >

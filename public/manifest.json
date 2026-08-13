@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "HandymanPro CRM",
+  "short_name": "HandymanPro",
+  "description": "The work order in your pocket — today's stops, one tap each, with or without a signal.",
+  "start_url": "/today",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0E1626",
+  "theme_color": "#0E1626",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today",
+      "short_name": "Today",
+      "description": "The stops booked for today",
+      "url": "/today"
+    }
+  ]
+}

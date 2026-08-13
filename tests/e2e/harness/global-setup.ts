@@ -99,6 +99,15 @@ export default async function setup(project: TestProject) {
       TRIAL_DAYS: "7",
       LEAD_DEDUP_DAYS: "30",
       NODE_ENV: "development" as const,
+      /**
+       * The suite never edits a file while it runs, so hot reload is pure cost — and on
+       * a busy machine it is worse than that. `inotify` instances are a per-user kernel
+       * quota; with other work already holding them, the watcher fails with EMFILE, reads
+       * the failure as "everything changed", and restarts the server in a loop that never
+       * answers /api/health. Polling at a lazy interval touches no kernel watches and
+       * notices nothing, which is exactly what is wanted here.
+       */
+      WATCHPACK_POLLING: "60000",
     };
 
     const prismaCli = path.join(REPO_ROOT, "node_modules", "prisma", "build", "index.js");

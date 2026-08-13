@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, X } from "lucide-react";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
+import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   Plate,
   Empty,
@@ -38,7 +39,7 @@ interface Equipment {
   notes?: string | null;
 }
 
-interface ClientInvoice {
+interface ApiClientInvoice {
   id: string;
   number: string;
   status: string;
@@ -49,7 +50,7 @@ interface ClientInvoice {
   projectTitle: string;
 }
 
-interface ClientProject {
+interface ApiClientProject {
   id: string;
   title: string;
   status: string;
@@ -62,7 +63,9 @@ interface ClientProject {
   estimates: Array<{ total: number; status: string }>;
 }
 
-interface ServicePlan {
+type ClientProject = InCents<ApiClientProject>;
+
+interface ApiServicePlan {
   id: string;
   name: string;
   pricePerVisit: number;
@@ -70,7 +73,8 @@ interface ServicePlan {
   active: boolean;
 }
 
-interface ClientRecord {
+/** The whole card as the API serves it: dollars. */
+interface ApiClientRecord {
   id: string;
   name: string;
   phone?: string | null;
@@ -79,12 +83,15 @@ interface ClientRecord {
   city?: string | null;
   notes?: string | null;
   equipment: Equipment[];
-  contracts: ServicePlan[];
+  contracts: ApiServicePlan[];
   leads: Array<{ id: string; name: string; source: string; status: string; createdAt: string }>;
-  projects: ClientProject[];
-  invoices: ClientInvoice[];
+  projects: ApiClientProject[];
+  invoices: ApiClientInvoice[];
   totals: { owing: number; collected: number; costs: number; lifetime: number };
 }
+
+/** What this screen works in. */
+type ClientRecord = InCents<ApiClientRecord>;
 
 const KINDS = [
   "FURNACE",
@@ -122,11 +129,11 @@ function nextVisitLabel(visitMonths: string): string | null {
 }
 
 /** What a job line is worth on the ledger: billed money first, the estimate as fallback. */
-function jobMoney(p: ClientProject): { value: number; est: boolean } | null {
+function jobMoney(p: ClientProject): { cents: number; est: boolean } | null {
   if (p.invoices.length > 0)
-    return { value: p.invoices.reduce((s, i) => s + i.total, 0), est: false };
+    return { cents: p.invoices.reduce((s, i) => s + i.totalCents, 0), est: false };
   const est = p.estimates.find((e) => e.status === "ACCEPTED") ?? p.estimates[0];
-  return est ? { value: est.total, est: true } : null;
+  return est ? { cents: est.totalCents, est: true } : null;
 }
 
 export default function ClientDetailPage({ params }: { params: { id: string } }) {
@@ -146,7 +153,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/clients/${params.id}`);
-    if (res.ok) setClient(await res.json());
+    // The one door on this screen: dollars off the wire, cents on the card.
+    if (res.ok) setClient(inCents((await res.json()) as ApiClientRecord));
     setLoading(false);
   }, [params.id]);
 
@@ -190,7 +198,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
   if (!client) return <Empty>Client not found</Empty>;
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
-  const owing = client.totals.owing;
+  const owingCents = client.totals.owingCents;
   const openJobs = client.projects.filter(
     (p) => p.status === "SCHEDULED" || p.status === "IN_PROGRESS"
   ).length;
@@ -218,7 +226,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         className="plate px-5 pb-5 pt-6"
         style={{
           borderLeft: `4px solid ${
-            owing > 0.005 ? "var(--rose)" : openJobs > 0 ? "var(--amber)" : "var(--emerald)"
+            owingCents > 0 ? "var(--rose)" : openJobs > 0 ? "var(--amber)" : "var(--emerald)"
           }`,
         }}
       >
@@ -258,13 +266,13 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
 
           {/* The one dominant readout: what this file owes, or a clean bill. */}
           <div className="flex shrink-0 flex-col items-start gap-3.5 sm:items-end">
-            {owing > 0.005 ? (
+            {owingCents > 0 ? (
               <div className="sm:text-right">
                 <div className="eyebrow" style={{ color: "var(--rose-ink)" }}>
                   Owes us
                 </div>
                 <div className="mt-1.5">
-                  <Readout value={formatCurrency(owing)} size={30} tone="var(--rose-ink)" />
+                  <Readout value={formatCents(owingCents)} size={30} tone="var(--rose-ink)" />
                 </div>
               </div>
             ) : (
@@ -331,7 +339,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                                     EST
                                   </span>
                                 )}
-                                {formatCurrency(money.value)}
+                                {formatCents(money.cents)}
                               </span>
                             )}
                           </div>
@@ -390,7 +398,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                         </span>
                         <span className="dotlead" aria-hidden="true" />
                         <Money
-                          value={inv.total}
+                          cents={inv.totalCents}
                           className="shrink-0 text-[13px]"
                           tone={late ? "var(--rose-ink)" : undefined}
                         />
@@ -422,9 +430,9 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                   <div className="eyebrow">Owing now</div>
                   <div className="mt-2">
                     <Readout
-                      value={formatCurrency(owing)}
+                      value={formatCents(owingCents)}
                       size={22}
-                      tone={owing > 0.005 ? "var(--rose-ink)" : "var(--ink)"}
+                      tone={owingCents > 0 ? "var(--rose-ink)" : "var(--ink)"}
                     />
                   </div>
                 </div>
@@ -432,16 +440,16 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                   <div className="eyebrow">Collected to date</div>
                   <div className="mt-2">
                     <Readout
-                      value={formatCurrency(client.totals.collected)}
+                      value={formatCents(client.totals.collectedCents)}
                       size={22}
                       tone="var(--emerald-ink)"
                     />
                   </div>
                 </div>
               </div>
-              {client.totals.costs > 0 && (
+              {client.totals.costsCents > 0 && (
                 <p className="mono mt-3.5 text-[12px] tabular-nums text-ink-3">
-                  OUR COSTS {formatCurrency(client.totals.costs)}
+                  OUR COSTS {formatCents(client.totals.costsCents)}
                 </p>
               )}
             </div>
@@ -653,7 +661,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                           {ct.name}
                         </p>
                         <span className="mono shrink-0 text-[12px] font-medium tabular-nums text-ink">
-                          {formatCurrency(ct.pricePerVisit)}
+                          {formatCents(ct.pricePerVisitCents)}
                           <span className="text-[10px] text-ink-3"> / VISIT</span>
                         </span>
                       </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { readTextCapped } from "@/lib/request-body";
+import { notifyNewLead } from "@/lib/notify";
 import {
   digestsMatch,
   hashIntakeKey,
@@ -9,6 +10,7 @@ import {
   phoneDigits,
   renderIntakeNotes,
 } from "@/lib/intake";
+import { LEAD_SOURCES, choice } from "@/lib/enums";
 
 /**
  * POST /api/intake/<key> — the contractor's own landing pages post here.
@@ -30,18 +32,6 @@ const IP_WINDOW_MS = 10 * 60 * 1000;
 /** A landing under paid traffic; sixty leads an hour from one page is an attack, not a sale. */
 const KEY_LIMIT = 60;
 const KEY_WINDOW_MS = 60 * 60 * 1000;
-
-/** Lead.source is an enum; a key configured with anything else lands in OTHER. */
-const LEAD_SOURCES = new Set([
-  "FACEBOOK",
-  "INSTAGRAM",
-  "GOOGLE",
-  "HOMESTARS",
-  "KIJIJI",
-  "EMAIL",
-  "MANUAL",
-  "OTHER",
-]);
 
 /** Browsers preflight a cross-origin POST from a landing page on another domain. */
 const CORS = {
@@ -125,21 +115,42 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
     const since = new Date(Date.now() - DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const recent = await prisma.lead.findMany({
       where: { tenantId: key.tenantId, createdAt: { gte: since } },
-      select: { id: true, phone: true, email: true },
+      select: { id: true, name: true, phone: true, email: true },
       orderBy: { createdAt: "desc" },
       take: 500,
     });
+
+    /**
+     * THE NAME HAS A VOTE.
+     *
+     * Matching on the contact detail alone dropped a real enquiry on the floor: a
+     * household shares one number, a couple shares one inbox, and a shop's front desk
+     * puts its own line on the form for three different people. The second person got a
+     * thank-you page, no lead, and no line anywhere saying why — the worst failure this
+     * endpoint has, because it is silent and it is a customer.
+     *
+     * A repeat is now the same contact detail AND the same person. Names arrive spelled
+     * loosely («Sarah Connor», «sarah connor», «Sarah  Connor»), so they are compared
+     * folded; a genuinely different name on a shared number is new work.
+     */
+    const fold = (value: string | null | undefined) =>
+      (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
     const digits = phoneDigits(lead.phone);
+    const name = fold(lead.name);
     const twin = recent.find(
       (row) =>
-        (!!lead.email && row.email?.toLowerCase() === lead.email) ||
-        (!!digits && phoneDigits(row.phone) === digits)
+        fold(row.name) === name &&
+        ((!!lead.email && row.email?.toLowerCase() === lead.email) ||
+          (!!digits && phoneDigits(row.phone) === digits))
     );
     if (twin) return json({ ok: true, deduped: true }, 200);
 
-    const source = LEAD_SOURCES.has(key.source) ? key.source : "OTHER";
+    // Lead.source is an enum; a key configured with anything else lands in OTHER. The
+    // list is the shared one, so it cannot fall behind the schema on its own.
+    const source = choice(LEAD_SOURCES, key.source) ?? "OTHER";
 
-    await prisma.lead.create({
+    const created = await prisma.lead.create({
       data: {
         tenantId: key.tenantId,
         name: lead.name,
@@ -154,6 +165,17 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
         status: "NEW",
       },
     });
+
+    /**
+     * The lead is already saved; this only decides how fast a human hears about it.
+     *
+     * NOT awaited. It cannot throw and it cannot fail the request — but awaited, it could
+     * still HOLD it: two channels at four seconds each turned a thank-you page into a
+     * five-second wait every time a bot token went stale, on the one form the shop pays
+     * 300-400 CAD a month to fill. The visitor gets his 201 immediately and the alert,
+     * the journal line and the queue all carry on behind it.
+     */
+    void notifyNewLead(key.tenantId, created.id);
 
     return json({ ok: true }, 201);
   } catch (error) {

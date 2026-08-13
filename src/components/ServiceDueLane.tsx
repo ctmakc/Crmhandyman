@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 import { toast } from "@/components/ui/Toaster";
 
 interface DueContract {
@@ -11,7 +12,7 @@ interface DueContract {
   name: string;
   clientName: string;
   address: string | null;
-  pricePerVisit: number;
+  pricePerVisitCents: number;
   dueOn: string;
   daysUntil: number;
 }
@@ -41,7 +42,7 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
     router.refresh();
   }
 
-  const value = contracts.reduce((s, c) => s + c.pricePerVisit, 0);
+  const valueCents = contracts.reduce((s, c) => s + c.pricePerVisitCents, 0);
 
   return (
     <section>
@@ -55,7 +56,7 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
             />
             Service due
           </h2>
-          <span className="mono text-[12px] text-ink-3">{formatCurrency(value)}</span>
+          <span className="mono text-[12px] text-ink-3">{formatCents(valueCents)}</span>
         </div>
         <div className="mt-1.5 flex items-baseline gap-4">
           <button
@@ -100,7 +101,7 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
                   {c.clientName}
                 </p>
                 <span className="mono shrink-0 text-[15px] text-ink">
-                  {formatCurrency(c.pricePerVisit)}
+                  {formatCents(c.pricePerVisitCents)}
                 </span>
               </div>
               <p className="mt-0.5 truncate text-[12px] text-ink-2">{c.name}</p>

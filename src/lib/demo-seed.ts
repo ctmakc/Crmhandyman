@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { lineItemsFromInput, lineItemsToJson, quoteTotals, toCents } from "@/lib/money";
 
 /**
  * Sample data for a trial workspace. Never call this for a paying account: a contractor
@@ -81,18 +82,19 @@ export async function seedDemoData(tenantId: string, adminUserId: string) {
     },
   });
 
+  // Sample money is written like real money: dollars turned into cents at one door.
+  const lines = lineItemsFromInput([
+    { description: "Framing lumber", qty: 20, unit: "pc", unitPrice: 15 },
+    { description: "Drywall sheets", qty: 12, unit: "sheet", unitPrice: 30 },
+    { description: "Labour", qty: 24, unit: "hr", unitPrice: 80 },
+  ]);
+
   await prisma.estimate.create({
     data: {
       tenantId,
       projectId: project.id,
-      lineItems: JSON.stringify([
-        { description: "Framing lumber", qty: 20, unit: "pc", unitPrice: 15 },
-        { description: "Drywall sheets", qty: 12, unit: "sheet", unitPrice: 30 },
-        { description: "Labour", qty: 24, unit: "hr", unitPrice: 80 },
-      ]),
-      subtotal: 2580,
-      tax: 335.4,
-      total: 2915.4,
+      lineItems: lineItemsToJson(lines),
+      ...quoteTotals(lines, 0.13),
       notes: "Includes HST. Valid 30 days.",
       status: "SENT",
     },
@@ -125,7 +127,7 @@ export async function seedDemoData(tenantId: string, adminUserId: string) {
     data: {
       tenantId,
       projectId: project.id,
-      amount: 1000,
+      amountCents: toCents(1000),
       method: "E_TRANSFER",
       notes: "Deposit",
     },
@@ -135,7 +137,7 @@ export async function seedDemoData(tenantId: string, adminUserId: string) {
     data: {
       tenantId,
       projectId: project.id,
-      amount: 450,
+      amountCents: toCents(450),
       category: "MATERIALS",
       description: "Lumber and drywall",
     },

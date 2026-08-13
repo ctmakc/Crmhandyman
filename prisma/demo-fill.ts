@@ -5,6 +5,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { lineItemsFromInput, lineItemsToJson, quoteTotals, toCents } from "../src/lib/money";
 
 const prisma = new PrismaClient({
   adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" }),
@@ -57,23 +58,21 @@ async function main() {
   }
 
   // A full paper trail on the first job: accepted estimate → issued invoice → part payment.
-  const lineItems = [
+  // Sample money is written like real money: dollars in, cents stored, priced once.
+  const lineItems = lineItemsFromInput([
     { description: "Carrier 96% two-stage furnace", qty: 1, unit: "ea", unitPrice: 3450 },
     { description: "Installation labour", qty: 8, unit: "hr", unitPrice: 115 },
     { description: "Venting + fittings", qty: 1, unit: "lot", unitPrice: 380 },
     { description: "Old unit removal & disposal", qty: 1, unit: "ea", unitPrice: 175 },
-  ];
-  const subtotal = lineItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const tax = subtotal * 0.13;
+  ]);
+  const furnaceTotals = quoteTotals(lineItems, 0.13);
 
   const estimate = await prisma.estimate.create({
     data: {
       tenantId: tenant.id,
       projectId: created[0].id,
-      lineItems: JSON.stringify(lineItems),
-      subtotal,
-      tax,
-      total: subtotal + tax,
+      lineItems: lineItemsToJson(lineItems),
+      ...furnaceTotals,
       notes: "50% deposit on booking, balance on completion. 10-year parts warranty.",
       status: "ACCEPTED",
     },
@@ -87,10 +86,8 @@ async function main() {
       number: `INV-${new Date().getFullYear()}-0001`,
       clientName: created[0].clientName,
       address: created[0].address,
-      lineItems: JSON.stringify(lineItems),
-      subtotal,
-      tax,
-      total: subtotal + tax,
+      lineItems: lineItemsToJson(lineItems),
+      ...furnaceTotals,
       notes: "50% deposit on booking, balance on completion.",
       status: "PARTIAL",
       sentAt: new Date(),
@@ -103,18 +100,18 @@ async function main() {
       tenantId: tenant.id,
       projectId: created[0].id,
       invoiceId: invoice.id,
-      amount: 2600,
+      amountCents: toCents(2600),
       method: "E_TRANSFER",
       notes: "Deposit",
     },
   });
 
   // A second invoice that is sitting past its due date.
-  const moveItems = [
+  const moveItems = lineItemsFromInput([
     { description: "Crew of 3 + 26ft truck", qty: 6, unit: "hr", unitPrice: 165 },
     { description: "Packing materials", qty: 1, unit: "lot", unitPrice: 140 },
-  ];
-  const moveSub = moveItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  ]);
+  const moveTotals = quoteTotals(moveItems, 0.13);
   await prisma.invoice.create({
     data: {
       tenantId: tenant.id,
@@ -122,10 +119,8 @@ async function main() {
       number: `INV-${new Date().getFullYear()}-0002`,
       clientName: created[5].clientName,
       address: created[5].address,
-      lineItems: JSON.stringify(moveItems),
-      subtotal: moveSub,
-      tax: moveSub * 0.13,
-      total: moveSub * 1.13,
+      lineItems: lineItemsToJson(moveItems),
+      ...moveTotals,
       status: "SENT",
       sentAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000),
       dueDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
@@ -166,7 +161,7 @@ async function main() {
     await prisma.expense.create({
       data: {
         tenantId: tenant.id,
-        amount: e.amount,
+        amountCents: toCents(e.amount),
         category: e.category as never,
         description: e.description,
         projectId: e.projectId ?? undefined,
@@ -178,7 +173,7 @@ async function main() {
     data: {
       tenantId: tenant.id,
       projectId: created[5].id,
-      amount: 890,
+      amountCents: toCents(890),
       method: "CASH",
       notes: "Duct cleaning — paid on site",
     },

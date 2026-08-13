@@ -91,7 +91,13 @@ export default function QuickJump() {
       className="fixed inset-0 z-[70] flex items-start justify-center bg-navy-900/70 px-4 pt-[12vh]"
       onClick={() => setOpen(false)}
     >
+      {/* Announced as a dialog and named, so a reader entering it is told it opened and
+          what it is for. The keyboard already behaves: the field takes focus on open,
+          arrows walk the hits, Escape closes. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jump to a lead, job, client or invoice"
         className="plate w-full max-w-[560px] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

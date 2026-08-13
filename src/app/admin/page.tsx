@@ -53,15 +53,18 @@ export default function SuperAdminPage() {
         {loading && <p className="mono text-[12px] text-ink-rail">Loading…</p>}
         {error && <p className="mono text-[12px]" style={{ color: "var(--rose)" }}>{error}</p>}
         <div className="overflow-hidden border border-navy-700 bg-navy-800">
+          {/* Six columns of workspace admin never fit a phone; the table takes its own
+              scroll instead of dragging the page with it. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-navy-700">
-                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Tenant</th>
-                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Owner</th>
-                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Plan</th>
-                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Data</th>
-                <th className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Created</th>
-                <th className="mono p-4 text-right text-[11px] uppercase tracking-[0.09em] text-ink-rail">Actions</th>
+                <th scope="col" className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Tenant</th>
+                <th scope="col" className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Owner</th>
+                <th scope="col" className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Plan</th>
+                <th scope="col" className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Data</th>
+                <th scope="col" className="mono p-4 text-left text-[11px] uppercase tracking-[0.09em] text-ink-rail">Created</th>
+                <th scope="col" className="mono p-4 text-right text-[11px] uppercase tracking-[0.09em] text-ink-rail">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -124,6 +127,7 @@ export default function SuperAdminPage() {
               )}
             </tbody>
           </table>
+        </div>
         </div>
 
         <div className="mono mt-4 text-[11px] uppercase tracking-[0.09em] text-ink-rail">

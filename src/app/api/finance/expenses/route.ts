@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireUser } from "@/lib/guard";
 import { scopedProjectId } from "@/lib/scope";
 import { parseDayInput } from "@/lib/dates";
-import { round2 } from "@/lib/money";
+import { inDollars, parseCents } from "@/lib/money";
+import { EXPENSE_CATEGORIES, badChoice, choice } from "@/lib/enums";
 
 export async function POST(req: NextRequest) {
   // The crew collects at the door and buys materials on the way, so recording is
@@ -19,22 +20,29 @@ export async function POST(req: NextRequest) {
   const project = await scopedProjectId(tenantId, body.projectId);
   if (!project.ok) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  const amount = round2(Number(body.amount));
-  if (!Number.isFinite(amount) || amount <= 0)
+  // Dollars from the form, cents from here on.
+  const amountCents = parseCents(body.amount);
+  if (amountCents === null || amountCents <= 0)
     return NextResponse.json({ error: "An amount is required" }, { status: 400 });
+
+  // An unknown category reached the enum column and came back as a 500 — on the screen,
+  // a Save button that does nothing. Say which field is wrong and what is on offer.
+  const category = choice(EXPENSE_CATEGORIES, body.category);
+  if (category === null)
+    return NextResponse.json(badChoice("expense category", EXPENSE_CATEGORIES), { status: 400 });
 
   const expense = await prisma.expense.create({
     data: {
       tenantId,
       projectId: project.value,
-      amount,
-      category: body.category || "OTHER",
+      amountCents,
+      category: category ?? "OTHER",
       description: body.description,
       date: parseDayInput(body.date) ?? new Date(),
     },
   });
 
-  return NextResponse.json(expense, { status: 201 });
+  return NextResponse.json(inDollars(expense), { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {

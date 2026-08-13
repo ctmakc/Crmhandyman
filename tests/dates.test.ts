@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { dayStamp, parseDayInput } from "@/lib/dates";
-import { cents, round2 } from "@/lib/money";
 
 /**
- * The two conversions every money row passes through on the way in and out.
+ * The date every money row carries, on the way in and on the way out. The amount on
+ * that row is guarded in tests/money.test.ts.
  *
- * Both were silently wrong at once: a payment typed as "the 1st" was stored as the
+ * Both readings were silently wrong at once: a payment typed as "the 1st" was stored as the
  * last evening of the previous month, and the export printed it in UTC, so the book,
  * the P&L and the accountant's CSV each disagreed with the screen the owner read.
  *
@@ -62,33 +62,5 @@ describe("dayStamp", () => {
 
   it("round-trips what parseDayInput accepted", () => {
     expect(dayStamp(parseDayInput("2026-03-08"))).toBe("2026-03-08");
-  });
-});
-
-describe("round2 and cents", () => {
-  it("gives every stored amount a whole number of cents", () => {
-    // 242.50 at 13% is 31.525000000000002 raw — an invoice for a third of a cent.
-    expect(round2(242.5 * 0.13)).toBe(31.53);
-    expect(round2(920 * 0.13)).toBe(119.6);
-    expect(round2(0.1 + 0.2)).toBe(0.3);
-  });
-
-  it("keeps a split adding up to the whole it was cut from", () => {
-    const subtotal = round2(242.5);
-    const tax = round2(subtotal * 0.13);
-    const total = round2(subtotal + tax);
-
-    const depositSubtotal = round2(subtotal * 0.5);
-    const depositTax = round2(depositSubtotal * 0.13);
-    const balanceSubtotal = round2(subtotal - depositSubtotal);
-    const balanceTax = round2(tax - depositTax);
-
-    const halves = round2(depositSubtotal + depositTax) + round2(balanceSubtotal + balanceTax);
-    expect(cents(halves)).toBe(cents(total));
-  });
-
-  it("compares amounts that look equal and are not", () => {
-    expect(cents(0.1 + 0.2)).toBe(cents(0.3));
-    expect(cents(1695.0000000001)).toBe(169_500);
   });
 });

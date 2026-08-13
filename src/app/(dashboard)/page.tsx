@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 import Link from "next/link";
 import {
   PageHead,
@@ -36,6 +36,9 @@ export default async function DashboardPage() {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
+  // One wave, not four. The crew count and the contract book used to be awaited after
+  // this block finished, so the desk paid three round trips end to end for answers that
+  // depend on nothing.
   const [
     newLeadsCount,
     activeProjectsCount,
@@ -45,8 +48,15 @@ export default async function DashboardPage() {
     monthRevenue,
     outstanding,
     weekJobs,
+    crewSize,
+    contracts,
   ] = await Promise.all([
-    prisma.lead.count({ where: { tenantId, status: { in: ["NEW", "CONTACTED"] } } }),
+    /**
+     * «New leads» counts leads that are NEW. It counted CONTACTED as well, so the deck
+     * said 7 and the call sheet it links to said 6 — two numbers for one word, on the
+     * first screen of the morning. A lead somebody has already rung is not new.
+     */
+    prisma.lead.count({ where: { tenantId, status: "NEW" } }),
     prisma.project.count({ where: { tenantId, status: { in: ["SCHEDULED", "IN_PROGRESS"] } } }),
     prisma.task.count({
       where: {
@@ -63,13 +73,13 @@ export default async function DashboardPage() {
             tenantId,
             date: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
           },
-          _sum: { amount: true },
+          _sum: { amountCents: true },
         })
       : null,
     isAdmin
       ? prisma.invoice.aggregate({
           where: { tenantId, status: { in: ["SENT", "PARTIAL"] } },
-          _sum: { total: true },
+          _sum: { totalCents: true },
           _count: true,
         })
       : null,
@@ -78,18 +88,31 @@ export default async function DashboardPage() {
       orderBy: { scheduledDate: "asc" },
       select: { id: true, title: true, clientName: true, status: true, scheduledDate: true },
     }),
+    prisma.user.count({ where: { tenantId, role: "WORKER" } }),
+    // Contract visits that need putting on the board — derived, see lib/contracts.ts.
+    // Named columns: the lane draws five of them, and `include` was carrying the notes
+    // and the price history of every plan on the books to do it.
+    //
+    // Owner only. Every row carries a plan price, and the lane prints it plus the value
+    // of the whole lane — the revenue and receivable readouts beside it are gated and
+    // this was not, so the crew read the maintenance book off the front page.
+    isAdmin
+      ? prisma.serviceContract.findMany({
+      where: { tenantId, active: true },
+      select: {
+        id: true,
+        name: true,
+        active: true,
+        visitMonths: true,
+        startedOn: true,
+        pricePerVisitCents: true,
+        client: { select: { id: true, name: true, address: true } },
+        projects: { select: { contractCycle: true } },
+      },
+        })
+      : [],
   ]);
 
-  const crewSize = await prisma.user.count({ where: { tenantId, role: "WORKER" } });
-
-  // Contract visits that need putting on the board — derived, see lib/contracts.ts.
-  const contracts = await prisma.serviceContract.findMany({
-    where: { tenantId, active: true },
-    include: {
-      client: { select: { id: true, name: true, address: true } },
-      projects: { select: { contractCycle: true } },
-    },
-  });
   const serviceDue = contracts
     .map((c) => {
       const booked = new Set(
@@ -104,7 +127,7 @@ export default async function DashboardPage() {
         name: c.name,
         clientName: c.client.name,
         address: c.client.address,
-        pricePerVisit: c.pricePerVisit,
+        pricePerVisitCents: c.pricePerVisitCents,
         dueOn: next.date.toISOString(),
         daysUntil: days,
       };
@@ -115,32 +138,77 @@ export default async function DashboardPage() {
     name: string;
     clientName: string;
     address: string | null;
-    pricePerVisit: number;
+    pricePerVisitCents: number;
     dueOn: string;
     daysUntil: number;
   }>;
 
-  // Overdue is derived, not stored — see lib/invoice-state.ts.
-  const openInvoices = isAdmin
-    ? await prisma.invoice.findMany({
-        where: { tenantId, status: { in: ["SENT", "PARTIAL"] }, dueDate: { lt: new Date() } },
-        include: { payments: { select: { amount: true } } },
-        orderBy: { dueDate: "asc" },
-      })
-    : [];
+  /**
+   * The five oldest bills still owing. Overdue is derived, not stored — see
+   * lib/invoice-state.ts — and so is «still owing», which is why the payments have to
+   * come along.
+   *
+   * Read a page at a time. The lane shows five rows and the old query loaded the entire
+   * overdue book to find them: a shop that lets paper age carries hundreds of those, and
+   * every one of them arrived with its payments attached so five could be printed. The
+   * loop stops at five, so the usual desk costs one page.
+   *
+   * `id` breaks ties on `dueDate` so the pages cannot overlap or skip a row — several
+   * bills come due on the same day all the time.
+   */
+  const chase: Array<{
+    id: string;
+    number: string;
+    clientName: string;
+    totalCents: number;
+    amountPaidCents: number;
+    dueDate: string | null;
+    status: string;
+  }> = [];
 
-  const chase = openInvoices
-    .map((inv) => ({
-      id: inv.id,
-      number: inv.number,
-      clientName: inv.clientName,
-      total: inv.total,
-      amountPaid: inv.payments.reduce((s, p) => s + p.amount, 0),
-      dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
-      status: inv.status,
-    }))
-    .filter((inv) => inv.total - inv.amountPaid > 0.005)
-    .slice(0, 5);
+  if (isAdmin) {
+    const PAGE = 25;
+    let cursor: string | undefined;
+
+    while (chase.length < 5) {
+      const page = await prisma.invoice.findMany({
+        where: { tenantId, status: { in: ["SENT", "PARTIAL"] }, dueDate: { lt: new Date() } },
+        select: {
+          id: true,
+          number: true,
+          clientName: true,
+          totalCents: true,
+          dueDate: true,
+          status: true,
+          payments: { select: { amountCents: true } },
+        },
+        orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+        take: PAGE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (!page.length) break;
+
+      for (const inv of page) {
+        const amountPaidCents = inv.payments.reduce((s, p) => s + p.amountCents, 0);
+        // A whole cent still owed. Props to a client component stay in cents — this is
+        // not the API boundary, and the unit travels in the name.
+        if (inv.totalCents - amountPaidCents <= 0) continue;
+        chase.push({
+          id: inv.id,
+          number: inv.number,
+          clientName: inv.clientName,
+          totalCents: inv.totalCents,
+          amountPaidCents,
+          dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
+          status: inv.status,
+        });
+        if (chase.length === 5) break;
+      }
+
+      if (page.length < PAGE) break;
+      cursor = page[page.length - 1].id;
+    }
+  }
 
   const readouts = [
     // The amber lamp — not amber type — marks the one lane needing attention.
@@ -151,15 +219,15 @@ export default async function DashboardPage() {
       ? [
           {
             label: "Collected · MTD",
-            value: formatCurrency(monthRevenue?._sum.amount || 0),
+            value: formatCents(monthRevenue?._sum?.amountCents || 0),
             href: "/finance",
             tone: "var(--emerald-ink)",
           },
           {
             label: `Outstanding · ${outstanding?._count || 0}`,
-            value: formatCurrency(outstanding?._sum.total || 0),
+            value: formatCents(outstanding?._sum?.totalCents || 0),
             href: "/invoices",
-            tone: (outstanding?._sum.total || 0) > 0 ? "var(--rose-ink)" : undefined,
+            tone: (outstanding?._sum?.totalCents || 0) > 0 ? "var(--rose-ink)" : undefined,
           },
         ]
       : []),

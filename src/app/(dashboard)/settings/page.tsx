@@ -32,6 +32,12 @@ const SECTIONS = [
     title: "Landing intake",
     sub: "Lead forms on your own sites post straight into this desk",
   },
+  {
+    href: "/settings/notifications",
+    code: "06",
+    title: "Lead alerts",
+    sub: "Telegram and email the moment a lead lands, with quiet hours",
+  },
 ];
 
 export default function SettingsPage() {

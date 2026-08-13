@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
-import { renderDocument, DocLineItem } from "@/lib/document";
+import { renderDocument } from "@/lib/document";
+import { parseLineItems } from "@/lib/money";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireAdmin();
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.id, tenantId },
     include: {
-      payments: { select: { amount: true } },
+      payments: { select: { amountCents: true } },
       project: { select: { title: true, phone: true } },
       tenant: {
         select: {
@@ -44,11 +45,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     phone: invoice.project.phone,
     email: invoice.email,
     jobTitle: invoice.project.title,
-    lineItems: JSON.parse(invoice.lineItems) as DocLineItem[],
-    subtotal: invoice.subtotal,
-    tax: invoice.tax,
-    total: invoice.total,
-    amountPaid: invoice.payments.reduce((s, p) => s + p.amount, 0),
+    lineItems: parseLineItems(invoice.lineItems),
+    subtotalCents: invoice.subtotalCents,
+    taxCents: invoice.taxCents,
+    totalCents: invoice.totalCents,
+    amountPaidCents: invoice.payments.reduce((s, p) => s + p.amountCents, 0),
     notes: invoice.notes,
     issuedAt: invoice.issuedAt,
     dueDate: invoice.dueDate,

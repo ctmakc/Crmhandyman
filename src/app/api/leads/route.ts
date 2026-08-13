@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionTenant } from "@/lib/session";
 import { scopedUserId } from "@/lib/scope";
+import { LEAD_SOURCES, LEAD_STATUSES, badChoice, choice } from "@/lib/enums";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -11,15 +12,20 @@ export async function GET(req: NextRequest) {
   const { tenantId } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
-  const source = searchParams.get("source");
   const q = searchParams.get("q");
+
+  // A filter value the schema does not know reached the enum column and answered 500;
+  // a hand-typed query string is the one place that happens by accident.
+  const status = choice(LEAD_STATUSES, searchParams.get("status"));
+  if (status === null) return NextResponse.json(badChoice("lead status", LEAD_STATUSES), { status: 400 });
+  const source = choice(LEAD_SOURCES, searchParams.get("source"));
+  if (source === null) return NextResponse.json(badChoice("lead source", LEAD_SOURCES), { status: 400 });
 
   const leads = await prisma.lead.findMany({
     where: {
       tenantId,
-      ...(status ? { status: status as never } : {}),
-      ...(source ? { source: source as never } : {}),
+      ...(status ? { status } : {}),
+      ...(source ? { source } : {}),
       ...(q ? {
         OR: [
           { name: { contains: q } },
@@ -52,6 +58,14 @@ export async function POST(req: NextRequest) {
   const assignee = await scopedUserId(tenantId, body.assignedToId);
   if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
 
+  const source = choice(LEAD_SOURCES, body.source);
+  if (source === null) return NextResponse.json(badChoice("lead source", LEAD_SOURCES), { status: 400 });
+
+  // No alert on this path, on purpose. A lead reaches this route because somebody at the
+  // desk typed it in — he is looking at the screen, and telling him about the row he just
+  // entered is how a person learns to ignore the channel that matters. `notifyNewLead`
+  // hangs off the doors a lead arrives through on its own: intake, mail, Facebook,
+  // Instagram. The digest sweep skips MANUAL leads for the same reason.
   const lead = await prisma.lead.create({
     data: {
       tenantId,
@@ -60,7 +74,7 @@ export async function POST(req: NextRequest) {
       email: body.email,
       address: body.address,
       city: body.city,
-      source: body.source || "MANUAL",
+      source: source ?? "MANUAL",
       jobType: body.jobType,
       notes: body.notes,
       assignedToId: assignee.value,

@@ -135,6 +135,29 @@ export function anonymous(baseUrl: string) {
 }
 
 /**
+ * Poll until the server has caught up, or give up loudly.
+ *
+ * Some of what this suite asserts on happens deliberately AFTER the response: a lead
+ * alert must never hold the thank-you page open, so its journal line lands a moment
+ * behind the 201. Reading once and failing would be testing the clock. `probe` returns
+ * a falsy value while it is not there yet; the last one is returned when it is.
+ */
+export async function eventually<T>(
+  probe: () => Promise<T>,
+  what: string,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: T = undefined as T;
+  for (;;) {
+    last = await probe();
+    if (last) return last;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+/**
  * The credentials flow exactly as the login form drives it: fetch the CSRF token so the
  * double-submit cookie is in the jar, then post the form to the callback.
  */
@@ -224,9 +247,13 @@ export async function registerWorkspace(baseUrl: string, label: string): Promise
   };
 }
 
-/** Cents, the way the app compares money. */
-export const cents = (n: number) => Math.round(n * 100);
-export const round2 = (n: number) => Math.round(n * 100) / 100;
+/**
+ * The API answers in dollars — that is its contract with a bookkeeper and with any
+ * integration. Assertions convert through the same door the application uses, so a
+ * test never invents its own arithmetic: `cents` for a single amount, `inCents` for a
+ * whole payload on its way into a library that works in cents.
+ */
+export { toCents as cents, toDollars, inCents } from "@/lib/money";
 
 /** Smallest byte string the upload sniffer accepts as a JPEG. */
 export function fakeJpeg(size = 64): Buffer {

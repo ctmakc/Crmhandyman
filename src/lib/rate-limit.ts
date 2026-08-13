@@ -35,8 +35,20 @@ function sweep(now: number) {
 /**
  * How many proxies sit in front of this app. One by default — the Caddy in DEPLOY.md.
  * A wrong value here is a real hole, so it stays a deliberate number in the environment.
+ *
+ * ZERO IS A REAL SETTING and means «nothing stands in front of me»: the header is
+ * ignored entirely and only the socket address counts. The floor used to be one, so an
+ * instance published straight to the internet had no way to stop trusting a header
+ * anybody could type — twelve wrong passwords with a rotating `X-Forwarded-For` and the
+ * thirteenth, correct one walked in. Anything unparseable still lands on one, which is
+ * the deployment this repo documents.
  */
-const TRUSTED_PROXY_HOPS = Math.max(1, Math.trunc(Number(process.env.TRUSTED_PROXY_HOPS)) || 1);
+const TRUSTED_PROXY_HOPS = (() => {
+  const raw = process.env.TRUSTED_PROXY_HOPS;
+  if (raw === undefined || raw.trim() === "") return 1;
+  const n = Math.trunc(Number(raw));
+  return Number.isFinite(n) && n >= 0 ? n : 1;
+})();
 
 /**
  * The caller's address, as far as it can be trusted.
@@ -64,6 +76,15 @@ export function clientIpFromHeaders(
   forwardedFor: string | null | undefined,
   realIp?: string | null
 ): string {
+  /**
+   * No proxy in front: `X-Forwarded-For` is the caller's own writing and is worth
+   * nothing, so it is not read at all. Everything then shares the `unknown` bucket
+   * unless something local sets `x-real-ip` — which makes the throttle strict rather
+   * than absent, and is the safe way round. DEPLOY.md puts Caddy in front for exactly
+   * this reason; zero is for an operator who knows he has not.
+   */
+  if (TRUSTED_PROXY_HOPS === 0) return realIp || "unknown";
+
   const chain = (forwardedFor ?? "")
     .split(",")
     .map((s) => s.trim())

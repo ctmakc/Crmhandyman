@@ -1,4 +1,4 @@
-import { formatCurrency } from "@/lib/utils";
+import { formatCents, lineTotalCents, type LineItem } from "@/lib/money";
 
 /**
  * The printable document — one renderer for estimates and invoices.
@@ -19,12 +19,8 @@ export function docRef(prefix: string, id: string, date: Date | string | null | 
   return `${prefix}-${year}-${id.slice(-4).toUpperCase()}`;
 }
 
-export interface DocLineItem {
-  description: string;
-  qty: number;
-  unit: string;
-  unitPrice: number;
-}
+/** The paper prints the same line the record stores — cents in, dollars on the page. */
+export type DocLineItem = LineItem;
 
 export interface DocumentSpec {
   kind: "ESTIMATE" | "INVOICE";
@@ -45,10 +41,10 @@ export interface DocumentSpec {
   email?: string | null;
   jobTitle: string;
   lineItems: DocLineItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  amountPaid?: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  amountPaidCents?: number;
   notes?: string | null;
   issuedAt: Date | string;
   dueDate?: Date | string | null;
@@ -68,13 +64,13 @@ const date = (d?: Date | string | null) =>
   d ? new Date(d).toLocaleDateString("en-CA") : "—";
 
 export function renderDocument(doc: DocumentSpec): string {
-  const owing = doc.total - (doc.amountPaid ?? 0);
+  const owingCents = doc.totalCents - (doc.amountPaidCents ?? 0);
   const isInvoice = doc.kind === "INVOICE";
   const overdue =
     isInvoice &&
     doc.dueDate != null &&
     new Date(doc.dueDate) < new Date() &&
-    owing > 0.005;
+    owingCents > 0;
 
   // The supplier block. Each line appears only once it has been filled in, so a shop
   // that has not entered its HST number prints a clean sheet instead of an empty label.
@@ -221,8 +217,8 @@ export function renderDocument(doc: DocumentSpec): string {
         <td>${esc(i.description)}</td>
         <td class="r mono" style="color:var(--ink-2)">${esc(i.qty)}</td>
         <td style="color:var(--ink-3)">${esc(i.unit)}</td>
-        <td class="r mono" style="color:var(--ink-2)">${formatCurrency(i.unitPrice)}</td>
-        <td class="r mono" style="font-weight:500">${formatCurrency(i.qty * i.unitPrice)}</td>
+        <td class="r mono" style="color:var(--ink-2)">${formatCents(i.unitPriceCents)}</td>
+        <td class="r mono" style="font-weight:500">${formatCents(lineTotalCents(i))}</td>
       </tr>`
         )
         .join("")}
@@ -231,13 +227,13 @@ export function renderDocument(doc: DocumentSpec): string {
 
   <div class="totals">
     <dl>
-      <div class="row"><span style="color:var(--ink-2)">Subtotal</span><span class="mono">${formatCurrency(doc.subtotal)}</span></div>
-      <div class="row"><span style="color:var(--ink-2)">HST / GST</span><span class="mono">${formatCurrency(doc.tax)}</span></div>
-      <div class="row grand"><span>TOTAL</span><span class="mono v">${formatCurrency(doc.total)}</span></div>
+      <div class="row"><span style="color:var(--ink-2)">Subtotal</span><span class="mono">${formatCents(doc.subtotalCents)}</span></div>
+      <div class="row"><span style="color:var(--ink-2)">HST / GST</span><span class="mono">${formatCents(doc.taxCents)}</span></div>
+      <div class="row grand"><span>TOTAL</span><span class="mono v">${formatCents(doc.totalCents)}</span></div>
       ${
-        doc.amountPaid && doc.amountPaid > 0
-          ? `<div class="row" style="margin-top:6px"><span style="color:var(--ink-2)">Paid</span><span class="mono" style="color:var(--emerald)">−${formatCurrency(doc.amountPaid)}</span></div>
-             <div class="row grand"><span>OWING</span><span class="mono v" style="color:${owing > 0.005 ? "var(--rose)" : "var(--emerald)"}">${formatCurrency(Math.max(owing, 0))}</span></div>`
+        doc.amountPaidCents && doc.amountPaidCents > 0
+          ? `<div class="row" style="margin-top:6px"><span style="color:var(--ink-2)">Paid</span><span class="mono" style="color:var(--emerald)">−${formatCents(doc.amountPaidCents)}</span></div>
+             <div class="row grand"><span>OWING</span><span class="mono v" style="color:${owingCents > 0 ? "var(--rose)" : "var(--emerald)"}">${formatCents(Math.max(owingCents, 0))}</span></div>`
           : ""
       }
     </dl>
@@ -260,7 +256,7 @@ export function renderDocument(doc: DocumentSpec): string {
     </div>
     <div style="text-align:right">
       <div class="eyebrow">Amount due</div>
-      <div class="mono" style="font-size:19px; font-weight:700; margin-top:4px">${formatCurrency(Math.max(owing, 0))}</div>
+      <div class="mono" style="font-size:19px; font-weight:700; margin-top:4px">${formatCents(Math.max(owingCents, 0))}</div>
     </div>
   </div>`
       : `<div class="foot">To accept this estimate, reply to this email or call us. Prices hold until the date above.</div>`

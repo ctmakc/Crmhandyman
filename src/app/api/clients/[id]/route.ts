@@ -1,36 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function tenantOf(session: unknown) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (session as any)?.user?.tenantId as string;
-}
+import { requireUser } from "@/lib/guard";
+import { inDollars } from "@/lib/money";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, role } = guard.identity;
 
+  /**
+   * Every relation under this client carries the tenant of its own.
+   *
+   * The client row is scoped, which reads as enough — it is not. A row in ANOTHER
+   * workspace can point at this client id, and an unscoped `include` walks straight to
+   * it: a planted job appeared in this dossier with its money folded into the lifetime
+   * value, and the owner could not delete it because deletion is scoped and the row
+   * belonged elsewhere. Scoping the id it is reached through is the fix; scoping the
+   * relations too is what makes a second such hole harmless.
+   */
   const client = await prisma.client.findFirst({
-    where: { id: params.id, tenantId: await tenantOf(session) },
+    where: { id: params.id, tenantId },
     include: {
-      equipment: { orderBy: { installedAt: "desc" } },
+      equipment: { where: { tenantId }, orderBy: { installedAt: "desc" } },
       contracts: {
-        select: { id: true, name: true, pricePerVisit: true, visitMonths: true, active: true },
+        where: { tenantId },
+        select: {
+          id: true,
+          name: true,
+          pricePerVisitCents: true,
+          visitMonths: true,
+          active: true,
+        },
         orderBy: { createdAt: "desc" },
       },
-      leads: { orderBy: { createdAt: "desc" } },
+      leads: { where: { tenantId }, orderBy: { createdAt: "desc" } },
       projects: {
+        where: { tenantId },
         orderBy: { createdAt: "desc" },
         include: {
           invoices: {
             orderBy: { issuedAt: "desc" },
-            include: { payments: { select: { amount: true } } },
+            include: { payments: { select: { amountCents: true } } },
           },
-          payments: { select: { amount: true } },
-          expenses: { select: { amount: true } },
-          estimates: { select: { total: true, status: true } },
+          payments: { select: { amountCents: true } },
+          expenses: { select: { amountCents: true } },
+          estimates: { select: { totalCents: true, status: true } },
         },
       },
     },
@@ -42,35 +56,49 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       id: i.id,
       number: i.number,
       status: i.status,
-      total: i.total,
+      totalCents: i.totalCents,
       dueDate: i.dueDate,
       issuedAt: i.issuedAt,
-      amountPaid: i.payments.reduce((s, x) => s + x.amount, 0),
+      amountPaidCents: i.payments.reduce((s, x) => s + x.amountCents, 0),
       projectTitle: p.title,
     }))
   );
 
-  const owing = invoices
+  // Whole cents all the way down: a client's balance is the sum of the lines the desk
+  // shows underneath it, and the two must never round apart.
+  const owingCents = invoices
     .filter((i) => i.status === "SENT" || i.status === "PARTIAL")
-    .reduce((s, i) => s + (i.total - i.amountPaid), 0);
+    .reduce((s, i) => s + (i.totalCents - i.amountPaidCents), 0);
 
-  const collected = client.projects
+  const collectedCents = client.projects
     .flatMap((p) => p.payments)
-    .reduce((s, p) => s + p.amount, 0);
+    .reduce((s, p) => s + p.amountCents, 0);
 
-  const costs = client.projects.flatMap((p) => p.expenses).reduce((s, e) => s + e.amount, 0);
+  const costsCents = client.projects
+    .flatMap((p) => p.expenses)
+    .reduce((s, e) => s + e.amountCents, 0);
 
-  return NextResponse.json({
-    ...client,
-    invoices,
-    totals: { owing, collected, costs, lifetime: collected },
-  });
+  return NextResponse.json(
+    inDollars({
+      ...client,
+      // A plan price is the money book, which the crew does not read — the same line
+      // that keeps them off /contracts and off the estimates.
+      contracts: role === "ADMIN" ? client.contracts : [],
+      invoices,
+      totals: {
+        owingCents,
+        collectedCents,
+        costsCents,
+        lifetimeCents: collectedCents,
+      },
+    })
+  );
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const tenantId = await tenantOf(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const existing = await prisma.client.findFirst({ where: { id: params.id, tenantId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   LaneHead,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
-interface Payment {
+interface ApiPayment {
   id: string;
   amount: number;
   method: string;
@@ -23,7 +24,7 @@ interface Payment {
   project: { id: string; title: string; clientName: string };
 }
 
-interface Expense {
+interface ApiExpense {
   id: string;
   amount: number;
   category: string;
@@ -32,14 +33,18 @@ interface Expense {
   project?: { id: string; title: string };
 }
 
-interface FinanceSummary {
+/** The books as the API serves them: dollars. */
+interface ApiFinanceSummary {
   totalRevenue: number;
   totalExpenses: number;
   netProfit: number;
   projectCount: number;
-  payments: Payment[];
-  expenses: Expense[];
+  payments: ApiPayment[];
+  expenses: ApiExpense[];
 }
+
+/** What this screen works in. */
+type FinanceSummary = InCents<ApiFinanceSummary>;
 
 const MONTHS = [
   "",
@@ -91,7 +96,9 @@ export default function FinancePage() {
       fetch(`/api/finance/summary?${params}`),
       fetch("/api/projects"),
     ]);
-    setData(await finRes.json());
+    // The one door on this screen: dollars off the wire, cents in the ledger. Both
+    // forms below post the other way, in the dollars the owner typed.
+    setData(inCents((await finRes.json()) as ApiFinanceSummary));
     setProjects(await projRes.json());
   }
 
@@ -127,7 +134,7 @@ export default function FinancePage() {
   }
 
   const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
-  const net = data?.netProfit || 0;
+  const netCents = data?.netProfitCents || 0;
   const payments = data?.payments || [];
   const expenses = data?.expenses || [];
   const periodLabel = month ? `${MONTHS[month]} ${year}` : `Full year ${year}`;
@@ -293,7 +300,7 @@ export default function FinancePage() {
                     </span>
                     <span className="dotlead" aria-hidden="true" />
                     <Money
-                      value={p.amount}
+                      cents={p.amountCents}
                       className="shrink-0 text-[13px] text-emerald-ink"
                     />
                   </div>
@@ -304,9 +311,9 @@ export default function FinancePage() {
             <div className="rule-double mt-3 flex items-baseline justify-between gap-4 pt-2.5">
               <span className="eyebrow">Total in</span>
               <Readout
-                value={formatCurrency(data?.totalRevenue || 0)}
+                value={formatCents(data?.totalRevenueCents || 0)}
                 size={22}
-                tone={data?.totalRevenue ? "var(--emerald-ink)" : "var(--ink-3)"}
+                tone={data?.totalRevenueCents ? "var(--emerald-ink)" : "var(--ink-3)"}
               />
             </div>
           </div>
@@ -429,7 +436,7 @@ export default function FinancePage() {
                     </span>
                     <span className="dotlead" aria-hidden="true" />
                     <Money
-                      value={e.amount}
+                      cents={e.amountCents}
                       className="shrink-0 text-[13px] text-rose-ink"
                     />
                   </div>
@@ -440,9 +447,9 @@ export default function FinancePage() {
             <div className="rule-double mt-3 flex items-baseline justify-between gap-4 pt-2.5">
               <span className="eyebrow">Total out</span>
               <Readout
-                value={formatCurrency(data?.totalExpenses || 0)}
+                value={formatCents(data?.totalExpensesCents || 0)}
                 size={22}
-                tone={data?.totalExpenses ? "var(--rose-ink)" : "var(--ink-3)"}
+                tone={data?.totalExpensesCents ? "var(--rose-ink)" : "var(--ink-3)"}
               />
             </div>
           </div>
@@ -457,12 +464,12 @@ export default function FinancePage() {
             </div>
           </div>
           <Readout
-            value={formatCurrency(net)}
+            value={formatCents(netCents)}
             size={30}
             tone={
-              net > 0
+              netCents > 0
                 ? "var(--emerald-ink)"
-                : net < 0
+                : netCents < 0
                   ? "var(--rose-ink)"
                   : "var(--ink-2)"
             }
