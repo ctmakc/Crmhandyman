@@ -11,9 +11,11 @@ import {
   WoNumber,
   Empty,
   Readout,
+  buttonClass,
   textToneFor,
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
+import { LeadWait } from "@/components/LeadClock";
 import ChaseLane from "@/components/ChaseLane";
 import ServiceDueLane from "@/components/ServiceDueLane";
 import { nextDueVisit, daysUntil } from "@/lib/contracts";
@@ -76,11 +78,17 @@ export default async function DashboardPage() {
           _sum: { amountCents: true },
         })
       : null,
+    /**
+     * What is actually still on the street. The aggregate below used to sum
+     * `totalCents`, so a part-paid invoice was counted whole and the deck answered
+     * the morning's first question with a bigger number than the book it links to.
+     * Owing is total minus what has landed — the same arithmetic `owingCents` runs
+     * everywhere else, so the two screens now agree to the cent.
+     */
     isAdmin
-      ? prisma.invoice.aggregate({
+      ? prisma.invoice.findMany({
           where: { tenantId, status: { in: ["SENT", "PARTIAL"] } },
-          _sum: { totalCents: true },
-          _count: true,
+          select: { totalCents: true, payments: { select: { amountCents: true } } },
         })
       : null,
     prisma.project.findMany({
@@ -210,27 +218,51 @@ export default async function DashboardPage() {
     }
   }
 
-  const readouts = [
+  /**
+   * THE RAIL, IN THE ORDER THE QUESTIONS ARRIVE.
+   *
+   * The desk is opened at six in the morning to answer three things: how much money is
+   * out on the street, who has to be phoned today, and what is on the board. The rail
+   * used to run counts first and the money last, so the answer the owner came for was
+   * the fifth item down the narrowest column — and all five readouts were the same
+   * 30px, which is five things shouting and nothing dominating.
+   *
+   * Money leads at full gauge size; the counts follow at record size. Different weight,
+   * different question.
+   */
+  const collectedCents = monthRevenue?._sum?.amountCents || 0;
+  const outstandingCents = (outstanding ?? []).reduce(
+    (sum, inv) =>
+      sum + Math.max(inv.totalCents - inv.payments.reduce((p, x) => p + x.amountCents, 0), 0),
+    0
+  );
+
+  const money = isAdmin
+    ? [
+        {
+          label: `Owing · ${outstanding?.length || 0}`,
+          value: formatCents(outstandingCents),
+          href: "/invoices",
+          // A zero is a zero. Colour reports the size of the number, never its category:
+          // an empty month printed emerald read as good news.
+          tone: outstandingCents > 0 ? "var(--rose-ink)" : undefined,
+        },
+        {
+          label: "Collected · this month",
+          value: formatCents(collectedCents),
+          href: "/finance",
+          tone: collectedCents > 0 ? "var(--emerald-ink)" : undefined,
+        },
+      ]
+    : [];
+
+  const counts = [
     // The amber lamp — not amber type — marks the one lane needing attention.
     { label: "New leads", value: String(newLeadsCount), href: "/leads", lamp: newLeadsCount > 0 },
     { label: "Active jobs", value: String(activeProjectsCount), href: "/projects" },
-    { label: "Open crew tasks", value: String(pendingTasksCount), href: "/tasks" },
-    ...(isAdmin
-      ? [
-          {
-            label: "Collected · MTD",
-            value: formatCents(monthRevenue?._sum?.amountCents || 0),
-            href: "/finance",
-            tone: "var(--emerald-ink)",
-          },
-          {
-            label: `Outstanding · ${outstanding?._count || 0}`,
-            value: formatCents(outstanding?._sum?.totalCents || 0),
-            href: "/invoices",
-            tone: (outstanding?._sum?.totalCents || 0) > 0 ? "var(--rose-ink)" : undefined,
-          },
-        ]
-      : []),
+    // Two words, so all three labels hold one line when the counts sit side by side on
+    // a phone — «Open crew tasks» wrapped and dropped its numeral out of line.
+    { label: "Crew tasks", value: String(pendingTasksCount), href: "/tasks" },
   ];
 
   return (
@@ -238,15 +270,33 @@ export default async function DashboardPage() {
       <PageHead
         eyebrow={`Shift desk · ${session?.user?.name ?? ""}`}
         title="Dispatch"
-        sub="Everything booked, quoted and owed — on one deck."
+        /* The crew's rail carries no money at all, so the owner's line promised them
+           something their own screen does not show. */
+        sub={
+          isAdmin
+            ? "Everything booked, quoted and owed — on one deck."
+            : "Everything booked and out on the trucks — on one deck."
+        }
       />
 
       {/*
-        An asymmetric desk, not a stack of equal panels. The board is the work;
-        the money rail is the consequence. Different widths = different weight.
+        An asymmetric desk: a stack of equal panels says everything weighs the same.
+        The board is the work; the money rail is the consequence. Different widths =
+        different weight.
+
+        ORDER FLIPS ON THE PHONE. On the desk the eye takes the board and the rail in
+        one look, so the rail sits to the right of the work. On a 390px screen the DOM
+        order IS the reading order, and the rail was last: the owner scrolled past the
+        week, five jobs and five leads before a single number about money appeared.
+        Below `lg` the rail goes first — money, then who to phone, then the board.
       */}
       <div className="mt-10 grid gap-x-10 gap-y-12 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0 space-y-12">
+        {/* The lanes carry their own order below `lg`. On the desk the reading is
+            week → work → leads; on a phone the money rail already took the top, and
+            leaving the leads lane last put «who do I ring» 1659px down a 844px
+            screen. The morning question comes straight after the money. */}
+        <div className="order-2 flex min-w-0 flex-col gap-12 lg:order-1">
+          <div className="order-2 lg:order-1">
           {/* The week is the hero: it opens the deck with no frame around it. */}
           <DayRail
             jobs={weekJobs.map((j) => ({
@@ -258,10 +308,11 @@ export default async function DashboardPage() {
             }))}
             crewSize={crewSize}
           />
+          </div>
 
-          <section>
+          <section className="order-3 lg:order-2">
             <LaneHead
-              title="Jobs in the yard"
+              title="Jobs on the books"
               right={
                 <Link href="/projects" className="eyebrow hover:text-ink">
                   All jobs →
@@ -269,27 +320,36 @@ export default async function DashboardPage() {
               }
             />
             <Lane>
-              {recentProjects.length === 0 && <Empty>Nothing scheduled</Empty>}
+              {recentProjects.length === 0 && (
+                <Empty
+                  hint="The first work order lands here, on the week board above, and on the crew's phones."
+                  action={
+                    <Link href="/projects" className={buttonClass("primary")}>
+                      New job
+                    </Link>
+                  }
+                >
+                  No jobs on the books yet
+                </Empty>
+              )}
               {recentProjects.map((project) => (
                 <Row key={project.id} href={`/projects/${project.id}`} status={project.status}>
                   <div className="flex items-baseline justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="truncate text-[15px] font-bold leading-tight text-ink">
-                        {project.title}
-                      </p>
-                      <p className="mt-0.5 truncate text-[13px] text-ink-2">
+                      <p className="t-row truncate font-bold text-ink">{project.title}</p>
+                      <p className="t-body mt-1 truncate text-ink-2">
                         {project.clientName}
                         {project.address ? ` · ${project.address}` : ""}
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
                       <span
-                        className="mono text-[11px] tracking-[0.08em]"
+                        className="eyebrow"
                         style={{ color: textToneFor(project.status) }}
                       >
                         {project.status.replace("_", " ")}
                       </span>
-                      <span className="mt-0.5 block">
+                      <span className="mt-1 block">
                         <WoNumber id={project.id} date={project.createdAt} />
                       </span>
                     </div>
@@ -299,7 +359,7 @@ export default async function DashboardPage() {
             </Lane>
           </section>
 
-          <section>
+          <section className="order-1 lg:order-3">
             <LaneHead
               title="Incoming leads"
               lamp={newLeadsCount > 0 ? "var(--amber)" : undefined}
@@ -310,20 +370,43 @@ export default async function DashboardPage() {
               }
             />
             <Lane>
-              {recentLeads.length === 0 && <Empty>No leads on the desk</Empty>}
+              {recentLeads.length === 0 && (
+                <Empty
+                  hint="Put the intake link on the website and every enquiry arrives here with a phone number on it."
+                  action={
+                    <Link href="/settings/intake" className={buttonClass("ghost")}>
+                      Set up intake
+                    </Link>
+                  }
+                >
+                  No leads on the desk
+                </Empty>
+              )}
               {recentLeads.map((lead) => (
                 <Row key={lead.id} href={`/leads/${lead.id}`} status={lead.status}>
                   <div className="flex items-baseline justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="truncate text-[15px] font-bold leading-tight text-ink">
-                        {lead.name}
-                      </p>
-                      <p className="mt-0.5 truncate text-[13px] text-ink-2">
+                      <p className="t-row truncate font-bold text-ink">{lead.name}</p>
+                      <p className="t-body mt-1 truncate text-ink-2">
                         {[lead.jobType, lead.city].filter(Boolean).join(" · ") ||
                           "General inquiry"}
                       </p>
                     </div>
-                    <span className="eyebrow shrink-0">{lead.source}</span>
+                    {/* How long he has been waiting — the panel used to name the
+                        channel and say nothing about the clock, which is the only
+                        thing that decides who gets rung first. */}
+                    <span className="flex shrink-0 items-baseline gap-3">
+                      <span className="eyebrow">{lead.source}</span>
+                      <LeadWait
+                        lead={{
+                          createdAt: lead.createdAt.toISOString(),
+                          updatedAt: lead.updatedAt.toISOString(),
+                          status: lead.status,
+                          notes: lead.notes,
+                        }}
+                        compact
+                      />
+                    </span>
                   </div>
                 </Row>
               ))}
@@ -331,28 +414,48 @@ export default async function DashboardPage() {
           </section>
         </div>
 
-        {/* The money rail: narrow, dense, quiet. Read after the board, not before. */}
-        <aside className="space-y-10 lg:border-l lg:border-line lg:pl-8">
-          <div className="space-y-6">
-            {readouts.map((r, i) => (
-              <Link
-                key={r.label}
-                href={r.href}
-                className="arm-readout group block"
-                style={{ ["--i" as string]: i } as React.CSSProperties}
-              >
-                <div className="flex items-center gap-2">
-                  {"lamp" in r && r.lamp && (
-                    <span
-                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: "var(--amber)" }}
-                    />
-                  )}
+        {/* The money rail: narrow, dense, and read first. */}
+        <aside className="order-1 space-y-10 lg:order-2 lg:border-l lg:border-line lg:pl-8">
+          {money.length > 0 && (
+            <div className="space-y-6">
+              {money.map((r, i) => (
+                <Link
+                  key={r.label}
+                  href={r.href}
+                  className="arm-readout group block"
+                  style={{ ["--i" as string]: i } as React.CSSProperties}
+                >
                   <span className="eyebrow group-hover:text-ink">{r.label}</span>
-                </div>
-                <Readout value={r.value} tone={r.tone} className="mt-1.5 block" />
-              </Link>
-            ))}
+                  <Readout value={r.value} tone={r.tone} className="mt-1.5 block" />
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {/* The counts of the day. Same rail, one step down the scale — a tally of
+              open tasks and a bill nobody has paid are not the same size of fact. */}
+          <div className={money.length > 0 ? "lane pt-4" : undefined}>
+            <div className="grid grid-cols-3 gap-4 lg:grid-cols-1 lg:gap-6">
+              {counts.map((r, i) => (
+                <Link
+                  key={r.label}
+                  href={r.href}
+                  className="arm-readout group block"
+                  style={{ ["--i" as string]: money.length + i } as React.CSSProperties}
+                >
+                  <div className="flex items-center gap-2">
+                    {r.lamp && (
+                      <span
+                        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ background: "var(--amber)" }}
+                      />
+                    )}
+                    <span className="eyebrow group-hover:text-ink">{r.label}</span>
+                  </div>
+                  <Readout value={r.value} size={22} className="mt-1.5 block" />
+                </Link>
+              ))}
+            </div>
           </div>
 
           {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}

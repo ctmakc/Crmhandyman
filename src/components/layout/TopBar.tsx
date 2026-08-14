@@ -3,6 +3,7 @@
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { LogOut, Search } from "lucide-react";
+import { buttonClass } from "@/components/ui/primitives";
 import { useEffect, useState } from "react";
 
 interface TopBarProps {
@@ -60,7 +61,9 @@ export default function TopBar({ user }: TopBarProps) {
               new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })
             )
           }
-          className="hidden items-center gap-2 border border-line px-2.5 py-1.5 text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink md:flex"
+          /* The chrome used to spell its own two buttons and landed at 31px,
+             a third height in a system that promises 38 and 26. */
+          className={`${buttonClass("quiet")} hidden md:inline-flex`}
         >
           <Search className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           <span className="mono text-[11px] tracking-[0.06em]">Jump</span>
@@ -92,7 +95,7 @@ export default function TopBar({ user }: TopBarProps) {
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           aria-label="Sign out"
-          className="flex min-w-[44px] items-center justify-center gap-1.5 border border-line px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink sm:min-w-0"
+          className={`${buttonClass("quiet")} min-w-[44px] sm:min-w-0`}
         >
           <LogOut className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           <span className="hidden sm:inline">Sign out</span>

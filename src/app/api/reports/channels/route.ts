@@ -18,18 +18,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") || new Date().getFullYear());
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    return NextResponse.json({ error: "Bad year" }, { status: 400 });
+    return NextResponse.json({ error: "That year is outside the books" }, { status: 400 });
   }
 
   const monthParam = searchParams.get("month");
   const month = monthParam ? Number(monthParam) : null;
   if (month !== null && !(Number.isInteger(month) && month >= 1 && month <= 12)) {
-    return NextResponse.json({ error: "Bad month" }, { status: 400 });
+    return NextResponse.json({ error: "Pick a month from the list" }, { status: 400 });
   }
 
   const verticalParam = searchParams.get("vertical") || "ALL";
   if (verticalParam !== "ALL" && !TRADES.includes(verticalParam as never)) {
-    return NextResponse.json({ error: "Unknown trade" }, { status: 400 });
+    return NextResponse.json({ error: "That trade is not on this desk" }, { status: 400 });
   }
 
   const report = await loadChannelReport(tenantId, {

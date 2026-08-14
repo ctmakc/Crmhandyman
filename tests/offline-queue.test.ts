@@ -177,7 +177,7 @@ describe("flushing", () => {
     expect(readOutbox(store).actions).toHaveLength(0);
     const [rejection] = readOutbox(store).rejections;
     expect(rejection.serverStatus).toBe("CANCELLED");
-    expect(rejectionLine(rejection)).toBe("Finish rejected — dispatch set CANCELLED");
+    expect(rejectionLine(rejection)).toBe("Finish did not stick — dispatch set CANCELLED");
 
     dismissRejection(rejection.id, store);
     expect(readOutbox(store).rejections).toHaveLength(0);
@@ -189,7 +189,7 @@ describe("flushing", () => {
     await flush(store, fake);
 
     const [rejection] = readOutbox(store).rejections;
-    expect(rejectionLine(rejection)).toBe("Start rejected — the job is no longer on your board");
+    expect(rejectionLine(rejection)).toBe("Start did not stick — this job is off your board now");
   });
 
   it("keeps a tap the server did not answer for", async () => {

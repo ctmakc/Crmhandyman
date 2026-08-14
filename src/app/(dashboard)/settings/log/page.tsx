@@ -1,8 +1,14 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/page-guard";
-import { PageHead, Empty } from "@/components/ui/primitives";
+import {
+  BackLink,
+  Empty,
+  Num,
+  PageHead,
+  buttonClass,
+  controlClass,
+} from "@/components/ui/primitives";
 
 /**
  * THE LOG BOOK — this screen's device (see DESIGN.md rev 3: every screen is a
@@ -91,56 +97,77 @@ export default async function ActionLogPage({
   const newestHref = `/settings/log${filters.toString() ? `?${filters}` : ""}`;
 
   return (
-    <div className="max-w-3xl space-y-6 pb-24 md:pb-0">
-      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 03"
+        eyebrow="Desk setup · 06"
         title="Action log"
         sub="Every change to money, paper and access, in the order it happened. Entries are written once and never edited."
       />
 
       {/* Ruled filter line — a frame is the last resort, and this one has not earned it. */}
-      <form method="GET" className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search the log"
-          className="w-full px-3 py-1.5 text-[13px] sm:w-[260px]"
-        />
-        <select name="entity" defaultValue={entity} className="px-2 py-1.5 text-[13px]">
-          <option value="">Everything</option>
-          {ENTITIES.map((e) => (
-            <option key={e} value={e}>
-              {e}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded border border-line bg-plate px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-ink-2 transition-all duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink active:translate-y-px"
-        >
+      <form method="GET" className="flex flex-wrap items-end gap-2 border-b border-line pb-3">
+        <div className="w-full sm:w-[260px]">
+          <label className="eyebrow block" htmlFor="log-q">
+            Search
+          </label>
+          <input
+            id="log-q"
+            name="q"
+            defaultValue={q}
+            placeholder="A name, a job, an amount"
+            className={controlClass("mt-1.5")}
+          />
+        </div>
+        <div>
+          <label className="eyebrow block" htmlFor="log-entity">
+            What changed
+          </label>
+          <select
+            id="log-entity"
+            name="entity"
+            defaultValue={entity}
+            className={controlClass("mono mt-1.5 w-[190px]")}
+          >
+            <option value="">Everything</option>
+            {ENTITIES.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className={buttonClass("ghost")}>
           Filter
         </button>
         {(q || entity || cursor) && (
-          <Link href="/settings/log" className="eyebrow hover:text-ink">
+          <Link href="/settings/log" className={buttonClass("quiet")}>
             Clear
           </Link>
         )}
       </form>
 
-      {entries.length === 0 && <Empty>{q || entity ? "No entries match" : "Nothing recorded yet"}</Empty>}
+      {entries.length === 0 && (
+        <Empty
+          hint={
+            q || entity
+              ? "Nothing here answers that. Clear the filter to read the whole book."
+              : "The log fills itself. Issue an invoice, take a payment or add a crew member and the entry appears here with a name and a time against it."
+          }
+        >
+          {q || entity ? "No entries match" : "Nothing recorded yet"}
+        </Empty>
+      )}
 
       {days.map((day) => (
         <section key={day.label}>
           <div className="flex items-baseline justify-between gap-4 border-b border-line pb-2">
-            <h2 className="mono text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
+            <h2 className="mono t-meta font-bold uppercase tracking-[0.1em] text-ink">
               {day.label === today ? `Today · ${day.label}` : day.label}
             </h2>
             <span className="eyebrow">
-              {day.entries.length} {day.entries.length === 1 ? "entry" : "entries"}
+              <Num>{day.entries.length}</Num> {day.entries.length === 1 ? "entry" : "entries"}
             </span>
           </div>
 
@@ -157,12 +184,12 @@ export default async function ActionLogPage({
               <div className="flex gap-3 sm:gap-4">
                 <time
                   dateTime={entry.createdAt.toISOString()}
-                  className="mono w-[42px] shrink-0 pt-px text-[12px] text-ink-3"
+                  className="mono t-meta w-[42px] shrink-0 pt-px text-ink-3"
                 >
                   {timeOf(entry.createdAt)}
                 </time>
                 <div className="min-w-0">
-                  <p className="text-[14px] leading-snug text-ink">{entry.summary}</p>
+                  <p className="measure t-body leading-snug text-ink">{entry.summary}</p>
                   <p className="eyebrow mt-1.5">
                     {entry.actorName} · {entry.action}
                   </p>

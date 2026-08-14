@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
     },
   });
-  if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const html = renderDocument({
     kind: "INVOICE",

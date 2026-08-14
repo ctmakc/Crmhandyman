@@ -47,6 +47,37 @@ export function daysOverdue(inv: InvoiceLike, now: Date = new Date()) {
   return Math.round((today.getTime() - due.getTime()) / 86_400_000);
 }
 
+/**
+ * HOW LATE IS SAID — one phrasing for the whole product.
+ *
+ * The same invoice read `23 DAYS LATE` on the dispatch desk, `23D LATE` in the book,
+ * `8 DAYS PAST DUE` on its own record and `OVERDUE · 23D` in the client's file, while
+ * the contract board gave a fifth and sixth form. Six spellings of one fact makes the
+ * desk read as six products. The full form is the default; `short` exists only for a
+ * fixed-width column in the ledger, and is the same everywhere a column is narrow.
+ */
+export function lateWord(days: number, short = false) {
+  const n = Math.abs(Math.round(days));
+  return short ? `${n}D LATE` : `${n} ${lateTail(n)}`;
+}
+
+/** The words after the numeral, for the places that set the numeral in mono itself. */
+export function lateTail(days: number) {
+  return `${Math.abs(Math.round(days)) === 1 ? "DAY" : "DAYS"} LATE`;
+}
+
+/** The other half of the same sentence: how long until it comes due. */
+export function dueWord(days: number, short = false) {
+  const n = Math.abs(Math.round(days));
+  if (n === 0) return "DUE TODAY";
+  return short ? `IN ${n}D` : `IN ${n} ${dueTail(n)}`;
+}
+
+/** As `lateTail`, for the countdown side. */
+export function dueTail(days: number) {
+  return Math.abs(Math.round(days)) === 1 ? "DAY" : "DAYS";
+}
+
 /** Two dates on the same page of the calendar the shop hangs on the wall. */
 export function sameCalendarDay(a: Date | string | null | undefined, b: Date) {
   if (!a) return false;

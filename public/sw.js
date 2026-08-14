@@ -18,7 +18,7 @@
  *      which is also how a changed icon or offline card reaches an installed app.
  */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const SHELL = `hp-shell-${CACHE_VERSION}`;
 const PAGES = `hp-pages-${CACHE_VERSION}`;
 const KEEP = [SHELL, PAGES];
@@ -28,7 +28,16 @@ const OFFLINE_URL = "/offline.html";
 /** The one screen worth having without a network. */
 const FIELD_PATH = "/today";
 
-const PRECACHE = [OFFLINE_URL, "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
+const PRECACHE = [
+  OFFLINE_URL,
+  "/manifest.json",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  // The offline card is set in the product's own face; with no network the font has
+  // to already be on the phone or the card falls back to a system grotesque.
+  "/fonts/chivo-latin.woff2",
+  "/fonts/chivo-mono-latin.woff2",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

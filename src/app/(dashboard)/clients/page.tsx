@@ -10,8 +10,15 @@ import {
   Row,
   Empty,
   Plate,
-  buttonClass,
+  Button,
+  controlClass,
+  Chip,
+  Field,
+  Money,
+  Num,
+  Readout,
   Skeleton,
+  Stamp,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
@@ -42,6 +49,12 @@ type Client = InCents<ApiClient>;
    -------------------------------------------------------------------------- */
 
 const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").concat("#");
+
+/** One box for a thumb tab, whether or not anybody is filed under it. */
+const RAIL_LETTER =
+  /* 12 + 4 + 8 + 2 of border = 26px, the same box as the row-scale button, so the
+     rail does not invent a height of its own. */
+  "mono t-meta inline-flex min-w-[26px] items-end justify-center border-b-2 px-1.5 pb-2 pt-1 !leading-none transition-colors duration-fast ease-instrument";
 
 function letterOf(name: string) {
   const ch = (name.trim()[0] || "").toUpperCase();
@@ -102,13 +115,12 @@ export default function ClientsPage() {
       setForm({ name: "", phone: "", email: "", address: "", city: "", notes: "" });
       fetchClients();
     } else {
-      toast("Could not add the client", "bad");
+      toast(`${form.name || "That client"} was not added — no answer from the office`, "bad");
     }
   }
 
   const owingTotalCents = clients.reduce((s, c) => s + c.owingCents, 0);
   const withIron = clients.filter((c) => c.equipmentCount > 0).length;
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   /** Alphabetical card index: sorted, then filed under a letter divider. */
   const groups = useMemo(() => {
@@ -131,84 +143,107 @@ export default function ClientsPage() {
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  const searching = search.trim().length > 0;
+
   return (
-    <div className="space-y-8 pb-24 md:pb-0">
+    <div className="space-y-6 pb-24 md:pb-0">
       <PageHead
         eyebrow="The book"
         title="Clients"
         sub="One address, one history — every job, invoice and piece of iron on it."
         action={
-          <button onClick={() => setShowForm((v) => !v)} className={buttonClass("primary")}>
+          <Button variant="primary" onClick={() => setShowForm((v) => !v)}>
             {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showForm ? "Close" : "New client"}
-          </button>
+          </Button>
         }
       />
 
-      {/* The three readouts, tightened onto one baseline rule. */}
-      <div className="flex flex-wrap items-baseline gap-x-9 gap-y-2 border-b border-line pb-3.5">
-        {[
-          { label: "On the book", value: String(clients.length) },
-          { label: "With equipment", value: String(withIron) },
-          {
-            label: "Owing us",
-            value: formatCents(owingTotalCents),
-            tone: owingTotalCents > 0 ? "var(--rose-ink)" : "var(--emerald)",
-          },
-        ].map((r) => (
-          <div key={r.label} className="flex items-baseline gap-2.5">
-            <span className="eyebrow">{r.label}</span>
-            <span
-              className="mono text-[20px] font-bold leading-none tabular-nums"
-              style={{ color: r.tone || "var(--ink)" }}
-            >
-              {r.value}
-            </span>
-          </div>
-        ))}
+      {/* The three readouts, on one baseline rule. Money is a gauge: the unit
+          mark recedes so the digits carry the weight. A zero owing is a fact,
+          not good news, so it stays in neutral ink. */}
+      {/* Label OVER number, as on the deck, the call sheet, the book and the
+          two money screens: stacked, the figures land on one baseline and can be
+          read across. Written inline, this screen and the contract board were the
+          only two reading left-to-right. */}
+      <div className="flex flex-wrap items-baseline gap-x-10 gap-y-4 border-b border-line pb-4">
+        <div className="flex flex-col gap-1.5">
+          <span className="eyebrow">On the book</span>
+          <Num className="t-record font-bold tabular-nums">{clients.length}</Num>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="eyebrow">With equipment</span>
+          <Num className="t-record font-bold tabular-nums">{withIron}</Num>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="eyebrow">Owing</span>
+          <Readout
+            value={formatCents(owingTotalCents)}
+            size={22}
+            tone={owingTotalCents > 0 ? "var(--rose-ink)" : "var(--ink)"}
+          />
+        </div>
       </div>
 
-      {/* The A–Z thumb rail — the rolodex tabs — with the compact search at its end. */}
-      <div className="flex flex-col-reverse gap-1 border-b border-line sm:flex-row sm:items-end sm:gap-4">
-        <div className="min-w-0 flex-1 overflow-x-auto">
-          <div className="flex min-w-[460px] items-end justify-between">
-            {ALPHA.map((letter) =>
-              groups.has(letter) ? (
-                <button
-                  key={letter}
-                  type="button"
-                  onClick={() => jumpTo(letter)}
-                  aria-label={`Jump to ${letter}`}
-                  className={cn(
-                    "mono border-b-2 px-0.5 pb-2 pt-1 text-[11px] leading-none text-ink transition-colors duration-[140ms] ease-instrument hover:border-amber",
-                    activeLetter === letter ? "border-amber" : "border-transparent"
-                  )}
-                >
-                  {letter}
-                </button>
-              ) : (
-                <span
-                  key={letter}
-                  aria-hidden="true"
-                  className="mono select-none border-b-2 border-transparent px-0.5 pb-2 pt-1 text-[11px] leading-none text-ink-3 opacity-35"
-                >
-                  {letter}
-                </span>
-              )
-            )}
+      {/* The A–Z thumb rail — the rolodex tabs — with the search at its end.
+          The rail wraps rather than scrolls: at 390px an overflow box cut the
+          alphabet at "U" with nothing to say it continued, and a phone book
+          that stops at U reads as a broken screen. */}
+      <div className="flex flex-col-reverse gap-2 border-b border-line sm:flex-row sm:items-end sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-end sm:justify-between">
+            {/* A rolodex with no cards in it has no tabs. */}
+            {groups.size > 0 &&
+              ALPHA.map((letter) =>
+                groups.has(letter) ? (
+                  <button
+                    key={letter}
+                    type="button"
+                    onClick={() => jumpTo(letter)}
+                    aria-label={`Jump to ${letter}`}
+                    className={cn(RAIL_LETTER, "text-ink hover:border-amber", {
+                      "border-amber": activeLetter === letter,
+                      "border-transparent": activeLetter !== letter,
+                    })}
+                  >
+                    {letter}
+                  </button>
+                ) : (
+                  /* A letter with nobody under it still carries a fact. It used to
+                     run at opacity .35 — 1.6:1, the last contrast failure in the
+                     product; it is the same ink as every other quiet label now.
+                     It also carries the button's own box, or the phone's 44px tap
+                     rule lifts every live letter above the dead ones and the rail
+                     comes apart into two ragged rows. */
+                  <span
+                    key={letter}
+                    aria-hidden="true"
+                    className={cn(
+                      RAIL_LETTER,
+                      "min-h-[44px] select-none border-transparent text-ink-3 sm:min-h-0"
+                    )}
+                  >
+                    {letter}
+                  </span>
+                )
+              )}
           </div>
         </div>
-        <div className="relative w-full pb-2 sm:w-[220px] sm:shrink-0">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
-            strokeWidth={2}
-          />
-          <input
-            placeholder="Name, phone, address…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full py-1.5 pl-8 pr-2.5 text-[13px]"
-          />
+        <div className="w-full pb-2 sm:w-[240px] sm:shrink-0">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
+              strokeWidth={2}
+              aria-hidden
+            />
+            <input
+              aria-label="Search the book by name, phone or address"
+              placeholder="Name, phone, address…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={controlClass("!pl-9")}
+            />
+          </div>
         </div>
       </div>
 
@@ -216,68 +251,78 @@ export default function ClientsPage() {
         <Plate className="p-5">
           <div className="eyebrow">New client record</div>
           <form onSubmit={handleAdd} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="eyebrow">Name *</label>
-              <input
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className="eyebrow">Phone</label>
-              <input
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className={`${field} mono`}
-              />
-            </div>
-            <div>
-              <label className="eyebrow">Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className="eyebrow">City</label>
-              <input
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Address</label>
-              <input
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                rows={2}
-                className={field}
-              />
-            </div>
-            <div className="flex gap-2 sm:col-span-2">
-              <button type="submit" className={buttonClass("primary")}>
+            <Field id="client-name" label="Name" required>
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="client-phone" label="Phone">
+              {(f) => (
+                <input
+                  {...f}
+                  type="tel"
+                  autoComplete="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className={cn(f.className, "mono")}
+                />
+              )}
+            </Field>
+            <Field id="client-email" label="Email">
+              {(f) => (
+                <input
+                  {...f}
+                  type="email"
+                  autoComplete="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="client-city" label="City">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="client-address" label="Address" className="sm:col-span-2">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field
+              id="client-notes"
+              label="Notes"
+              hint="Gate code, dog, where the panel is."
+              className="sm:col-span-2"
+            >
+              {(f) => (
+                <textarea
+                  {...f}
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              )}
+            </Field>
+            <div className="actions sm:col-span-2">
+              <Button type="submit" variant="primary">
                 Add client
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className={buttonClass("ghost")}
-              >
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         </Plate>
@@ -287,7 +332,31 @@ export default function ClientsPage() {
       {loading ? (
         <Skeleton lines={5} />
       ) : clients.length === 0 ? (
-        <Empty>No clients match this search</Empty>
+        /* Two different facts, two different lines: a book nobody has filled in
+           yet, and a search that found nothing in a book that has plenty. */
+        searching ? (
+          <Empty
+            hint={`Nothing matches “${search}”. The search runs over the name, the phone number and the street.`}
+            action={
+              <Button variant="ghost" onClick={() => setSearch("")}>
+                Clear search
+              </Button>
+            }
+          >
+            No client matches that
+          </Empty>
+        ) : (
+          <Empty
+            hint="Every job, invoice and unit hangs off a client. Put the first one on the book and the rest of the desk has somewhere to file itself."
+            action={
+              <Button variant="primary" onClick={() => setShowForm(true)}>
+                <Plus className="h-4 w-4" /> New client
+              </Button>
+            }
+          >
+            No clients on the book yet
+          </Empty>
+        )
       ) : (
         <div>
           {ALPHA.filter((l) => groups.has(l)).map((letter) => (
@@ -298,8 +367,8 @@ export default function ClientsPage() {
             >
               {/* The phone-book thumb: the letter, sticky so it reads as a divider
                   while its group scrolls past. */}
-              <div className="border-r border-line pt-[18px]">
-                <span className="mono sticky top-4 block pl-0.5 text-[18px] font-medium leading-none text-ink-3 md:pl-1.5 md:text-[22px]">
+              <div className="border-r border-line pt-4">
+                <span className="mono t-record sticky top-4 block pl-0.5 font-medium text-ink-3 md:pl-1.5">
                   {letter}
                 </span>
               </div>
@@ -308,7 +377,7 @@ export default function ClientsPage() {
                 {groups.get(letter)!.map((c) => (
                   <Row
                     key={c.id}
-                    className="!pt-[19px]"
+                    className="row-tab"
                     // Green means "worked for, settled up" — a name with no jobs yet is neutral.
                     status={
                       c.owingCents > 0
@@ -328,74 +397,78 @@ export default function ClientsPage() {
                       aria-label={`Open ${c.name}`}
                     />
                     {/* The file tab: initials on a half-raised tab straddling the top rule. */}
-                    <span className="mono absolute left-5 top-0 -translate-y-1/2 rounded-t border border-b-0 border-line bg-plate px-1.5 py-[3px] text-[10px] font-medium uppercase leading-none tracking-[0.1em] text-ink-2">
+                    <span className="mono t-micro absolute left-5 top-0 -translate-y-1/2 rounded-t border border-b-0 border-line bg-plate px-1.5 py-1 font-medium uppercase leading-none tracking-[0.1em] text-ink-2">
                       {initialsOf(c.name)}
                     </span>
 
                     <div className="flex items-baseline justify-between gap-3">
-                      <p className="min-w-0 truncate text-[15px] font-bold leading-tight text-ink">
-                        {c.name}
-                      </p>
+                      <p className="t-row min-w-0 truncate font-bold text-ink">{c.name}</p>
                       {c.owingCents > 0 ? (
-                        <span
-                          className="mono shrink-0 text-right text-[12px] font-medium tabular-nums"
-                          style={{ color: "var(--rose-ink)" }}
-                        >
-                          OWES {formatCents(c.owingCents)}
+                        <span className="shrink-0 whitespace-nowrap text-right">
+                          <span className="eyebrow mr-1.5" style={{ color: "var(--rose-ink)" }}>
+                            Owing
+                          </span>
+                          <Money
+                            cents={c.owingCents}
+                            className="t-body font-bold"
+                            tone="var(--rose-ink)"
+                          />
                         </span>
                       ) : c.lastSeen ? (
-                        <span className="mono shrink-0 text-right text-[11px] text-ink-3">
-                          LAST {new Date(c.lastSeen).toLocaleDateString("en-CA")}
+                        /* On the phone the name keeps the line: the date of the
+                           last visit is the first fact worth losing, and a
+                           truncated client name is the last one. */
+                        <span className="eyebrow hidden shrink-0 whitespace-nowrap text-right sm:inline">
+                          Last <Stamp date={c.lastSeen} className="t-meta" />
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-0.5 truncate text-[13px] text-ink-2">
+                    <p className="t-body mt-1 truncate text-ink-2">
                       {[c.address, c.city].filter(Boolean).join(", ") || "No address on file"}
                     </p>
 
-                    <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5 border-t border-line pt-2">
+                    <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2 border-t border-line pt-2">
                       {c.phone ? (
                         <a
                           href={`tel:${c.phone}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="mono relative z-[1] text-[12px] text-ink underline underline-offset-4 hover:text-sky-ink"
+                          /* Above the row's stretched link, or the tap that should
+                             ring the client opens the file instead. */
+                          className="mono t-meta relative z-[2] inline-flex text-ink underline underline-offset-4 hover:text-sky-ink"
                         >
                           {c.phone}
                         </a>
                       ) : (
-                        <span className="mono text-[12px] text-ink-3">
-                          {c.email || "no contact on file"}
+                        <span className="mono t-meta text-ink-3">
+                          {c.email || "NO CONTACT ON FILE"}
                         </span>
                       )}
-                      <span className="mono text-[12px] text-ink-2">
+                      <span className="mono t-meta text-ink-2">
                         {c.jobCount === 0 && c.leadCount > 0
                           ? `LEAD ONLY · ${c.leadCount}`
                           : `${c.jobCount} ${c.jobCount === 1 ? "JOB" : "JOBS"}`}
                       </span>
                       {c.openJobs > 0 && (
-                        <span
-                          className="mono text-[12px]"
-                          style={{ color: "var(--amber-ink)" }}
-                        >
+                        <span className="mono t-meta" style={{ color: "var(--amber-ink)" }}>
                           {c.openJobs} OPEN
                         </span>
                       )}
+                      {/* The iron on the address, recessed rather than framed. */}
                       {(c.equipmentKinds ?? []).map((k, i) => (
-                        <span
-                          key={`${k}-${i}`}
-                          className="mono rounded border border-line px-1.5 py-0.5 text-[10px] uppercase leading-none tracking-[0.08em] text-ink-2"
-                        >
-                          {k}
-                        </span>
+                        <Chip key={`${k}-${i}`}>{k}</Chip>
                       ))}
                       {c.equipmentCount > (c.equipmentKinds?.length ?? 0) && (
-                        <span className="mono rounded border border-line px-1.5 py-0.5 text-[10px] uppercase leading-none tracking-[0.08em] text-ink-3">
-                          +{c.equipmentCount - c.equipmentKinds.length}
-                        </span>
+                        <Chip
+                          title={`${c.equipmentCount} units on this address`}
+                        >{`+${c.equipmentCount - c.equipmentKinds.length}`}</Chip>
                       )}
-                      {c.owingCents > 0 && c.lastSeen && (
-                        <span className="mono text-[12px] text-ink-3">
-                          LAST {new Date(c.lastSeen).toLocaleDateString("en-CA")}
+                      {/* The last visit sits at the head of the row on the desk;
+                          it comes down here when money took that slot, and on the
+                          phone, where the head belongs to the name. Printing it in
+                          both places at once was the row repeating itself. */}
+                      {c.lastSeen && (
+                        <span className={cn("eyebrow", c.owingCents === 0 && "sm:hidden")}>
+                          Last <Stamp date={c.lastSeen} className="t-meta" />
                         </span>
                       )}
                     </div>

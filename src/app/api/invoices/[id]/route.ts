@@ -6,6 +6,15 @@ import { inDollars, lineItemsJsonInDollars, parseCents } from "@/lib/money";
 import { parseDayInput } from "@/lib/dates";
 
 /** One door out: amounts in dollars, lines in dollars. */
+/** Enum values are for the column; the log line is a sentence somebody reads. */
+const STATUS_WORD: Record<string, string> = {
+  DRAFT: "draft",
+  SENT: "sent",
+  PARTIAL: "part paid",
+  PAID: "paid",
+  VOID: "cancelled",
+};
+
 const invoiceOut = <T extends { lineItems: string }>(invoice: T) => ({
   ...inDollars(invoice),
   lineItems: lineItemsJsonInDollars(invoice.lineItems),
@@ -23,7 +32,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       project: { select: { id: true, title: true, jobType: true } },
     },
   });
-  if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   return NextResponse.json(
     invoiceOut({
@@ -47,7 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id, tenantId },
     include: { payments: { select: { amountCents: true } } },
   });
-  if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const body = await req.json();
 
@@ -123,7 +132,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       entityId: invoice.id,
       summary:
         `Moved ${invoice.number} (${money(invoice.totalCents)}) for ${invoice.clientName} ` +
-        `from ${invoice.status} to ${body.status}`,
+        `from ${STATUS_WORD[invoice.status] ?? invoice.status} to ${STATUS_WORD[body.status] ?? body.status}`,
       meta: { from: invoice.status, to: body.status },
     });
   }
@@ -137,7 +146,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   const { tenantId } = guard.identity;
   
   const invoice = await prisma.invoice.findFirst({ where: { id: params.id, tenantId } });
-  if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   // Issued paper is never deleted — it is voided, so the numbering stays honest.
   const updated = await prisma.invoice.update({

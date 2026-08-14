@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Phone, Plus, Search, X } from "lucide-react";
+import { Phone, Plus, X } from "lucide-react";
 import {
   PageHead,
   Row,
@@ -12,14 +12,16 @@ import {
   WoNumber,
   Empty,
   Plate,
-  buttonClass,
+  Field,
+  Button,
+  controlClass,
   Skeleton,
   spineFor,
   textToneFor,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { LeadWait } from "@/components/LeadClock";
-import { waitRank } from "@/lib/lead-clock";
+import { responseOf, waitRank, STALE_MS } from "@/lib/lead-clock";
 
 interface Lead {
   id: string;
@@ -58,18 +60,31 @@ const SOURCES = [
  */
 const toneKey = (s: string) => (s === "VERIFIED" ? "QUALIFIED" : s);
 
-const field =
-  "w-full mt-1.5 px-3 py-2 text-[13px] text-ink placeholder:text-ink-3";
-const label = "eyebrow";
+/**
+ * THE THREE BANDS OF THE CALL SHEET.
+ *
+ * `waitRank` already sorts the lane into them — still winnable, gone quiet, already
+ * called — and the screen used to draw all three as one undivided list. A lead from
+ * April then looked exactly like a lead from nine minutes ago, and the head counted
+ * both into «8 to call». The arithmetic is untouched; the bands are now visible, and
+ * only the top one is counted as work for this morning.
+ */
+type Band = "live" | "cold" | "called";
 
-/* Inline outcome buttons — the dispatcher works the sheet without opening
-   records. Same button language as buttonClass, compressed to row scale. */
-const act =
-  "mono rounded border border-line bg-plate px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-2 transition-colors duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink";
-const actQuiet =
-  "mono rounded px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3 transition-colors duration-[140ms] ease-instrument hover:text-rose-ink";
-const actPrimary =
-  "mono rounded border border-navy-900 bg-navy-900 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-plate transition-colors duration-[140ms] ease-instrument hover:bg-navy-800";
+function bandOf(lead: Lead, now: number): Band {
+  const r = responseOf(lead, now);
+  if (r.answered) return "called";
+  return r.ms < STALE_MS ? "live" : "cold";
+}
+
+/** A mono divider inside a lane — the same one the worked lane uses for CLOSED. */
+function BandRule({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-5 pb-1.5 pt-6">
+      <span className="eyebrow">{children}</span>
+    </div>
+  );
+}
 
 export default function LeadsPage() {
   const router = useRouter();
@@ -82,6 +97,7 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -132,7 +148,7 @@ export default function LeadsPage() {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) {
-      toast("Could not update the lead");
+      toast(`${lead.name} did not move — no answer from the office`, "bad");
       return;
     }
     setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, status } : l)));
@@ -151,11 +167,19 @@ export default function LeadsPage() {
 
   async function handleAddLead(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/leads", {
+    setSaving(true);
+    const res = await fetch("/api/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
+    setSaving(false);
+    /* The form used to close and say «Lead logged» whatever came back, so a
+       refused write left the owner believing the number was on the sheet. */
+    if (!res.ok) {
+      toast(`${form.name || "That lead"} was not saved — nothing was written down`);
+      return;
+    }
     setShowAddForm(false);
     toast("Lead logged");
     setForm({
@@ -180,6 +204,8 @@ export default function LeadsPage() {
     ? leads.filter((l) => l.status === statusFilter)
     : leads;
 
+  const narrowed = search !== "" || sourceFilter !== "" || statusFilter !== "";
+
   /* Left lane — the call sheet, sorted by the response clock: everything still worth
      calling first, longest wait on top, then the unanswered leads that have gone cold,
      then the ones already worked. Age used to order this lane, which put a three-day-old
@@ -189,11 +215,92 @@ export default function LeadsPage() {
     .filter((l) => l.status === "NEW" || l.status === "CONTACTED")
     .sort((a, b) => waitRank(b, now) - waitRank(a, now));
 
+  const live = callSheet.filter((l) => bandOf(l, now) === "live");
+  const cold = callSheet.filter((l) => bandOf(l, now) === "cold");
+  const called = callSheet.filter((l) => bandOf(l, now) === "called");
+
   /* Right lane — worked. Verified up top, the closed book compressed below. */
   const verified = visible.filter((l) => l.status === "VERIFIED");
   const closed = visible.filter(
     (l) => l.status === "CONVERTED" || l.status === "REJECTED"
   );
+
+  function clearFilters() {
+    setSearch("");
+    setSourceFilter("");
+    setStatusFilter("");
+  }
+
+  /** One row of the call sheet. */
+  function CallRow({ lead }: { lead: Lead }) {
+    return (
+      <Row
+        status={toneKey(lead.status)}
+        className={`relative ${lead.id === snapId ? "ticket-snap" : ""}`}
+      >
+        {/* The whole row opens the record — a gloved tap should not have to find
+            an 11px name. The phone and the outcome buttons ride above it. */}
+        <Link
+          href={`/leads/${lead.id}`}
+          className="absolute inset-0"
+          aria-label={`Open the lead card for ${lead.name}`}
+        />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="t-row truncate font-bold leading-tight text-ink">
+              {lead.name}
+            </p>
+            {lead.phone ? (
+              <a
+                href={`tel:${lead.phone}`}
+                className="mono t-record relative z-[1] mt-1 inline-flex items-center gap-1.5 font-bold tracking-[-0.01em] text-ink transition-colors duration-fast ease-instrument hover:text-sky-ink"
+              >
+                <Phone className="h-3.5 w-3.5 shrink-0 text-ink-3" strokeWidth={2} />
+                {lead.phone}
+              </a>
+            ) : (
+              <span className="mono t-record mt-1 block text-ink-3">NO NUMBER</span>
+            )}
+          </div>
+          <LeadWait lead={lead} />
+        </div>
+        {/* The job line and the outcome cluster share one line on the desk: the row
+            used to spend a whole empty band between them, and four calls filled the
+            screen. The buttons are row-scale controls, so they read as marks on the
+            sheet rather than as the page's own buttons. */}
+        <div className="mt-1.5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between md:gap-4">
+          <p className="t-body min-w-0 truncate text-ink-2 md:flex-1">
+            {[lead.jobType, lead.city, lead.source].filter(Boolean).join(" · ")}
+          </p>
+          <div className="relative z-[1] flex flex-wrap items-center justify-end gap-1.5">
+            {lead.status === "NEW" && (
+              <Button
+                variant="quiet"
+                onClick={(e) =>
+                  setOutcome(e, lead, "CONTACTED", `${lead.name} marked contacted`)
+                }
+              >
+                Contacted
+              </Button>
+            )}
+            <Button
+              variant="quiet"
+              onClick={(e) => setOutcome(e, lead, "VERIFIED", `${lead.name} marked verified`)}
+            >
+              Verified
+            </Button>
+            <Button
+              variant="quiet"
+              className="hover:border-rose-ink hover:text-rose-ink"
+              onClick={(e) => setOutcome(e, lead, "REJECTED", `${lead.name} marked rejected`)}
+            >
+              Reject
+            </Button>
+          </div>
+        </div>
+      </Row>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-24 md:pb-0">
@@ -202,21 +309,21 @@ export default function LeadsPage() {
         title="Leads"
         sub="The morning call sheet: who to phone back, and what has been worked."
         action={
-          <button
-            onClick={() => setShowAddForm((v) => !v)}
-            className={buttonClass("primary")}
-          >
+          <Button variant="primary" onClick={() => setShowAddForm((v) => !v)}>
             {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showAddForm ? "Close" : "New lead"}
-          </button>
+          </Button>
         }
       />
 
       {/* THE PIPELINE RAIL — the stage strip. Counts + share bars over one
           continuous rule; clicking a stage filters the sheet to it. */}
       <div className="border-b border-line pb-5">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
-          <div className="flex flex-wrap items-end gap-x-8 gap-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
+          {/* On the phone the five stages used to wrap onto two rows 200px deep and
+              push the first call of the day under the fold. Tighter gaps and a
+              narrower bar keep the whole pipeline on one line at 390px. */}
+          <div className="flex flex-wrap items-end gap-x-2 gap-y-4 md:gap-x-8 md:gap-y-5">
             {STAGES.map((stage) => {
               const count = counts[stage] || 0;
               const pct = total ? (count / total) * 100 : 0;
@@ -230,8 +337,8 @@ export default function LeadsPage() {
                   onClick={() =>
                     setStatusFilter((v) => (v === stage ? "" : stage))
                   }
-                  className="text-left transition-opacity duration-[140ms] ease-instrument"
-                  style={{ opacity: dimmed ? 0.35 : 1 }}
+                  className="text-left transition-opacity duration-fast ease-instrument"
+                  style={{ opacity: dimmed ? 0.55 : 1 }}
                 >
                   <span
                     className="eyebrow block"
@@ -243,12 +350,12 @@ export default function LeadsPage() {
                   >
                     {stage}
                   </span>
-                  <span className="mono mt-1.5 block text-[26px] font-bold leading-none tracking-[-0.03em] text-ink">
+                  <span className="mono t-readout mt-1.5 block font-bold tracking-[-0.03em] text-ink">
                     {loading ? "–" : count}
                   </span>
-                  <span className="mt-2 block h-[3px] w-16 bg-sunk">
+                  <span className="mt-2 block h-[3px] w-12 bg-sunk md:w-16">
                     <span
-                      className="block h-full transition-[width] duration-[180ms] ease-instrument"
+                      className="block h-full transition-[width] duration-instrument ease-instrument"
                       style={{
                         width: `${pct}%`,
                         background: spineFor(toneKey(stage)),
@@ -261,32 +368,42 @@ export default function LeadsPage() {
           </div>
 
           {/* Search and source fold into the rail — small, right-aligned. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-[240px]">
-              <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
-                strokeWidth={2}
-              />
+          <div className="flex w-full items-center gap-2 md:w-auto">
+            {/* The magnifier used to be absolutely positioned inside the box and the
+                text was pushed past it with `pl-8`. `.control` owns the padding of
+                every field in the product, so the utility lost and the placeholder
+                started underneath the icon. The field says what it is in words. */}
+            <div className="min-w-0 flex-1 md:w-[240px] md:flex-none">
+              <label className="sr-only" htmlFor="lead-search">
+                Search the sheet
+              </label>
               <input
-                type="text"
-                placeholder="Search the sheet…"
+                id="lead-search"
+                type="search"
+                placeholder="Search name, phone or job"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full py-1.5 pl-8 pr-3 text-[13px]"
+                className={controlClass()}
               />
             </div>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="mono px-2.5 py-1.5 text-[11px] uppercase tracking-[0.06em]"
-            >
-              <option value="">All sources</option>
-              {SOURCES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <div className="w-[132px] shrink-0 md:w-[150px]">
+              <label className="sr-only" htmlFor="lead-source-filter">
+                Filter by source
+              </label>
+              <select
+                id="lead-source-filter"
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className={controlClass("mono uppercase tracking-[0.06em]")}
+              >
+                <option value="">All sources</option>
+                {SOURCES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -298,83 +415,97 @@ export default function LeadsPage() {
             onSubmit={handleAddLead}
             className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
           >
-            <div>
-              <label className={label}>Name *</label>
-              <input
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className={label}>Phone</label>
-              <input
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className={`${field} mono`}
-              />
-            </div>
-            <div>
-              <label className={label}>Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className={label}>City</label>
-              <input
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className={label}>Job type</label>
-              <input
-                value={form.jobType}
-                onChange={(e) => setForm({ ...form, jobType: e.target.value })}
-                placeholder="Furnace install, 2-bedroom move…"
-                className={field}
-              />
-            </div>
-            <div>
-              <label className={label}>Source</label>
-              <select
-                value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-                className={`${field} mono uppercase tracking-[0.06em]`}
-              >
-                {SOURCES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className={label}>Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                rows={2}
-                className={field}
-              />
-            </div>
-            <div className="flex gap-2 sm:col-span-2">
-              <button type="submit" className={buttonClass("primary")}>
-                Log lead
-              </button>
-              <button
+            <Field id="new-lead-name" label="Name" required>
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="new-lead-phone" label="Phone">
+              {(f) => (
+                <input
+                  {...f}
+                  type="tel"
+                  inputMode="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className={`${f.className} mono`}
+                />
+              )}
+            </Field>
+            <Field id="new-lead-email" label="Email">
+              {(f) => (
+                <input
+                  {...f}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="new-lead-city" label="City">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="new-lead-jobtype" label="Job type">
+              {(f) => (
+                <input
+                  {...f}
+                  placeholder="Furnace install, 2-bedroom move…"
+                  value={form.jobType}
+                  onChange={(e) => setForm({ ...form, jobType: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="new-lead-source" label="Source">
+              {(f) => (
+                <select
+                  {...f}
+                  value={form.source}
+                  onChange={(e) => setForm({ ...form, source: e.target.value })}
+                  className={`${f.className} mono uppercase tracking-[0.06em]`}
+                >
+                  {SOURCES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field
+              id="new-lead-notes"
+              label="What they asked for"
+              className="sm:col-span-2"
+            >
+              {(f) => (
+                <textarea
+                  {...f}
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              )}
+            </Field>
+            <div className="actions sm:col-span-2">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Logging…" : "Log lead"}
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => setShowAddForm(false)}
-                className={buttonClass("ghost")}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         </Plate>
@@ -389,8 +520,13 @@ export default function LeadsPage() {
             title="On the phone"
             lamp="var(--amber)"
             right={
+              /* `0 TO CALL` printed over three rows with running clocks on them:
+                 the head counted only the fresh band while the lane also holds the
+                 cold one. It names both, so the number matches what is under it. */
               <span className="eyebrow">
-                {loading ? "" : `${callSheet.length} to call`}
+                {loading
+                  ? ""
+                  : `${live.length} fresh${cold.length ? ` · ${cold.length} gone cold` : ""}`}
               </span>
             }
           />
@@ -398,82 +534,55 @@ export default function LeadsPage() {
             <Skeleton lines={4} />
           ) : callSheet.length === 0 ? (
             <Lane>
-              <Empty>No calls waiting — the sheet is clear</Empty>
+              {narrowed ? (
+                <Empty
+                  hint="The search box, the source list and the stage you picked decide what shows here. The search itself runs over the name, the phone and the job."
+                  action={
+                    <Button variant="ghost" onClick={clearFilters}>
+                      Clear search
+                    </Button>
+                  }
+                >
+                  No lead matches that
+                </Empty>
+              ) : total === 0 ? (
+                <Empty
+                  hint="Nothing has come in yet. Leads land here by themselves once the ad form or the website quiz posts to your intake link — and you can write one down by hand the moment the phone rings."
+                  action={
+                    <Button variant="ghost" onClick={() => setShowAddForm(true)}>
+                      Log a lead by hand
+                    </Button>
+                  }
+                >
+                  No leads yet
+                </Empty>
+              ) : (
+                <Empty hint="Every lead on the desk has been worked. New ones land at the top of this lane the minute they come in.">
+                  Nobody is waiting for a call
+                </Empty>
+              )}
             </Lane>
           ) : (
             <Lane>
-              {callSheet.map((lead) => (
-                <Row
-                  key={lead.id}
-                  status={toneKey(lead.status)}
-                  className={lead.id === snapId ? "ticket-snap" : undefined}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      {lead.phone ? (
-                        <a
-                          href={`tel:${lead.phone}`}
-                          className="mono inline-flex items-center gap-1.5 text-[16px] font-bold tracking-[-0.01em] text-ink transition-colors duration-[140ms] ease-instrument hover:text-sky-ink"
-                        >
-                          <Phone
-                            className="h-3.5 w-3.5 shrink-0 text-ink-3"
-                            strokeWidth={2}
-                          />
-                          {lead.phone}
-                        </a>
-                      ) : (
-                        <span className="mono text-[16px] tracking-[-0.01em] text-ink-3">
-                          NO NUMBER
-                        </span>
-                      )}
-                      <Link
-                        href={`/leads/${lead.id}`}
-                        className="mt-1 block truncate text-[15px] font-bold leading-tight text-ink hover:underline"
-                      >
-                        {lead.name}
-                      </Link>
-                      <p className="mt-0.5 truncate text-[13px] text-ink-2">
-                        {[lead.jobType, lead.city, lead.source]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </div>
-                    <LeadWait lead={lead} />
-                  </div>
-                  {/* The outcome cluster — under the tally on desktop, wrapping
-                      below the detail line on a phone. */}
-                  <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
-                    {lead.status === "NEW" && (
-                      <button
-                        type="button"
-                        className={act}
-                        onClick={(e) =>
-                          setOutcome(e, lead, "CONTACTED", "Marked contacted")
-                        }
-                      >
-                        Contacted
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className={act}
-                      onClick={(e) =>
-                        setOutcome(e, lead, "VERIFIED", "Lead verified")
-                      }
-                    >
-                      Verify
-                    </button>
-                    <button
-                      type="button"
-                      className={actQuiet}
-                      onClick={(e) =>
-                        setOutcome(e, lead, "REJECTED", "Lead rejected")
-                      }
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </Row>
+              {live.length === 0 && (
+                <Empty hint="Everything below came in more than two days ago or has already been called.">
+                  Nobody fresh is waiting
+                </Empty>
+              )}
+              {live.map((lead) => (
+                <CallRow key={lead.id} lead={lead} />
+              ))}
+
+              {cold.length > 0 && (
+                <BandRule>Gone cold · nobody here has called back for 2 days</BandRule>
+              )}
+              {cold.map((lead) => (
+                <CallRow key={lead.id} lead={lead} />
+              ))}
+
+              {called.length > 0 && <BandRule>Called already · waiting on them</BandRule>}
+              {called.map((lead) => (
+                <CallRow key={lead.id} lead={lead} />
               ))}
             </Lane>
           )}
@@ -493,26 +602,45 @@ export default function LeadsPage() {
             <Skeleton lines={3} />
           ) : verified.length === 0 && closed.length === 0 ? (
             <Lane>
-              <Empty>Nothing worked yet</Empty>
+              {narrowed ? (
+                <Empty hint="Clear the search, the source and the stage to see the leads that have been worked.">
+                  No worked lead matches this filter
+                </Empty>
+              ) : (
+                <Empty hint="A lead moves over here the moment you mark it contacted, verified or rejected on the call sheet.">
+                  Nothing worked yet
+                </Empty>
+              )}
             </Lane>
           ) : (
             <Lane>
               {verified.map((lead) => (
                 <Row
                   key={lead.id}
-                  href={`/leads/${lead.id}`}
                   status={toneKey(lead.status)}
-                  className={lead.id === snapId ? "ticket-snap" : undefined}
+                  className={`relative ${lead.id === snapId ? "ticket-snap" : ""}`}
                 >
+                  <Link
+                    href={`/leads/${lead.id}`}
+                    className="absolute inset-0"
+                    aria-label={`Open the lead card for ${lead.name}`}
+                  />
                   <div className="flex items-baseline justify-between gap-3">
-                    <p className="truncate text-[15px] font-bold leading-tight text-ink">
+                    <p className="t-row truncate font-bold leading-tight text-ink">
                       {lead.name}
                     </p>
                     <WoNumber id={lead.id} prefix="LD" date={lead.createdAt} />
                   </div>
-                  <p className="mt-1 flex items-baseline gap-x-2 text-[13px] text-ink-2">
+                  {/* A verified lead is the one you ring to book the date, so the
+                      number is a tap here as well as on the call sheet. */}
+                  <p className="t-body mt-1 flex items-baseline gap-x-2 text-ink-2">
                     {lead.phone && (
-                      <span className="mono shrink-0">{lead.phone}</span>
+                      <a
+                        href={`tel:${lead.phone}`}
+                        className="mono relative z-[1] shrink-0 text-ink hover:text-sky-ink"
+                      >
+                        {lead.phone}
+                      </a>
                     )}
                     <span className="truncate">
                       {[lead.jobType, lead.city].filter(Boolean).join(" · ")}
@@ -520,34 +648,30 @@ export default function LeadsPage() {
                   </p>
                   {/* The reading stays on a worked lead: it is the proof the desk is
                       fast, and the only place that number can be seen afterwards. */}
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <LeadWait lead={lead} />
-                    <button
-                      type="button"
-                      className={actPrimary}
-                      onClick={(e) => openJob(e, lead.id)}
-                    >
+                  <div className="relative z-[1] mt-2 flex items-end justify-between gap-3">
+                    <LeadWait lead={lead} compact />
+                    <Button variant="primary" onClick={(e) => openJob(e, lead.id)}>
                       Open job →
-                    </button>
+                    </Button>
                   </div>
                 </Row>
               ))}
               {verified.length > 0 && closed.length > 0 && (
-                <div className="px-5 pb-1.5 pt-4">
-                  <span className="eyebrow">Closed</span>
-                </div>
+                <BandRule>Closed</BandRule>
               )}
               {closed.map((lead) => (
                 <Row
                   key={lead.id}
-                  href={`/leads/${lead.id}`}
                   status={lead.status}
-                  className={lead.id === snapId ? "ticket-snap" : undefined}
+                  className={`relative ${lead.id === snapId ? "ticket-snap" : ""}`}
                 >
+                  <Link
+                    href={`/leads/${lead.id}`}
+                    className="absolute inset-0"
+                    aria-label={`Open the lead card for ${lead.name}`}
+                  />
                   <div className="flex items-baseline gap-3">
-                    <span className="truncate text-[13px] text-ink-3">
-                      {lead.name}
-                    </span>
+                    <span className="t-body truncate text-ink-2">{lead.name}</span>
                     <span
                       className="eyebrow ml-auto shrink-0"
                       style={{ color: textToneFor(lead.status) }}
@@ -555,18 +679,13 @@ export default function LeadsPage() {
                       {lead.status}
                     </span>
                     {lead.status === "CONVERTED" && lead.project && (
-                      <button
-                        type="button"
-                        className="mono shrink-0 text-[11px] tracking-[0.06em] text-sky-ink hover:underline"
+                      <Link
+                        href={`/projects/${lead.project.id}`}
+                        className="eyebrow relative z-[1] shrink-0 text-sky-ink hover:underline"
                         title={lead.project.title}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          router.push(`/projects/${lead.project!.id}`);
-                        }}
                       >
                         → WO
-                      </button>
+                      </Link>
                     )}
                   </div>
                 </Row>

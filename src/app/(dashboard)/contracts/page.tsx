@@ -10,13 +10,20 @@ import {
   PageHead,
   Empty,
   Plate,
-  buttonClass,
+  Button,
+  Chip,
+  Field,
+  LaneHead,
+  Money,
+  Num,
+  Readout,
   Skeleton,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { CONTRACT_PLANS, MONTH_NAMES } from "@/lib/contracts";
+import { dueWord, lateWord } from "@/lib/invoice-state";
 
-/** The plan as the API serves it: dollars. */
+/** The contract as the API serves it: dollars. */
 interface ApiContractRow {
   id: string;
   name: string;
@@ -46,30 +53,77 @@ const MONTH_ABBR = [
 ];
 const MONTH_INITIALS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
+/** The five things a cell of the year strip can be saying. */
+type CellKind = "none" | "next" | "booked" | "missed" | "ahead" | "paused";
+
+const CELL_FILL: Record<CellKind, React.CSSProperties> = {
+  none: { background: "var(--line)" },
+  next: { background: "var(--amber)" },
+  booked: { background: "var(--emerald)" },
+  missed: { background: "var(--line)" },
+  ahead: { background: "var(--ink-3)", opacity: 0.6 },
+  paused: { background: "var(--slate)", opacity: 0.55 },
+};
+
+/**
+ * A month that owes nothing is not a block at all — it is the baseline the
+ * blocks stand on. Fill alone could not separate it from a visit month that
+ * went by unbooked: `--sunk` and `--line` are one grey apart, and the legend
+ * was promising a difference the eye could not find.
+ */
+const CELL_HEIGHT: Record<CellKind, string> = {
+  none: "h-[2px]",
+  next: "h-3",
+  booked: "h-3",
+  missed: "h-3",
+  ahead: "h-3",
+  paused: "h-3",
+};
+
+const CELL_WORD: Record<CellKind, string> = {
+  none: "no visit",
+  next: "next visit due",
+  booked: "visit booked",
+  missed: "visit month, nothing booked",
+  ahead: "visit planned",
+  paused: "contract paused",
+};
+
 /**
  * The 12-cell month strip — each contract's own year rule.
  * Emerald is a CLAIM ("this visit was booked"), so it is painted only for as
  * many past cycles as `visitsBooked` vouches for; a past cycle nobody booked
  * is spent time, not done work — it gets the pale `--line` fill.
  */
-function monthCellStyle(c: ContractRow, month: number, year: number): React.CSSProperties {
+function monthCellKind(c: ContractRow, month: number, year: number): CellKind {
   const isVisit = c.visitMonths.includes(month);
-  if (!isVisit) return { background: "var(--sunk)", opacity: 0.5 };
-  if (!c.active || !c.nextVisit) return { background: "var(--slate)", opacity: 0.55 };
+  if (!isVisit) return "none";
+  if (!c.active || !c.nextVisit) return "paused";
   const next = new Date(c.nextVisit);
-  if (next.getMonth() + 1 === month && next.getFullYear() === year)
-    return { background: "var(--amber)" };
+  if (next.getMonth() + 1 === month && next.getFullYear() === year) return "next";
   const nextKey = next.getFullYear() * 12 + next.getMonth();
   const cellKey = year * 12 + (month - 1);
   if (cellKey < nextKey) {
     const pastMonths = c.visitMonths
       .filter((m) => year * 12 + (m - 1) < nextKey)
       .sort((a, b) => a - b);
-    return pastMonths.indexOf(month) < c.visitsBooked
-      ? { background: "var(--emerald)" }
-      : { background: "var(--line)" };
+    return pastMonths.indexOf(month) < c.visitsBooked ? "booked" : "missed";
   }
-  return { background: "var(--ink-3)", opacity: 0.6 };
+  return "ahead";
+}
+
+/** The legend the strip needs: four fills that mean nothing on their own. */
+function StripLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      {(["next", "booked", "missed", "ahead"] as CellKind[]).map((k) => (
+        <span key={k} className="eyebrow inline-flex items-center gap-1.5">
+          <span aria-hidden className="inline-block h-2.5 w-3.5" style={CELL_FILL[k]} />
+          {k === "next" ? "Next" : k === "booked" ? "Booked" : k === "missed" ? "Passed" : "Ahead"}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export default function ContractsPage() {
@@ -122,8 +176,7 @@ export default function ContractsPage() {
       setShowForm(false);
       load();
     } else {
-      const err = await res.json().catch(() => ({}));
-      toast(err.error || "Could not start the contract", "bad");
+      toast("The contract was not started — pick a client and at least one visit month", "bad");
     }
   }
 
@@ -157,34 +210,29 @@ export default function ContractsPage() {
     (s, r) => s + r.pricePerVisitCents * r.visitMonths.length,
     0
   );
-  /** Visits due each month of the year, across every active plan. */
+  /** Visits due each month of the year, across every active contract. */
   const monthLoad = MONTH_ABBR.map(
     (_, i) => active.filter((r) => r.visitMonths.includes(i + 1)).length
   );
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
 
   return (
     <div className="space-y-6 pb-24 md:pb-0">
       <PageHead
         eyebrow="Recurring"
-        title="Service contracts"
+        title="Contracts"
         sub="Seasonal maintenance that books itself onto the board."
         action={
-          <div className="flex gap-2">
+          <>
             {dueSoon.length > 0 && (
-              <button
-                disabled={busy}
-                onClick={() => book()}
-                className={buttonClass("ghost")}
-              >
+              <Button variant="ghost" disabled={busy} onClick={() => book()}>
                 <CalendarClock className="h-4 w-4" /> Book all due
-              </button>
+              </Button>
             )}
-            <button onClick={() => setShowForm((v) => !v)} className={buttonClass("primary")}>
+            <Button variant="primary" onClick={() => setShowForm((v) => !v)}>
               {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {showForm ? "Close" : "New contract"}
-            </button>
-          </div>
+            </Button>
+          </>
         }
       />
 
@@ -192,7 +240,9 @@ export default function ContractsPage() {
           THE YEAR RULE — the maintenance wall planner. Twelve months on one
           tick-edged board; the load per month is the reading, and the current
           month is lit by the amber light source, exactly like today on the
-          dispatch week board.
+          dispatch week board. The count is the whole point of the board, so
+          it is printed at every width — the phone used to get the months with
+          the obligations taken out of them.
           ------------------------------------------------------------------ */}
       <div>
         <div className="ruleband" style={{ backgroundSize: "calc(100% / 12) 4px" }} />
@@ -204,131 +254,168 @@ export default function ContractsPage() {
               <div
                 key={abbr}
                 className={cn(
-                  "arm-col flex h-[52px] flex-col items-center justify-between pb-2 pt-1.5 min-[480px]:h-[72px]",
+                  "arm-col flex h-[58px] flex-col items-center justify-between pb-2 pt-1.5 min-[480px]:h-[72px]",
                   i > 0 && "border-l border-line",
                   isNow && "today-glow"
                 )}
                 style={{ ["--i" as string]: i } as React.CSSProperties}
+                title={`${MONTH_NAMES[i + 1]} — ${count} ${count === 1 ? "visit" : "visits"} due`}
               >
                 <span
-                  className="mono text-[10px] leading-none tracking-[0.09em]"
-                  style={{
-                    color: isNow ? "var(--amber-ink)" : "var(--ink-3)",
-                    fontWeight: isNow ? 700 : 400,
-                  }}
+                  className={cn("mono t-micro leading-none tracking-[0.09em]", isNow && "font-bold")}
+                  style={{ color: isNow ? "var(--amber-ink)" : "var(--ink-3)" }}
                 >
                   {abbr}
                 </span>
-                <span
-                  className="mono hidden leading-none tabular-nums min-[480px]:block"
-                  style={
-                    count === 0
-                      ? { color: "var(--ink-3)", opacity: 0.5, fontSize: 22 }
-                      : {
-                          color: isNow ? "var(--amber-ink)" : "var(--ink)",
-                          fontSize: isNow ? 27 : 22,
-                          fontWeight: isNow ? 700 : 500,
-                          letterSpacing: "-0.02em",
-                        }
-                  }
+                {/* A month with nothing due prints a zero: the `·` it printed
+                    before was a 2:1 dot doing a number's job. Weight carries the
+                    load — nine quiet zeros beside four bold counts, so the board
+                    still reads as a shape from across the shop. */}
+                <Num
+                  className={cn(
+                    "t-row tabular-nums min-[480px]:hidden",
+                    count === 0 ? "font-normal" : "font-bold"
+                  )}
+                  tone={count === 0 ? "var(--ink-3)" : isNow ? "var(--amber-ink)" : "var(--ink)"}
                 >
-                  {count === 0 ? "·" : count}
-                </span>
+                  {count}
+                </Num>
+                <Num
+                  className={cn(
+                    "t-record hidden tabular-nums min-[480px]:block",
+                    count === 0 ? "font-normal" : "font-bold"
+                  )}
+                  tone={count === 0 ? "var(--ink-3)" : isNow ? "var(--amber-ink)" : "var(--ink)"}
+                >
+                  {count}
+                </Num>
               </div>
             );
           })}
         </div>
-        <div className="mono flex flex-wrap items-baseline gap-x-5 gap-y-1 pt-2 text-[11px] tracking-[0.08em] text-ink-3">
-          <span>
-            ACTIVE PLANS{" "}
-            <span className="font-bold text-ink">{active.length}</span>
-          </span>
-          <span>
-            DUE WITHIN 45D{" "}
-            <span
-              className="font-bold"
-              style={{ color: dueSoon.length ? "var(--amber-ink)" : "var(--ink)" }}
+        {/* Label over number — one grammar for a summary strip across the product. */}
+        <div className="flex flex-wrap items-baseline gap-x-10 gap-y-4 pt-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Active contracts</span>
+            <Num className="t-record font-bold tabular-nums">{active.length}</Num>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Due within 45 days</span>
+            <Num
+              className="t-record font-bold tabular-nums"
+              tone={dueSoon.length ? "var(--amber-ink)" : "var(--ink)"}
             >
               {dueSoon.length}
-            </span>
-          </span>
-          <span>
-            BOOKED VALUE/YR{" "}
-            <span className="font-bold" style={{ color: "var(--emerald-ink)" }}>
-              {formatCents(annualValueCents)}
-            </span>
-          </span>
+            </Num>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Value per year</span>
+            <Readout
+              value={formatCents(annualValueCents)}
+              size={22}
+              tone={annualValueCents > 0 ? "var(--emerald-ink)" : "var(--ink)"}
+            />
+          </div>
         </div>
       </div>
 
       {showForm && (
         <Plate className="p-5">
-          <div className="eyebrow">New maintenance plan</div>
+          <div className="eyebrow">New maintenance contract</div>
           <form onSubmit={createContract} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field id="ct-client" label="Client" required className="sm:col-span-2">
+              {(f) => (
+                <select
+                  {...f}
+                  value={form.clientId}
+                  onChange={(e) => setForm({ ...form, clientId: e.target.value })}
+                >
+                  <option value="">Pick a client…</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.address ? ` · ${c.address}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field id="ct-name" label="Contract name">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="ct-price" label="Price per visit" hint="Dollars, before tax.">
+              {(f) => (
+                <input
+                  {...f}
+                  type="number"
+                  step="1"
+                  value={form.pricePerVisit}
+                  onChange={(e) => setForm({ ...form, pricePerVisit: Number(e.target.value) })}
+                  className={cn(f.className, "mono")}
+                />
+              )}
+            </Field>
+
+            {/* A set of choices where one wins is a radio group. It was a row of
+                buttons whose only state was a border colour, so a keyboard and a
+                screen reader had nothing to go on. */}
             <div className="sm:col-span-2">
-              <label className="eyebrow">Client *</label>
-              <select
-                required
-                value={form.clientId}
-                onChange={(e) => setForm({ ...form, clientId: e.target.value })}
-                className={field}
+              <span className="eyebrow block" id="ct-schedule-label">
+                Schedule
+              </span>
+              <div
+                role="radiogroup"
+                aria-labelledby="ct-schedule-label"
+                className="mt-2 flex flex-wrap gap-2"
               >
-                <option value="">Pick a client…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.address ? ` · ${c.address}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="eyebrow">Plan name</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div>
-              <label className="eyebrow">Price per visit</label>
-              <input
-                type="number"
-                step="1"
-                value={form.pricePerVisit}
-                onChange={(e) => setForm({ ...form, pricePerVisit: Number(e.target.value) })}
-                className={`${field} mono`}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Schedule</label>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {CONTRACT_PLANS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, plan: p.id })}
-                    className="border px-2.5 py-1.5 text-left transition-colors duration-[140ms] ease-instrument"
-                    style={{
-                      borderColor: form.plan === p.id ? "var(--navy-900)" : "var(--line)",
-                      background: form.plan === p.id ? "var(--sunk)" : "var(--plate)",
-                    }}
-                  >
-                    <span className="block text-[12px] font-bold leading-tight text-ink">
-                      {p.label}
-                    </span>
-                    <span className="mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-                      {p.months.map((m) => MONTH_NAMES[m]).join(" · ")}
-                    </span>
-                  </button>
-                ))}
+                {CONTRACT_PLANS.map((p) => {
+                  const picked = form.plan === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={picked}
+                      onClick={() => setForm({ ...form, plan: p.id })}
+                      className="flex items-center gap-2.5 rounded border px-3 py-2 text-left transition-[background-color,border-color] duration-fast ease-instrument"
+                      style={{
+                        borderColor: picked ? "var(--navy-900)" : "var(--line)",
+                        background: picked ? "var(--sunk)" : "var(--plate)",
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border"
+                        style={{
+                          borderColor: picked ? "var(--navy-900)" : "var(--field-line)",
+                          background: picked ? "var(--navy-900)" : "transparent",
+                        }}
+                      />
+                      <span>
+                        <span className="t-body block font-bold leading-tight text-ink">
+                          {p.label}
+                        </span>
+                        <span className="mono t-micro uppercase tracking-[0.08em] text-ink-3">
+                          {p.months.map((m) => MONTH_NAMES[m]).join(" · ")}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-2 text-[12px] text-ink-2">
+              <p className="t-meta measure mt-2 text-ink-2">
                 {CONTRACT_PLANS.find((p) => p.id === form.plan)?.hint}
               </p>
             </div>
+
             <div className="sm:col-span-2">
-              <label className="flex items-center gap-2 text-[13px] text-ink-2">
+              <label className="t-body flex items-center gap-2 text-ink-2">
                 <input
                   type="checkbox"
                   checked={form.autoInvoice}
@@ -338,150 +425,180 @@ export default function ContractsPage() {
                 Draft an invoice when the visit is booked
               </label>
             </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Notes</label>
-              <input
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Access code, pets, roof key…"
-                className={field}
-              />
-            </div>
-            <div className="flex gap-2 sm:col-span-2">
-              <button type="submit" className={buttonClass("primary")}>
+            <Field id="ct-notes" label="Notes" className="sm:col-span-2">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Access code, pets, roof key…"
+                />
+              )}
+            </Field>
+            <div className="actions sm:col-span-2">
+              <Button type="submit" variant="primary">
                 Start contract
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className={buttonClass("ghost")}
-              >
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         </Plate>
       )}
 
       {/* ------------------------------------------------------------------
-          THE PLANS — ruled rows, each carrying its own 12-cell year strip:
-          due next = amber, verifiably booked = emerald, past-unbooked = pale,
-          still ahead = slate.
+          THE CONTRACTS — ruled rows, each carrying its own 12-cell year strip:
+          due next = amber under a tick, verifiably booked = emerald,
+          past-unbooked = pale, still ahead = slate. The legend sits on the lane
+          head, because four fills with nothing to read them by are one grey bar
+          in sunlight.
           ------------------------------------------------------------------ */}
-      {loading ? (
-        <Skeleton lines={3} />
-      ) : rows.length === 0 ? (
-        <Empty>No maintenance plans yet — start one from a client</Empty>
-      ) : (
-        <div className="lane">
-          {rows.map((c) => {
-            const due = c.daysUntilNext !== null && c.daysUntilNext <= 45;
-            const late = c.daysUntilNext !== null && c.daysUntilNext < 0;
-            const spine = !c.active
-              ? "var(--slate)"
-              : late
-                ? "var(--rose)"
-                : due
-                  ? "var(--amber)"
-                  : "var(--emerald)";
-            const countdown = !c.active
-              ? "PAUSED"
-              : c.nextVisit
-                ? late
-                  ? `${Math.abs(c.daysUntilNext!)}D LATE`
-                  : `IN ${c.daysUntilNext}D`
-                : "NO SCHEDULE";
-            const countdownTone = !c.active
-              ? "var(--slate-ink)"
-              : late
-                ? "var(--rose-ink)"
-                : due
-                  ? "var(--amber-ink)"
-                  : "var(--ink-3)";
-            return (
-              <div
-                key={c.id}
-                className="row row-hover"
-                style={{ ["--spine" as string]: spine } as React.CSSProperties}
-              >
-                {/* line 1 — plan, client, price per visit */}
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-                  <p className="min-w-0 truncate">
-                    <span className="text-[15px] font-bold leading-tight text-ink">
-                      {c.name}
-                    </span>{" "}
-                    <span className="text-[13px] text-ink-2">
-                      <Link
-                        href={`/clients/${c.client.id}`}
-                        className="font-medium text-ink underline underline-offset-4"
+      <div>
+        <LaneHead title="Contracts" right={rows.length > 0 ? <StripLegend /> : undefined} />
+        {loading ? (
+          <Skeleton lines={3} />
+        ) : rows.length === 0 ? (
+          <Empty
+            hint="A contract puts the seasonal visits on the board a month ahead and bills them when they are done."
+            action={
+              <Button variant="primary" onClick={() => setShowForm(true)}>
+                <Plus className="h-4 w-4" /> New contract
+              </Button>
+            }
+          >
+            No maintenance contracts on the book yet
+          </Empty>
+        ) : (
+          <div className="lane">
+            {rows.map((c) => {
+              const due = c.daysUntilNext !== null && c.daysUntilNext <= 45;
+              const late = c.daysUntilNext !== null && c.daysUntilNext < 0;
+              const spine = !c.active
+                ? "var(--slate)"
+                : late
+                  ? "var(--rose)"
+                  : due
+                    ? "var(--amber)"
+                    : "var(--emerald)";
+              const countdown = !c.active
+                ? "PAUSED"
+                : c.nextVisit
+                  ? late
+                    ? lateWord(c.daysUntilNext!, true)
+                    : dueWord(c.daysUntilNext!, true)
+                  : "NO SCHEDULE";
+              const countdownTone = !c.active
+                ? "var(--slate-ink)"
+                : late
+                  ? "var(--rose-ink)"
+                  : due
+                    ? "var(--amber-ink)"
+                    : "var(--ink-3)";
+              const cells = MONTH_INITIALS.map((_, i) => monthCellKind(c, i + 1, thisYear));
+              const visitWords = c.visitMonths.map((m) => MONTH_NAMES[m]).join(", ");
+              return (
+                <div
+                  key={c.id}
+                  className="row row-hover"
+                  style={{ ["--spine" as string]: spine } as React.CSSProperties}
+                >
+                  {/* line 1 — contract, client, price per visit */}
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <p className="min-w-0 truncate">
+                      <span className="t-row font-bold leading-tight text-ink">{c.name}</span>{" "}
+                      <span className="t-body text-ink-2">
+                        <Link
+                          href={`/clients/${c.client.id}`}
+                          className="inline-flex py-0.5 font-medium text-ink underline underline-offset-4"
+                        >
+                          {c.client.name}
+                        </Link>
+                        {c.client.address ? ` · ${c.client.address}` : ""}
+                      </span>
+                    </p>
+                    <span className="shrink-0 whitespace-nowrap">
+                      <Money cents={c.pricePerVisitCents} className="t-body font-medium" />
+                      <span className="eyebrow ml-1.5">/ visit</span>
+                    </span>
+                  </div>
+
+                  {/* line 2 — the contract's own year rule. Three bands: the tick
+                      that marks the next visit by SHAPE, the twelve cells, and
+                      the month letters, which were set at 8px — 72 of them, the
+                      whole group's drift off the scale in one place. */}
+                  <div className="mt-3 grid w-max grid-cols-12 gap-x-[3px]" aria-hidden="true">
+                    {cells.map((kind, i) => (
+                      <div key={`t${i}`} className="h-1 w-[14px]">
+                        {kind === "next" && (
+                          <div className="h-1 w-full" style={{ background: "var(--amber-ink)" }} />
+                        )}
+                      </div>
+                    ))}
+                    {cells.map((kind, i) => (
+                      <div
+                        key={`c${i}`}
+                        className="mt-1 flex h-3 w-[14px] items-end"
+                        title={`${MONTH_NAMES[i + 1]} — ${CELL_WORD[kind]}`}
                       >
-                        {c.client.name}
-                      </Link>
-                      {c.client.address ? ` · ${c.client.address}` : ""}
-                    </span>
-                  </p>
-                  <span className="mono shrink-0 text-[13px] font-medium tabular-nums text-ink">
-                    {formatCents(c.pricePerVisitCents)}
-                    <span className="text-[11px] text-ink-3"> /visit</span>
+                        <div
+                          className={cn("w-full", CELL_HEIGHT[kind])}
+                          style={CELL_FILL[kind]}
+                        />
+                      </div>
+                    ))}
+                    {MONTH_INITIALS.map((letter, i) => (
+                      <span
+                        key={`l${i}`}
+                        className="mono t-micro mt-1 w-[14px] text-center text-ink-3"
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="sr-only t-body">
+                    {`Visits in ${visitWords}. ${
+                      c.nextVisit ? `Next visit ${formatDate(c.nextVisit)}.` : "No visit scheduled."
+                    } ${c.visitsBooked} booked so far.`}
                   </span>
-                </div>
 
-                {/* line 2 — the contract's own year rule */}
-                <div className="mt-2.5 grid w-max grid-cols-12 gap-x-[3px]">
-                  {MONTH_INITIALS.map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-[10px] w-[14px]"
-                      style={monthCellStyle(c, i + 1, thisYear)}
-                    />
-                  ))}
-                  {MONTH_INITIALS.map((letter, i) => (
+                  {/* line 3 — meta + the book action */}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    {c.equipment && (
+                      <Chip>
+                        {c.equipment.kind.replace(/_/g, " ")}
+                        {c.equipment.brand ? ` · ${c.equipment.brand}` : ""}
+                      </Chip>
+                    )}
+                    {c.autoInvoice && (
+                      <span className="mono t-meta tracking-[0.08em] text-ink-2">AUTO-INVOICE</span>
+                    )}
+                    <span className="mono t-meta tracking-[0.08em] text-ink-3">
+                      {c.visitsBooked} BOOKED
+                    </span>
                     <span
-                      key={`l${i}`}
-                      className="mono mt-[3px] w-[14px] text-center text-[8px] leading-none text-ink-3"
+                      className="mono t-meta font-bold tracking-[0.08em]"
+                      style={{ color: countdownTone }}
                     >
-                      {letter}
+                      {countdown}
                     </span>
-                  ))}
+                    {c.active && c.nextVisit && (
+                      <Button
+                        variant="quiet"
+                        disabled={busy}
+                        onClick={() => book(c.id)}
+                        className="ml-auto"
+                      >
+                        Book {formatDate(c.nextVisit)}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-
-                {/* line 3 — meta + the book action */}
-                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  {c.equipment && (
-                    <span className="mono border border-line px-1.5 py-0.5 text-[11px] uppercase tracking-[0.05em] text-ink-2">
-                      {c.equipment.kind.replace(/_/g, " ")}
-                      {c.equipment.brand ? ` · ${c.equipment.brand}` : ""}
-                    </span>
-                  )}
-                  {c.autoInvoice && (
-                    <span className="mono text-[11px] tracking-[0.08em] text-ink-2">
-                      AUTO-INVOICE
-                    </span>
-                  )}
-                  <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-                    {c.visitsBooked} BOOKED
-                  </span>
-                  <span
-                    className="mono text-[11px] font-bold tracking-[0.08em]"
-                    style={{ color: countdownTone }}
-                  >
-                    {countdown}
-                  </span>
-                  {c.active && c.nextVisit && (
-                    <button
-                      disabled={busy}
-                      onClick={() => book(c.id)}
-                      className={cn(buttonClass("ghost"), "ml-auto px-2.5 py-1 text-[11px]")}
-                    >
-                      Book {formatDate(c.nextVisit)}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

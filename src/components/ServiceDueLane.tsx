@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatDate } from "@/lib/utils";
-import { formatCents } from "@/lib/money";
+import { LaneHead, Money, Num, Stamp } from "@/components/ui/primitives";
+import { dueTail, lateTail } from "@/lib/invoice-state";
 import { toast } from "@/components/ui/Toaster";
 
 interface DueContract {
@@ -16,6 +16,9 @@ interface DueContract {
   dueOn: string;
   daysUntil: number;
 }
+
+/** `1 DAY`, `19 DAYS` — one phrasing, shared with the invoice book (`lib/invoice-state`). */
+const dayWord = dueTail;
 
 /**
  * Maintenance coming due. This is the money a shop already sold and can lose simply
@@ -46,30 +49,26 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
 
   return (
     <section>
-      {/* The rail is 300px wide — the header stacks instead of fighting for a row. */}
-      <div className="pb-2.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
-            <span
-              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ background: "var(--amber)" }}
-            />
-            Service due
-          </h2>
-          <span className="mono text-[12px] text-ink-3">{formatCents(valueCents)}</span>
-        </div>
-        <div className="mt-1.5 flex items-baseline gap-4">
-          <button
-            disabled={busy}
-            onClick={bookAll}
-            className="eyebrow underline underline-offset-4 hover:text-ink disabled:opacity-50"
-          >
-            {busy ? "Booking…" : "Book all"}
-          </button>
-          <Link href="/contracts" className="eyebrow hover:text-ink">
-            Contracts →
-          </Link>
-        </div>
+      {/* The rail is 300px wide — the header wraps instead of fighting for a row. */}
+      <LaneHead
+        title="Service due"
+        lamp="var(--amber)"
+        right={<Money cents={valueCents} className="t-meta text-ink-3" />}
+      />
+      <div className="flex items-baseline gap-4 pb-2.5">
+        <button
+          disabled={busy}
+          onClick={bookAll}
+          /* The dimmed-while-working button was `opacity-50` — 1.9:1, which in a truck
+             cab is a button that is simply not there. It recedes to the label tone
+             instead, and keeps saying what it is doing. */
+          className="eyebrow underline underline-offset-4 hover:text-ink disabled:no-underline"
+        >
+          {busy ? "Booking…" : "Book all"}
+        </button>
+        <Link href="/contracts" className="eyebrow hover:text-ink">
+          Contracts →
+        </Link>
       </div>
 
       <div className="lane">
@@ -86,25 +85,27 @@ export default function ServiceDueLane({ contracts }: { contracts: DueContract[]
               }
             >
               <div className="flex items-baseline justify-between gap-3">
-                <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-                  {formatDate(c.dueOn)}
-                </span>
+                <Stamp date={c.dueOn} className="eyebrow" />
                 <span
-                  className="mono text-[11px] tracking-[0.08em]"
+                  className="eyebrow"
                   style={{ color: late ? "var(--rose-ink)" : "var(--amber-ink)" }}
                 >
-                  {late ? `${Math.abs(c.daysUntil)}D LATE` : `IN ${c.daysUntil}D`}
+                  {late ? (
+                    <>
+                      <Num>{Math.abs(c.daysUntil)}</Num> {lateTail(c.daysUntil)}
+                    </>
+                  ) : (
+                    <>
+                      IN <Num>{c.daysUntil}</Num> {dayWord(c.daysUntil)}
+                    </>
+                  )}
                 </span>
               </div>
               <div className="mt-1 flex items-baseline justify-between gap-3">
-                <p className="truncate text-[14px] font-bold leading-tight text-ink">
-                  {c.clientName}
-                </p>
-                <span className="mono shrink-0 text-[15px] text-ink">
-                  {formatCents(c.pricePerVisitCents)}
-                </span>
+                <p className="t-row truncate font-bold text-ink">{c.clientName}</p>
+                <Money cents={c.pricePerVisitCents} className="t-row shrink-0" />
               </div>
-              <p className="mt-0.5 truncate text-[12px] text-ink-2">{c.name}</p>
+              <p className="t-meta mt-1 truncate text-ink-2">{c.name}</p>
             </div>
           );
         })}

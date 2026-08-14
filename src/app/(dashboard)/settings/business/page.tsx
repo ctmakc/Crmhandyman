@@ -1,10 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
+import {
+  BackLink,
+  Button,
+  ErrorNote,
+  Field,
+  LaneHead,
+  PageHead,
+  Skeleton,
+} from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+
+/**
+ * BUSINESS DETAILS — the paper screen. Everything here is printed on a document a
+ * customer holds, so the page is laid out in the order the document reads: who you
+ * are, the tax number the invoice needs, where to find you, how to pay you.
+ */
 
 type Details = {
   businessName: string;
@@ -38,7 +50,7 @@ export default function BusinessDetailsPage() {
         setLoading(false);
       })
       .catch(() => {
-        setError("Could not load your details");
+        setError("Your details did not load — check the connection and open this page again.");
         setLoading(false);
       });
   }, []);
@@ -58,7 +70,7 @@ export default function BusinessDetailsPage() {
       toast("Details saved — new documents carry them");
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not save");
+      setError(data.error || "The details did not save. Try again in a moment.");
     }
     setSaving(false);
   }
@@ -67,108 +79,130 @@ export default function BusinessDetailsPage() {
     setForm({ ...form, [k]: e.target.value });
 
   return (
-    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
-      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/settings" label="Settings" />
 
       <PageHead
         eyebrow="Desk setup · 01"
         title="Business details"
-        sub="Printed on every estimate and invoice you hand a customer"
+        sub="Printed on every estimate and invoice you hand a customer."
       />
 
       {loading ? (
-        <Plate className="p-5">
-          <div className="eyebrow">Loading…</div>
-        </Plate>
+        <Skeleton lines={3} />
       ) : (
-        <Plate className="p-5">
-          <form onSubmit={handleSave} className="space-y-4">
-            <div>
-              <label className="eyebrow">Business name *</label>
-              <input
-                required
-                value={form.businessName}
-                onChange={set("businessName")}
-                className="mt-1.5 w-full px-3 py-2 text-[13px]"
-              />
-            </div>
+        <form onSubmit={handleSave}>
+          <section className="lane pt-4">
+            <LaneHead title="On the paper" />
 
-            <div>
-              <label className="eyebrow">GST / HST number</label>
-              <input
-                value={form.hstNumber}
-                onChange={set("hstNumber")}
-                placeholder="123456789RT0001"
-                className="mono mt-1.5 w-full px-3 py-2 text-[13px]"
-              />
-              <p className="mt-1.5 text-[12px] text-ink-2">
-                CRA requires it on any invoice over $30. A business customer without it
-                loses the input tax credit and sends the invoice back.
-              </p>
-            </div>
-
-            <div>
-              <label className="eyebrow">Address</label>
-              <input
-                value={form.businessAddress}
-                onChange={set("businessAddress")}
-                placeholder="120 Bank St, Ottawa, ON K1P 5N2"
-                className="mt-1.5 w-full px-3 py-2 text-[13px]"
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="eyebrow">Phone</label>
+            <Field id="biz-name" label="Business name" required className="mt-4">
+              {(f) => (
                 <input
-                  value={form.businessPhone}
-                  onChange={set("businessPhone")}
-                  placeholder="613-555-0100"
-                  className="mono mt-1.5 w-full px-3 py-2 text-[13px]"
+                  {...f}
+                  value={form.businessName}
+                  onChange={set("businessName")}
+                  className={`${f.className} max-w-[420px]`}
                 />
-              </div>
-              <div>
-                <label className="eyebrow">Email on documents</label>
+              )}
+            </Field>
+
+            {/* Why the number matters, in the words of the man who gets the invoice
+                back. The long half sits outside the field so it can hold `.measure`;
+                a `Field` hint runs the full width of the page. */}
+            <Field
+              id="biz-hst"
+              label="GST / HST number"
+              className="mt-4"
+              hint="Your CRA number, printed on every invoice over thirty dollars."
+            >
+              {(f) => (
                 <input
-                  type="email"
-                  value={form.businessEmail}
-                  onChange={set("businessEmail")}
-                  placeholder="office@yourshop.ca"
-                  className="mono mt-1.5 w-full px-3 py-2 text-[13px]"
+                  {...f}
+                  value={form.hstNumber}
+                  onChange={set("hstNumber")}
+                  placeholder="123456789RT0001"
+                  className={`${f.className} mono max-w-[260px]`}
                 />
-              </div>
+              )}
+            </Field>
+            <p className="measure t-meta mt-1.5 text-ink-2">
+              A business customer who cannot see it cannot claim the tax back, and he sends
+              the invoice back to you to be redone.
+            </p>
+          </section>
+
+          <section className="lane mt-10 pt-4">
+            <LaneHead title="How a customer reaches you" />
+
+            <Field id="biz-address" label="Address" className="mt-4">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.businessAddress}
+                  onChange={set("businessAddress")}
+                  placeholder="120 Bank St, Ottawa, ON K1P 5N2"
+                  className={`${f.className} max-w-[480px]`}
+                />
+              )}
+            </Field>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field id="biz-phone" label="Phone">
+                {(f) => (
+                  <input
+                    {...f}
+                    value={form.businessPhone}
+                    onChange={set("businessPhone")}
+                    placeholder="613-555-0100"
+                    className={`${f.className} mono max-w-[220px]`}
+                  />
+                )}
+              </Field>
+              <Field id="biz-email" label="Email on documents">
+                {(f) => (
+                  <input
+                    {...f}
+                    type="email"
+                    value={form.businessEmail}
+                    onChange={set("businessEmail")}
+                    placeholder="office@yourshop.ca"
+                    className={`${f.className} mono max-w-[300px]`}
+                  />
+                )}
+              </Field>
             </div>
+          </section>
 
-            <div>
-              <label className="eyebrow">How to pay</label>
-              <textarea
-                value={form.paymentInstructions}
-                onChange={set("paymentInstructions")}
-                rows={3}
-                placeholder={"Interac e-Transfer to pay@yourshop.ca\nCheques payable to Your Shop Ltd."}
-                className="mt-1.5 w-full px-3 py-2 text-[13px]"
-              />
-              <p className="mt-1.5 text-[12px] text-ink-2">
-                Printed on the remittance stub the customer tears off.
-              </p>
-            </div>
+          <section className="lane mt-10 pt-4">
+            <LaneHead title="How to pay you" />
 
-            {error && (
-              <p
-                className="mono border-l-2 py-1 pl-3 text-[12px]"
-                style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-              >
-                {error}
-              </p>
-            )}
+            <Field
+              className="mt-4"
+              id="biz-pay"
+              label="Payment instructions"
+              hint="Printed on the remittance stub the customer tears off the bottom of the invoice."
+            >
+              {(f) => (
+                <textarea
+                  {...f}
+                  value={form.paymentInstructions}
+                  onChange={set("paymentInstructions")}
+                  rows={3}
+                  placeholder={"Interac e-Transfer to pay@yourshop.ca\nCheques payable to Your Shop Ltd."}
+                  className={`${f.className} max-w-[480px]`}
+                />
+              )}
+            </Field>
+          </section>
 
-            <button type="submit" disabled={saving} className={buttonClass("primary")}>
+          {error && <ErrorNote className="mt-6">{error}</ErrorNote>}
+
+          <div className="actions mt-6">
+            <Button type="submit" disabled={saving}>
               {saving ? "Saving…" : "Save details"}
-            </button>
-          </form>
-        </Plate>
+            </Button>
+          </div>
+        </form>
       )}
     </div>
   );

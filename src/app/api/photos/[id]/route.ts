@@ -18,17 +18,17 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     where: { id: params.id, tenantId },
     select: { id: true, mime: true, path: true },
   });
-  if (!photo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!photo) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const abs = photoFilePath(photo.path);
-  if (!abs) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!abs) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   let bytes: Buffer;
   try {
     bytes = await readFile(abs);
   } catch {
     // The row outlived its file. A 404 is honest; a 500 would send the crew hunting a bug.
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
   }
 
   return new NextResponse(new Uint8Array(bytes), {
@@ -53,7 +53,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     where: { id: params.id, tenantId },
     select: { id: true, path: true, uploadedById: true },
   });
-  if (!photo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!photo) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   // Proof of work is evidence: the owner can clear it, and so can the man who shot it
   // (a wrong photo taken thirty seconds ago). Nobody else on the crew.

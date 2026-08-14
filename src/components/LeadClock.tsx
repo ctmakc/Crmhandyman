@@ -7,6 +7,7 @@ import {
   waitShort,
   waitTone,
   type ClockLead,
+  type Response,
 } from "@/lib/lead-clock";
 
 /**
@@ -28,17 +29,35 @@ function useNow(everyMs: number): number | null {
 }
 
 /**
+ * THE UNIT MARK.
+ *
+ * `stopwatch()` prints `10:42`, and at twenty to nine in the evening the owner read
+ * that as twenty to eleven — a running stopwatch and a wall clock look the same on a
+ * plate full of times. The arithmetic is untouched; the reading is split into digits
+ * and the unit they are counted in, and the unit is set small and neutral the way the
+ * money readout sets its dollar sign.
+ */
+function reading(r: Response): { digits: string; unit: string } {
+  if (r.answered) return { digits: waitShort(r.ms), unit: "" };
+  const s = stopwatch(r.ms);
+  if (s.endsWith(" H")) return { digits: s.slice(0, -2), unit: "HRS" };
+  if (s.includes(":")) return { digits: s, unit: "MIN" };
+  return { digits: s, unit: "" };
+}
+
+/**
  * THE CARD READING. Sits where the lead's header used to state its age in days, and
  * states instead the thing that is still in the owner's hands.
  */
 export function LeadClock({ lead }: { lead: ClockLead }) {
   const now = useNow(1_000);
   if (now === null) {
-    return <span className="mono text-[11px] tracking-[0.08em] text-ink-3">—</span>;
+    return <span className="mono eyebrow text-ink-3">—</span>;
   }
 
   const r = responseOf(lead, now);
   const tone = waitTone(r);
+  const { digits, unit } = reading(r);
 
   return (
     <span
@@ -53,52 +72,63 @@ export function LeadClock({ lead }: { lead: ClockLead }) {
         {r.answered ? "Answered in" : "Waiting for a callback"}
       </span>
       <span
-        className="mono mt-1 block text-[26px] font-bold leading-none tracking-[-0.02em]"
+        className="mono t-readout mt-1.5 block font-bold tracking-[-0.02em]"
         style={{ color: tone }}
       >
-        {r.answered ? waitShort(r.ms) : stopwatch(r.ms)}
+        {digits}
+        {unit && (
+          <span className="t-meta ml-1.5 align-baseline text-ink-3">{unit}</span>
+        )}
       </span>
     </span>
   );
 }
 
 /**
- * THE SHEET COLUMN. Same value, row scale. The tick strip fills a quarter-hour at a
- * time, so one look down the lane shows which calls have been sitting there.
+ * THE SHEET COLUMN. The same value at row scale, and the loudest thing in the row:
+ * one look down the lane answers «who has been waiting longest», which is the only
+ * question the sheet exists to answer.
+ *
+ * It used to be an 11px label behind a strip of hairline ticks — one tick per quarter
+ * hour, capped at eight. At 390px the strip read as a row of splinters, it repeated
+ * what the number beside it already said, and it stopped growing exactly where the
+ * wait starts to cost the job. The number carries it alone now: calm ink under an
+ * hour, amber past one, rose past four — the same three steps the card uses, and the
+ * word above it says which way the clock is running.
  */
-export function LeadWait({ lead }: { lead: ClockLead }) {
+export function LeadWait({
+  lead,
+  /** The worked lane reports history, so it reads at row scale instead of shouting. */
+  compact,
+}: {
+  lead: ClockLead;
+  compact?: boolean;
+}) {
   const now = useNow(20_000);
   if (now === null) {
-    return <span className="mono shrink-0 text-[11px] text-ink-3">—</span>;
+    return <span className="mono eyebrow shrink-0 text-ink-3">—</span>;
   }
 
   const r = responseOf(lead, now);
   const tone = waitTone(r);
-  const ticks = Math.min(Math.floor(r.ms / (15 * 60_000)), 8);
 
   return (
     <span
-      className="flex shrink-0 items-center gap-2"
+      className="flex shrink-0 flex-col items-end"
       title={
         r.answered
           ? `Answered in ${waitShort(r.ms)}`
           : `Waiting ${waitShort(r.ms)} for a callback`
       }
     >
-      {!r.answered && (
-        <span className="flex items-end gap-[2px]" aria-hidden="true">
-          {Array.from({ length: ticks }).map((_, i) => (
-            <span key={i} className="inline-block h-[7px] w-px" style={{ background: tone }} />
-          ))}
-          {r.ms >= 2 * 60 * 60_000 && (
-            <span className="mono text-[10px] leading-none" style={{ color: tone }}>
-              +
-            </span>
-          )}
-        </span>
-      )}
-      <span className="mono text-[11px] font-bold tracking-[0.08em]" style={{ color: tone }}>
-        {r.answered ? `ANS ${waitShort(r.ms)}` : waitShort(r.ms)}
+      <span className="eyebrow" style={{ color: tone }}>
+        {r.answered ? "Answered in" : "Waiting"}
+      </span>
+      <span
+        className={`mono mt-1 font-bold tracking-[-0.02em] ${compact ? "t-row" : "t-record"}`}
+        style={{ color: tone }}
+      >
+        {waitShort(r.ms)}
       </span>
     </span>
   );

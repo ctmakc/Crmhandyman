@@ -49,7 +49,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       },
     },
   });
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!client) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const invoices = client.projects.flatMap((p) =>
     p.invoices.map((i) => ({
@@ -101,7 +101,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const { tenantId } = guard.identity;
 
   const existing = await prisma.client.findFirst({ where: { id: params.id, tenantId } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!existing) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const body = await req.json();
   const client = await prisma.client.update({

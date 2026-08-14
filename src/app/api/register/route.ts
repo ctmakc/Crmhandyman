@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   const { businessName, email, password } = body;
 
   if (!businessName || !email || !password) {
-    return NextResponse.json({ error: "businessName, email, and password are required" }, { status: 400 });
+    return NextResponse.json({ error: "Fill in the business name, the email and the password" }, { status: 400 });
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();

@@ -30,7 +30,7 @@ function isSuperAdmin(session: Session | null) {
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const tenants = await prisma.tenant.findMany({
     include: { _count: { select: { users: true, leads: true, projects: true } } },
@@ -42,7 +42,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const body = await req.json();
   const { id, plan, expiresAt, businessName } = body;
@@ -61,11 +61,11 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Nothing was picked to remove" }, { status: 400 });
 
   /**
    * Every table that carries `tenantId`, in dependency order. Each wave that adds a

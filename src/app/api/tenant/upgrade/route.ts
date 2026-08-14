@@ -11,10 +11,10 @@ import { prisma } from "@/lib/prisma";
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const { tenantId, role } = sessionTenant(session);
-  if (role !== "ADMIN") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (role !== "ADMIN") return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const body = await req.json();
   const businessName = typeof body.businessName === "string" ? body.businessName.trim() : "";

@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Send } from "lucide-react";
-import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
+import { Send } from "lucide-react";
+import {
+  BackLink,
+  Button,
+  ErrorNote,
+  Field,
+  LaneHead,
+  PageHead,
+  Skeleton,
+  Stamp,
+} from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 /**
@@ -41,21 +49,13 @@ const EMPTY: Settings = {
   lastDelivered: false,
 };
 
-const field = "mt-1.5 w-full px-3 py-2 text-[13px]";
-
-function stamp(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso)
-    .toLocaleString("en-CA", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-    .replace(/,/g, "")
-    .toUpperCase();
-}
+/**
+ * What the test button prints. The server answers with a machine detail
+ * («nothing is configured yet», an SMTP refusal quoted verbatim); the screen puts a
+ * sentence in front of it that says what happened and what to do about it, and keeps
+ * the detail underneath because that line is what gets read down the phone to support.
+ */
+type TestOutcome = { ok: boolean; headline: string; detail: string } | null;
 
 export default function NotificationsPage() {
   const [saved, setSaved] = useState<Settings>(EMPTY);
@@ -64,7 +64,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [testResult, setTestResult] = useState("");
+  const [test, setTest] = useState<TestOutcome>(null);
 
   useEffect(() => {
     fetch("/api/settings/notifications")
@@ -75,7 +75,7 @@ export default function NotificationsPage() {
         setLoading(false);
       })
       .catch(() => {
-        setError("Could not load your alert settings");
+        setError("Your alert settings did not load — check the connection and open this page again.");
         setLoading(false);
       });
   }, []);
@@ -108,7 +108,7 @@ export default function NotificationsPage() {
       toast("Alert settings saved");
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not save");
+      setError(data.error || "The settings did not save. Try again in a moment.");
     }
     setBusy(false);
   }
@@ -132,10 +132,21 @@ export default function NotificationsPage() {
 
   async function sendTest() {
     setBusy(true);
-    setTestResult("");
+    setTest(null);
     const res = await fetch("/api/settings/notifications", { method: "POST" });
-    const data = await res.json().catch(() => ({ ok: false, detail: "no answer" }));
-    setTestResult(`${data.ok ? "SENT" : "FAILED"} · ${data.detail}`);
+    const data = await res
+      .json()
+      .catch(() => ({ ok: false, detail: "the desk gave no answer" }));
+    const detail = String(data.detail || "");
+    setTest({
+      ok: !!data.ok,
+      headline: data.ok
+        ? "Test alert sent. It lands on the phone within a few seconds. If nothing arrives, the chat id points at another chat."
+        : /nothing is configured/i.test(detail)
+          ? "No channel is set up yet. Save a Telegram chat id or an email address above, then send the test again."
+          : "The channel refused the test alert. The refusal it gave is below, word for word.",
+      detail,
+    });
     setBusy(false);
   }
 
@@ -143,21 +154,17 @@ export default function NotificationsPage() {
     setForm({ ...form, [k]: e.target.value });
 
   return (
-    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
-      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 06"
+        eyebrow="Desk setup · 05"
         title="Lead alerts"
         sub="The shop that calls back first gets the job. This is how a new lead reaches you without anyone watching the screen."
       />
 
       {loading ? (
-        <Plate className="p-5">
-          <div className="eyebrow">Loading…</div>
-        </Plate>
+        <Skeleton lines={3} />
       ) : (
         <>
           {/* THE LAST WORD — what actually happened to the last alert. Rose when the
@@ -168,171 +175,184 @@ export default function NotificationsPage() {
               style={{ borderColor: saved.lastDelivered ? "var(--emerald)" : "var(--rose)" }}
             >
               <div className="eyebrow">Last alert</div>
-              <p className="mono mt-1.5 text-[12px] text-ink">
-                {stamp(saved.lastSentAt)} · {saved.lastResult || "delivered"}
+              <p className="t-body mt-1.5 text-ink">
+                <Stamp date={saved.lastSentAt} withTime />{" "}
+                <span className="text-ink-2">·</span>{" "}
+                {saved.lastResult || (saved.lastDelivered ? "delivered" : "no answer")}
               </p>
             </div>
           )}
 
-          <Plate className="p-5">
-            <form onSubmit={save} className="space-y-6">
-              <label className="flex items-center gap-2 text-[13px] text-ink">
+          <form onSubmit={save}>
+            <section className="lane pt-4">
+              <LaneHead title="Alerts" />
+              <label className="t-body mt-4 flex items-center gap-2.5 text-ink">
                 <input
                   type="checkbox"
                   checked={form.isActive}
                   onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                  className="h-3.5 w-3.5"
+                  className="h-4 w-4"
                 />
                 Alert me the moment a lead lands
               </label>
+            </section>
 
-              {/* TELEGRAM — the channel that actually wakes a phone. */}
-              <div className="border-t border-line pt-5">
-                <div className="eyebrow">Telegram</div>
-                <p className="mt-1.5 text-[12px] text-ink-2">
-                  Your own bot, not ours. In Telegram open{" "}
-                  <span className="mono text-[12px]">@BotFather</span>, send{" "}
-                  <span className="mono text-[12px]">/newbot</span>, paste the token below.
-                  Then write one message to your new bot and open{" "}
-                  <span className="mono text-[12px]">
-                    api.telegram.org/bot&lt;token&gt;/getUpdates
-                  </span>{" "}
-                  to read your chat id.
-                </p>
+            {/* TELEGRAM — the channel that actually wakes a phone. */}
+            <section className="lane mt-10 pt-4">
+              <LaneHead title="Telegram" />
+              <p className="measure t-body mt-4 text-ink-2">
+                Your own bot. In Telegram open <span className="mono">@BotFather</span>, send{" "}
+                <span className="mono">/newbot</span> and paste the token it gives you below.
+                Then write one message to your new bot and open{" "}
+                <span className="mono">api.telegram.org/bot&lt;token&gt;/getUpdates</span> to read
+                your chat id.
+              </p>
 
-                <div className="mt-4">
-                  <label className="eyebrow">Bot token</label>
+              <Field
+                id="tg-token"
+                label="Bot token"
+                className="mt-4"
+                hint="The token stays on the server and is never shown again."
+              >
+                {(f) => (
                   <input
+                    {...f}
                     type="password"
                     autoComplete="off"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
                     placeholder={
-                      saved.telegramTokenHint
-                        ? `saved · ${saved.telegramTokenHint}`
-                        : "123456789:AAF…"
+                      saved.telegramTokenHint ? `saved · ${saved.telegramTokenHint}` : "123456789:AAF…"
                     }
-                    className={`${field} mono`}
+                    className={`${f.className} mono max-w-[340px]`}
                   />
-                  <p className="mt-1.5 flex items-center gap-3 text-[12px] text-ink-2">
-                    <span>The token stays on the server and is never shown again.</span>
-                    {saved.telegramTokenHint && (
-                      <button
-                        type="button"
-                        onClick={forgetToken}
-                        className="eyebrow hover:text-rose"
-                      >
-                        Forget it
-                      </button>
-                    )}
-                  </p>
-                </div>
+                )}
+              </Field>
 
-                <div className="mt-4">
-                  <label className="eyebrow">Chat id</label>
+              {saved.telegramTokenHint && (
+                <button type="button" onClick={forgetToken} className="eyebrow mt-2 hover:text-rose">
+                  Forget the saved token
+                </button>
+              )}
+
+              <Field id="tg-chat" label="Chat id" className="mt-4">
+                {(f) => (
                   <input
+                    {...f}
                     value={form.telegramChatId}
                     onChange={set("telegramChatId")}
                     placeholder="123456789"
-                    className={`${field} mono`}
+                    className={`${f.className} mono max-w-[220px]`}
                   />
-                </div>
-              </div>
+                )}
+              </Field>
+            </section>
 
-              {/* EMAIL — the fallback that needs no setup. */}
-              <div className="border-t border-line pt-5">
-                <div className="eyebrow">Email</div>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={set("email")}
-                  placeholder="dispatch@yourshop.ca"
-                  className={field}
-                />
-                <p className="mt-1.5 text-[12px] text-ink-2">
-                  Left empty, alerts go to the workspace owner&apos;s address.
-                </p>
-              </div>
+            {/* EMAIL — the fallback that needs no setup. */}
+            <section className="lane mt-10 pt-4">
+              <LaneHead title="Email" />
+              <Field
+                className="mt-4"
+                id="alert-email"
+                label="Send alerts to"
+                hint="Left empty, alerts go to the workspace owner's address."
+              >
+                {(f) => (
+                  <input
+                    {...f}
+                    type="email"
+                    value={form.email}
+                    onChange={set("email")}
+                    placeholder="dispatch@yourshop.ca"
+                    className={`${f.className} mono max-w-[340px]`}
+                  />
+                )}
+              </Field>
+            </section>
 
-              {/* QUIET HOURS — a mover at 23:40 does not want a call from a robot. */}
-              <div className="border-t border-line pt-5">
-                <div className="eyebrow">Quiet hours</div>
-                <p className="mt-1.5 text-[12px] text-ink-2">
-                  Leads that arrive inside this window wait and arrive together in one
-                  message when it ends. Leave both blank to be told at any hour.
-                </p>
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div>
-                    <label className="eyebrow">From</label>
+            {/* QUIET HOURS — a mover at 23:40 does not want a call from a robot. */}
+            <section className="lane mt-10 pt-4">
+              <LaneHead title="Quiet hours" />
+              <p className="measure t-body mt-4 text-ink-2">
+                A lead that arrives inside this window waits, and they all come together in one
+                message when it ends. Leave both blank to be told at any hour.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-4">
+                <Field id="quiet-from" label="From">
+                  {(f) => (
                     <input
+                      {...f}
                       type="time"
                       value={form.quietFrom}
                       onChange={set("quietFrom")}
-                      className={`${field} mono`}
+                      className={`${f.className} mono w-[150px]`}
                     />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Until</label>
+                  )}
+                </Field>
+                <Field id="quiet-to" label="Until">
+                  {(f) => (
                     <input
+                      {...f}
                       type="time"
                       value={form.quietTo}
                       onChange={set("quietTo")}
-                      className={`${field} mono`}
+                      className={`${f.className} mono w-[150px]`}
                     />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Time zone</label>
+                  )}
+                </Field>
+                <Field id="quiet-tz" label="Time zone">
+                  {(f) => (
                     <input
+                      {...f}
                       value={form.timezone}
                       onChange={set("timezone")}
                       placeholder="America/Toronto"
-                      className={`${field} mono`}
+                      className={`${f.className} mono w-[220px]`}
                     />
-                  </div>
-                </div>
+                  )}
+                </Field>
               </div>
+            </section>
 
-              {error && (
-                <p
-                  className="mono border-l-2 py-1 pl-3 text-[12px]"
-                  style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-                >
-                  {error}
+            {error && <ErrorNote className="mt-6">{error}</ErrorNote>}
+
+            <div className="actions mt-6">
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={sendTest} disabled={busy}>
+                <Send className="h-3.5 w-3.5" aria-hidden /> Send a test
+              </Button>
+            </div>
+
+            {test && !test.ok && (
+              <ErrorNote className="mt-4">
+                {test.headline}
+                {test.detail && (
+                  <span className="mono t-meta mt-1.5 block text-ink-2">{test.detail}</span>
+                )}
+              </ErrorNote>
+            )}
+
+            {test && test.ok && (
+              <div
+                className="mt-4 border-l-2 py-2 pl-3"
+                style={{ borderColor: "var(--emerald)" }}
+                role="status"
+              >
+                <p className="t-body" style={{ color: "var(--emerald-ink)" }}>
+                  {test.headline}
                 </p>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-5">
-                <button type="submit" disabled={busy} className={buttonClass("primary")}>
-                  {busy ? "Saving…" : "Save"}
-                </button>
-                <button
-                  type="button"
-                  onClick={sendTest}
-                  disabled={busy}
-                  className={buttonClass("ghost")}
-                >
-                  <Send className="h-3.5 w-3.5" /> Send a test
-                </button>
+                {test.detail && (
+                  <p className="mono t-meta mt-1.5 text-ink-2">{test.detail}</p>
+                )}
               </div>
+            )}
+          </form>
 
-              {testResult && (
-                <p
-                  className="mono text-[12px]"
-                  style={{
-                    color: testResult.startsWith("SENT")
-                      ? "var(--emerald-ink)"
-                      : "var(--rose-ink)",
-                  }}
-                >
-                  {testResult}
-                </p>
-              )}
-            </form>
-          </Plate>
-
-          <p className="text-[12px] text-ink-2">
-            A failed alert never costs you the lead — it is on the sheet either way, and
-            every attempt is written into the action log.
+          <p className="measure t-meta text-ink-2">
+            A failed alert still leaves the lead on the call sheet, and every attempt is
+            written into the action log.
           </p>
         </>
       )}

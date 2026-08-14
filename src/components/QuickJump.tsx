@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
-import { spineFor } from "@/components/ui/primitives";
+import { Empty, spineFor } from "@/components/ui/primitives";
 
 interface Hit {
   kind: "lead" | "job" | "invoice" | "client";
@@ -119,19 +119,30 @@ export default function QuickJump() {
               if (e.key === "Enter") go(hits[active]);
             }}
             placeholder="Client, address, phone, invoice number…"
-            className="w-full border-0 bg-transparent px-0 py-1 text-[15px] focus:shadow-none"
+            className="t-row w-full border-0 bg-transparent px-0 py-1 focus:shadow-none"
             style={{ boxShadow: "none" }}
           />
-          <span className="mono shrink-0 text-[10px] tracking-[0.08em] text-ink-3">ESC</span>
+          <span className="mono t-micro shrink-0 tracking-[0.08em] text-ink-3">ESC</span>
         </div>
 
         <div className="max-h-[52vh] overflow-auto">
+          {/* Both states are status lines, left where the rows start. Centred, they
+              read as a poster in the middle of a working tool. */}
           {q.trim().length < 2 && (
-            <p className="eyebrow px-4 py-6 text-center">Type at least two characters</p>
+            <Empty className="border-t-0" hint="A name, a street, a phone number or an invoice number — two characters are enough to start.">
+              Type at least two characters
+            </Empty>
           )}
           {q.trim().length >= 2 && hits.length === 0 && (
-            <p className="eyebrow px-4 py-6 text-center">Nothing on the desk matches</p>
+            <Empty className="border-t-0" hint="Try the phone number without dashes, or a piece of the street name.">
+              Nothing on the desk matches
+            </Empty>
           )}
+          {/* How many, spoken. The list moves under the arrow keys and a reader was
+              told nothing about what had appeared. */}
+          <span aria-live="polite" className="sr-only">
+            {q.trim().length >= 2 ? `${hits.length} found` : ""}
+          </span>
           {hits.map((hit, i) => (
             <button
               key={`${hit.kind}-${hit.id}`}
@@ -140,21 +151,30 @@ export default function QuickJump() {
               className="flex w-full items-center gap-3 border-b border-line px-4 py-2.5 text-left last:border-b-0"
               style={{ background: i === active ? "var(--sunk)" : undefined }}
             >
+              {/*
+                A CLIENT HAS NO STATUS. The search API answers every kind with the same
+                field, so every person in the book was stamped COMPLETED and given the
+                emerald spine that means «paid, done» everywhere else on the desk. A
+                colour that means something in nine places cannot mean nothing in the
+                tenth: the client rows carry the neutral spine and no state word.
+              */}
               <span
                 className="h-7 w-[3px] shrink-0"
-                style={{ background: spineFor(hit.status) }}
+                style={{
+                  background: hit.kind === "client" ? "var(--slate)" : spineFor(hit.status),
+                }}
                 aria-hidden
               />
-              <span className="mono w-[52px] shrink-0 text-[10px] tracking-[0.08em] text-ink-3">
+              <span className="mono t-micro w-[52px] shrink-0 tracking-[0.08em] text-ink-3">
                 {KIND_LABEL[hit.kind]}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-bold leading-tight text-ink">
-                  {hit.title}
-                </span>
-                <span className="block truncate text-[12px] text-ink-2">{hit.sub}</span>
+                <span className="t-row block truncate font-bold text-ink">{hit.title}</span>
+                <span className="t-meta block truncate text-ink-2">{hit.sub}</span>
               </span>
-              <span className="eyebrow shrink-0">{hit.status.replace("_", " ")}</span>
+              {hit.kind !== "client" && (
+                <span className="eyebrow shrink-0">{hit.status.replace("_", " ")}</span>
+              )}
             </button>
           ))}
         </div>

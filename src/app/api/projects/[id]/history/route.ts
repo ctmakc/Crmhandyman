@@ -13,14 +13,14 @@ import { sessionTenant } from "@/lib/session";
  */
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const project = await prisma.project.findFirst({
     where: { id: params.id, tenantId },
     select: { id: true, clientId: true, address: true },
   });
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!project) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const street = (project.address || "").split(",")[0].trim();
 

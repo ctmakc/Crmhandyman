@@ -32,7 +32,7 @@ function windowRange(param: string | null, dateParam: string | null) {
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId, role } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
@@ -101,14 +101,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
 
   // A job cannot be dispatched to another contractor's employee.
   const assignee = await scopedUserId(tenantId, body.assignedToId);
-  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+  if (!assignee.ok) return NextResponse.json({ error: "That crew member is not on this desk" }, { status: 400 });
 
   // Every job belongs to a client — either the one picked in the form, or the one
   // this name/phone/address already resolves to. The picked one is a claim: a job hung

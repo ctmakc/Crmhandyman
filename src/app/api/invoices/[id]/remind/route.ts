@@ -26,7 +26,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       project: { select: { title: true, phone: true } },
     },
   });
-  if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const amountPaidCents = invoice.payments.reduce((s, p) => s + p.amountCents, 0);
   const state = {

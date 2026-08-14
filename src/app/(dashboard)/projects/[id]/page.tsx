@@ -1,19 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
-import { formatDate, cn } from "@/lib/utils";
+import { Plus, FileText, Scissors, Phone, Navigation, Mail } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { dayStamp } from "@/lib/dates";
-import { formatCents, inCents, type InCents } from "@/lib/money";
+import { dollarText, formatCents, inCents, type InCents } from "@/lib/money";
 import {
   Empty,
   buttonClass,
-  spineFor,
   textToneFor,
   Plate,
+  Ticket,
   Skeleton,
   LaneHead,
+  BackLink,
+  WoNumber,
+  Money,
+  Num,
+  Stamp,
+  Readout,
+  Row,
+  Chip,
+  Field,
+  Lane,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import {
@@ -133,31 +143,30 @@ function clockOf(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** `Aug 14 · 09:00–12:00`, or the day and its run when nobody named a time. */
-function whenLabel(job: { scheduledDate: string | null; durationMinutes?: number | null }) {
-  if (!job.scheduledDate) return "unscheduled";
+/** The clock half of a booking: `09:00–12:00`, `3 days`, or nothing agreed yet. */
+function clockLabel(job: { scheduledDate: string | null; durationMinutes?: number | null }) {
+  if (!job.scheduledDate) return "";
   const d = new Date(job.scheduledDate);
-  const day = formatDate(job.scheduledDate);
   const runs = spanDays(job as ScheduleJob);
   const timed = d.getHours() !== 0 || d.getMinutes() !== 0;
-
-  if (runs > 1) return `${day}${timed ? ` ${clockOf(d)}` : ""} · ${runs} days`;
-  if (!timed) return `${day} · anytime`;
-
+  if (runs > 1) return `${timed ? `${clockOf(d)} · ` : ""}${runs} days`;
+  if (!timed) return "anytime";
   const end = new Date(d.getTime() + (job.durationMinutes ?? DEFAULT_SLOT_MINUTES) * 60_000);
-  return `${day} · ${clockOf(d)}–${clockOf(end)}`;
+  return `${clockOf(d)}–${clockOf(end)}`;
 }
 
-const TABS = ["overview", "invoices", "crew", "money"] as const;
+const TABS = ["overview", "invoices", "tasks", "money"] as const;
 type Tab = (typeof TABS)[number];
 
 /** What the crew gets: the work and the day's cash, without the books behind them. */
-const FIELD_TABS: Tab[] = ["overview", "crew", "money"];
+const FIELD_TABS: Tab[] = ["overview", "tasks", "money"];
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const [project, setProject] = useState<Project | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
-  const [paymentForm, setPaymentForm] = useState({ amount: "", method: "CASH", notes: "", date: "" });
+  /* E-transfer first: it is how an Ontario contractor is paid at the door far more often
+     than cash, and the default is the value most techs never change. */
+  const [paymentForm, setPaymentForm] = useState({ amount: "", method: "E_TRANSFER", notes: "", date: "" });
   const [expenseForm, setExpenseForm] = useState({
     amount: "",
     category: "MATERIALS",
@@ -173,6 +182,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const [pending, setPending] = useState<{ userId: string; clashes: DayJob[] } | null>(null);
   /** The dispatch strip works on its own draft so a half-typed date never posts. */
   const [slot, setSlot] = useState({ date: "", time: "", duration: "" });
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   async function fetchProject() {
     const res = await fetch(`/api/projects/${params.id}`);
@@ -275,14 +285,24 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     fetchProject();
   }
 
+  /**
+   * Money is the one form that must never say «recorded» on a guess. The tech on the
+   * step reads the tick, puts the phone away and drives off; if the server refused —
+   * a bad amount, a dead session, no signal — nothing was written and nobody knows.
+   */
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/finance/payments", {
+    const res = await fetch("/api/finance/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...paymentForm, projectId: params.id }),
     });
-    setPaymentForm({ amount: "", method: "CASH", notes: "", date: "" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast(body.error || "The payment was not recorded — try it again", "bad");
+      return;
+    }
+    setPaymentForm({ amount: "", method: "E_TRANSFER", notes: "", date: "" });
     setShowPaymentForm(false);
     toast("Payment recorded");
     fetchProject();
@@ -310,7 +330,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     fetchProject();
   }
 
-  if (!project) return <Skeleton lines={5} />;
+  if (!project)
+    return (
+      <div className="page-doc space-y-6 pb-24 md:pb-0">
+        <BackLink href="/projects" label="All jobs" />
+        <Skeleton lines={5} />
+      </div>
+    );
 
   const paidCents = project.payments.reduce((s, p) => s + p.amountCents, 0);
   const expensesCents = project.expenses.reduce((s, e) => s + e.amountCents, 0);
@@ -323,29 +349,61 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const standingClashes = conflictsFor(asScheduled(project.assignedToId ?? null), daySchedule);
   const tabs = ownerView ? TABS : FIELD_TABS;
   const acceptedEstimate = project.estimates.find((e) => e.status === "ACCEPTED");
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
+  const clock = clockLabel({
+    scheduledDate: project.scheduledDate ?? null,
+    durationMinutes: project.durationMinutes ?? null,
+  });
+
+  /** Tabs are a keyboard instrument too: ← → walk them, Home/End jump the ends. */
+  function onTabKey(e: React.KeyboardEvent, index: number) {
+    const step =
+      e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : e.key === "Home" ? -index : e.key === "End" ? tabs.length - 1 - index : null;
+    if (step === null) return;
+    e.preventDefault();
+    const next = tabs[(index + step + tabs.length) % tabs.length];
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  }
+
+  const primaryAction =
+    project.status === "SCHEDULED" ? (
+      <button onClick={() => handleStatusChange("IN_PROGRESS")} className={buttonClass("primary")}>
+        Start job
+      </button>
+    ) : project.status === "IN_PROGRESS" ? (
+      <button onClick={() => handleStatusChange("COMPLETED")} className={buttonClass("primary")}>
+        Mark complete
+      </button>
+    ) : null;
+
+  const paperActions = ownerView ? (
+    <>
+      <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
+        <FileText className="hidden h-4 w-4 md:inline-block" aria-hidden />
+        {project.estimates.length > 0 ? "Estimates" : "Create estimate"}
+      </Link>
+      {acceptedEstimate && (
+        <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
+          <Scissors className="hidden h-4 w-4 md:inline-block" aria-hidden /> Issue invoice
+        </Link>
+      )}
+    </>
+  ) : null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 pb-24 md:pb-0">
-      <Link href="/projects" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> All jobs
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/projects" label="All jobs" />
 
-      {/* Job header rendered as the work-order plate itself. */}
-      <div
-        className="plate px-5 py-5"
-        style={{ borderLeft: `4px solid ${spineFor(project.status)}` }}
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* The record header IS the work-order plate: number, title, who it is for,
+          and the three things a hand can act on. */}
+      <Ticket status={project.status} className="px-5 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
-            <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
-              WO-{new Date(project.createdAt || Date.now()).getFullYear()}-
-              {project.id.slice(-4).toUpperCase()}
-            </span>
-            <h1 className="mt-1.5 text-[26px] font-black leading-none tracking-tight text-ink">
+            <WoNumber id={project.id} date={project.createdAt} />
+            <h1 className="t-record mt-1.5 font-black tracking-tight text-ink">
               {project.title}
             </h1>
-            <p className="mt-2 text-[14px] text-ink-2">
+            <p className="t-lede mt-2 text-ink-2">
               {project.clientId ? (
                 <Link
                   href={`/clients/${project.clientId}`}
@@ -359,38 +417,81 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               · {project.address}
             </p>
           </div>
-          <span className="eyebrow" style={{ color: textToneFor(project.status) }}>
+          <span className="eyebrow shrink-0" style={{ color: textToneFor(project.status) }}>
             {project.status.replace("_", " ")}
           </span>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
-          {project.status === "SCHEDULED" && (
-            <button onClick={() => handleStatusChange("IN_PROGRESS")} className={buttonClass("primary")}>
-              Start job
-            </button>
+        {/* The three field targets, in the same words the truck screen uses. Printed
+            as text they were 17px of dead ink: the man in the driveway had a phone
+            number he could read and could not dial. */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {project.phone && (
+            <a href={`tel:${project.phone}`} className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+              <Phone className="h-3.5 w-3.5" aria-hidden /> CALL {project.phone}
+            </a>
           )}
-          {project.status === "IN_PROGRESS" && (
-            <button onClick={() => handleStatusChange("COMPLETED")} className={buttonClass("primary")}>
-              Mark complete
-            </button>
-          )}
-          {ownerView && (
-            <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
-              <FileText className="h-4 w-4" />
-              {project.estimates.length > 0 ? "Estimates" : "Create estimate"}
-            </Link>
-          )}
-          {ownerView && acceptedEstimate && (
-            <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
-              <Scissors className="h-4 w-4" /> Issue invoice
-            </Link>
-          )}
-
-          {!ownerView && project.assignedTo && (
-            <span className="eyebrow ml-auto self-center">Crew · {project.assignedTo.name}</span>
+          <a
+            href={`https://maps.google.com/?q=${encodeURIComponent(project.address)}`}
+            target="_blank"
+            rel="noopener"
+            className="eyebrow inline-flex items-center gap-1.5 hover:text-ink"
+          >
+            <Navigation className="h-3.5 w-3.5" aria-hidden /> DRIVE
+          </a>
+          {project.email && (
+            <a href={`mailto:${project.email}`} className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
+              <Mail className="h-3.5 w-3.5" aria-hidden /> EMAIL
+            </a>
           )}
         </div>
+
+        {/* The crew reads the booking here, because the dispatch strip below is the
+            owner's. Without it his card said nothing about when he is expected.
+            Each fact is its own span, so a narrow screen breaks between them and
+            never through the middle of a man's name. */}
+        {!ownerView && (
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {project.scheduledDate ? (
+              <span className="eyebrow">
+                <Stamp date={project.scheduledDate} />
+                {clock && ` · ${clock}`}
+              </span>
+            ) : (
+              <span className="eyebrow" style={{ color: "var(--amber-ink)" }}>
+                NO DAY BOOKED
+              </span>
+            )}
+            {project.assignedTo && (
+              <span className="eyebrow">CREW · {project.assignedTo.name}</span>
+            )}
+          </div>
+        )}
+
+        {/* What kind of work this is, on the plate where the trade reads it. */}
+        {(project.jobType || project.lead) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {project.jobType && <Chip>{project.jobType}</Chip>}
+            {project.lead && (
+              <Chip title={`Came off the lead ${project.lead.name}`}>
+                FROM LEAD · {project.lead.source.replace(/_/g, " ")}
+              </Chip>
+            )}
+          </div>
+        )}
+
+        {/* No actions, no rule. A finished job on a worker's card used to draw an
+            empty band across the plate with nothing in it. The one action that moves
+            the job forward keeps its own line, so it is the full width of a phone
+            instead of half a line with its label broken in two. */}
+        {primaryAction && (
+          <div className="actions mt-5 border-t border-line pt-4">{primaryAction}</div>
+        )}
+        {paperActions && (
+          <div className={cn("actions", primaryAction ? "mt-2" : "mt-5 border-t border-line pt-4")}>
+            {paperActions}
+          </div>
+        )}
 
         {/* THE DISPATCH STRIP — when it runs, how long it runs, who runs it.
             Dispatch is the owner's call: the crew select used to sit here for the field
@@ -398,84 +499,95 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             order. The date lived in the read-only list below, so a job could not be moved
             at all once it was opened. */}
         {ownerView && (
-          <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-3 border-t border-line pt-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="eyebrow">Day</span>
-              <input
-                type="date"
-                value={slot.date}
-                onChange={(e) => {
-                  const next = { ...slot, date: e.target.value };
-                  setSlot(next);
-                  if (next.date)
-                    saveDispatch(
-                      { scheduledDate: composeSlot(next.date, next.time) },
-                      "Job rebooked"
-                    );
-                }}
-                className="mono px-2.5 py-2 text-[12px]"
-              />
-            </label>
+          /* Two columns of equal width on a phone, four boxes at their own widths on
+             the desk. Fixed widths alone left a ragged 390px stack: a 152px date, a
+             116px clock and a 176px name each on their own line. */
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 sm:flex sm:flex-wrap sm:items-end sm:gap-x-5">
+            <Field id="job-day" label="Day" className="sm:w-[152px]">
+              {(f) => (
+                <input
+                  {...f}
+                  type="date"
+                  className={`${f.className} mono`}
+                  value={slot.date}
+                  onChange={(e) => {
+                    const next = { ...slot, date: e.target.value };
+                    setSlot(next);
+                    if (next.date)
+                      saveDispatch(
+                        { scheduledDate: composeSlot(next.date, next.time) },
+                        "Job rebooked"
+                      );
+                  }}
+                />
+              )}
+            </Field>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="eyebrow">Start</span>
-              <input
-                type="time"
-                value={slot.time}
-                onChange={(e) => {
-                  const next = { ...slot, time: e.target.value };
-                  setSlot(next);
-                  if (next.date)
-                    saveDispatch(
-                      { scheduledDate: composeSlot(next.date, next.time) },
-                      next.time ? `Start set ${next.time}` : "Start time cleared"
-                    );
-                }}
-                className="mono px-2.5 py-2 text-[12px]"
-              />
-            </label>
+            <Field id="job-start" label="Start" className="sm:w-[116px]">
+              {(f) => (
+                <input
+                  {...f}
+                  type="time"
+                  className={`${f.className} mono`}
+                  value={slot.time}
+                  onChange={(e) => {
+                    const next = { ...slot, time: e.target.value };
+                    setSlot(next);
+                    if (next.date)
+                      saveDispatch(
+                        { scheduledDate: composeSlot(next.date, next.time) },
+                        next.time ? `Start set ${next.time}` : "Start time cleared"
+                      );
+                  }}
+                />
+              )}
+            </Field>
 
             {/* Two trades, one ruler: a mover books hours of this day, a renovation
                 books days, and the week rail draws whatever comes out as one run. */}
-            <label className="flex flex-col gap-1.5">
-              <span className="eyebrow">Takes</span>
-              <select
-                value={slot.duration}
-                onChange={(e) => {
-                  setSlot({ ...slot, duration: e.target.value });
-                  saveDispatch(
-                    { durationMinutes: e.target.value ? Number(e.target.value) : null },
-                    e.target.value
-                      ? `Runs ${formatDuration(Number(e.target.value))}`
-                      : "Duration cleared"
-                  );
-                }}
-                className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
-              >
-                <option value="">— One stop —</option>
-                {DURATION_CHOICES.map((d) => (
-                  <option key={d.minutes} value={d.minutes}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Field id="job-takes" label="Takes" className="sm:w-[148px]">
+              {(f) => (
+                <select
+                  {...f}
+                  className={`${f.className} mono uppercase tracking-[0.06em]`}
+                  value={slot.duration}
+                  onChange={(e) => {
+                    setSlot({ ...slot, duration: e.target.value });
+                    saveDispatch(
+                      { durationMinutes: e.target.value ? Number(e.target.value) : null },
+                      e.target.value
+                        ? `Runs ${formatDuration(Number(e.target.value))}`
+                        : "Duration cleared"
+                    );
+                  }}
+                >
+                  <option value="">— One stop —</option>
+                  {DURATION_CHOICES.map((d) => (
+                    <option key={d.minutes} value={d.minutes}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
 
-            <label className="flex flex-col gap-1.5 sm:ml-auto">
-              <span className="eyebrow">Crew</span>
-              <select
-                value={pending?.userId ?? project.assignedToId ?? ""}
-                onChange={(e) => assignTo(e.target.value)}
-                className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
-              >
-                <option value="">— Unassigned —</option>
-                {crew.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Field id="job-crew" label="Crew" className="sm:ml-auto sm:w-[176px]">
+              {(f) => (
+                <select
+                  {...f}
+                  className={`${f.className} mono uppercase tracking-[0.06em]`}
+                  value={pending?.userId ?? project.assignedToId ?? ""}
+                  onChange={(e) => assignTo(e.target.value)}
+                >
+                  <option value="">— Unassigned —</option>
+                  {crew.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
           </div>
         )}
 
@@ -483,21 +595,21 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             Two short moving jobs on one man in one afternoon is a normal Saturday. */}
         {ownerView && pending && (
           <div
-            className="mt-4 border-t border-line pt-4"
+            className="mt-4 border-t pt-4"
             style={{ borderTopColor: "var(--rose)" }}
             role="alert"
           >
             <div className="eyebrow" style={{ color: "var(--rose-ink)" }}>
               Double booking
             </div>
-            <p className="mt-1.5 text-[13px] text-ink">
+            <p className="t-body mt-1.5 text-ink">
               {crew.find((c) => c.id === pending.userId)?.name ?? "That tech"} is already on{" "}
-              {pending.clashes.length} job{pending.clashes.length === 1 ? "" : "s"} at the same
-              time:
+              <Num>{pending.clashes.length}</Num> job
+              {pending.clashes.length === 1 ? "" : "s"} at the same time:
             </p>
             <ul className="mt-2 space-y-1">
               {pending.clashes.map((c) => (
-                <li key={c.id} className="text-[13px] text-ink-2">
+                <li key={c.id} className="t-body text-ink-2">
                   <Link
                     href={`/projects/${c.id}`}
                     className="font-medium text-ink underline underline-offset-4"
@@ -505,11 +617,20 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     {c.title}
                   </Link>{" "}
                   · {c.clientName} ·{" "}
-                  <span className="mono text-[12px]">{whenLabel(c)}</span>
+                  <span className="mono t-meta">
+                    {c.scheduledDate ? (
+                      <>
+                        <Stamp date={c.scheduledDate} />
+                        {clockLabel(c) && ` · ${clockLabel(c)}`}
+                      </>
+                    ) : (
+                      "unscheduled"
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="actions mt-3">
               <button
                 onClick={() => saveDispatch({ assignedToId: pending.userId }, "Assigned anyway")}
                 className={buttonClass("danger")}
@@ -527,23 +648,32 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             not only in the second the dispatcher pressed the button. */}
         {ownerView && !pending && standingClashes.length > 0 && (
           <p
-            className="mono mt-3 border-t border-line pt-3 text-[11px] uppercase tracking-[0.08em]"
+            className="eyebrow mt-3 border-t border-line pt-3"
             style={{ color: "var(--rose-ink)" }}
           >
             ! {project.assignedTo?.name ?? "This tech"} also holds{" "}
             {standingClashes.map((c) => c.title).join(" · ")} at this time
           </p>
         )}
-      </div>
+      </Ticket>
 
-      {/* Tabs — ruled, not pills. */}
-      <div className="flex gap-6 border-b border-line">
-        {tabs.map((t) => (
+      {/* Tabs — ruled, not pills, and driven by the keyboard like a real tablist. */}
+      <div className="flex gap-6 border-b border-line" role="tablist" aria-label="Job sections">
+        {tabs.map((t, i) => (
           <button
             key={t}
+            id={`tab-${t}`}
+            ref={(el) => {
+              tabRefs.current[t] = el;
+            }}
+            role="tab"
+            aria-selected={tab === t}
+            aria-controls={`panel-${t}`}
+            tabIndex={tab === t ? 0 : -1}
+            onKeyDown={(e) => onTabKey(e, i)}
             onClick={() => setTab(t)}
             className={cn(
-              "-mb-px border-b-2 pb-2.5 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors duration-[140ms] ease-instrument",
+              "t-meta -mb-px border-b-2 pb-2.5 font-bold uppercase tracking-[0.08em] transition-colors duration-fast ease-instrument",
               tab === t
                 ? "border-navy-900 text-ink"
                 : "border-transparent text-ink-3 hover:text-ink-2"
@@ -555,267 +685,289 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       </div>
 
       {tab === "overview" && (
-        <div className="space-y-5">
+        <div className="space-y-6" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview">
           <AddressHistory projectId={params.id} />
-          <div className="border-t border-line">
-            {[
-              ["Address", project.address],
-              ["Phone", project.phone],
-              ["Email", project.email],
-              ["Job type", project.jobType],
-              [
-                "Scheduled",
-                project.scheduledDate
-                  ? whenLabel({
-                      scheduledDate: project.scheduledDate,
-                      durationMinutes: project.durationMinutes ?? null,
-                    })
-                  : null,
-              ],
-              [
-                "Crew",
-                project.assignedTo
-                  ? project.assignedTo.name
-                  : project.scheduledDate
-                    ? "Nobody assigned yet"
-                    : null,
-              ],
-              ["From lead", project.lead ? `${project.lead.name} · ${project.lead.source}` : null],
-            ]
-              .filter(([, v]) => v)
-              .map(([k, v]) => (
-                <div key={k as string} className="flex gap-4 border-b border-line px-1 py-3">
-                  <span className="eyebrow w-[110px] shrink-0 pt-0.5">{k}</span>
-                  <span className="text-[14px] text-ink">{v}</span>
-                </div>
-              ))}
-            {project.description && (
-              <p className="border-b border-line px-1 py-3 text-[13px] text-ink-2">
+
+          {project.description && (
+            <section>
+              <LaneHead title="What the work is" />
+              <p className="measure t-body border-t border-line pt-4 text-ink-2">
                 {project.description}
               </p>
-            )}
-          </div>
+            </section>
+          )}
 
           <JobPhotos projectId={params.id} />
 
           {/* Did this job make money — the four numbers, then the verdict. */}
           {ownerView && (
-          <section>
-            <LaneHead title="Job economics" />
-            <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-4">
-              {[
-                { label: "Quoted", value: formatCents(money.quotedCents) },
-                { label: "Invoiced", value: formatCents(money.invoicedCents) },
-                {
-                  label: "Collected",
-                  value: formatCents(money.collectedCents),
-                  tone: "var(--emerald-ink)",
-                },
-                { label: "Costs", value: formatCents(money.costsCents), tone: "var(--rose-ink)" },
-              ].map((r) => (
-                <div key={r.label}>
-                  <div className="eyebrow">{r.label}</div>
-                  <p
-                    className="mono mt-1.5 text-[22px] font-bold leading-none"
-                    style={{ color: r.tone || "var(--ink)" }}
-                  >
-                    {r.value}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <section>
+              <LaneHead title="Did this job make money" />
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-4">
+                {[
+                  { label: "Quoted", value: formatCents(money.quotedCents) },
+                  { label: "Invoiced", value: formatCents(money.invoicedCents) },
+                  {
+                    label: "Collected",
+                    value: formatCents(money.collectedCents),
+                    tone: money.collectedCents > 0 ? "var(--emerald-ink)" : undefined,
+                  },
+                  {
+                    label: "Costs",
+                    value: formatCents(money.costsCents),
+                    tone: money.costsCents > 0 ? "var(--rose-ink)" : undefined,
+                  },
+                ].map((r) => (
+                  <div key={r.label}>
+                    <div className="eyebrow">{r.label}</div>
+                    <Readout value={r.value} size={22} tone={r.tone} className="mt-1.5 block" />
+                  </div>
+                ))}
+              </div>
 
-            <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-line pt-5">
-              <div>
-                <div className="eyebrow">Margin — collected minus costs</div>
-                <p className="mt-1 text-[13px] text-ink-2">{marginVerdict(money)}</p>
-                {money.unbilledCents > 0 && (
-                  <p className="mt-1 text-[13px]" style={{ color: "var(--amber-ink)" }}>
-                    {formatCents(money.unbilledCents)} quoted but never invoiced
-                  </p>
-                )}
-                {money.outstandingCents > 0 && (
-                  <p className="mt-1 text-[13px]" style={{ color: "var(--rose-ink)" }}>
-                    {formatCents(money.outstandingCents)} billed and still on the street
-                  </p>
-                )}
+              <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-line pt-5">
+                <div>
+                  <div className="eyebrow">Margin — collected minus costs</div>
+                  <p className="measure t-body mt-1 text-ink-2">{marginVerdict(money)}</p>
+                  {money.unbilledCents > 0 && (
+                    <p className="t-body mt-1" style={{ color: "var(--amber-ink)" }}>
+                      <Money cents={money.unbilledCents} /> quoted and never invoiced
+                    </p>
+                  )}
+                  {money.outstandingCents > 0 && (
+                    <p className="t-body mt-1" style={{ color: "var(--rose-ink)" }}>
+                      <Money cents={money.outstandingCents} /> billed and still on the street
+                    </p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <Readout
+                    value={formatCents(money.marginCents)}
+                    tone={marginTone(money.marginPct)}
+                    className="block"
+                  />
+                  {money.marginPct !== null && (
+                    <span
+                      className="mono t-body mt-1 block"
+                      style={{ color: marginTone(money.marginPct) }}
+                    >
+                      {money.marginPct.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="text-right">
-                <span
-                  className="mono block text-[30px] font-bold leading-none"
-                  style={{ color: marginTone(money.marginPct) }}
-                >
-                  {formatCents(money.marginCents)}
-                </span>
-                {money.marginPct !== null && (
-                  <span
-                    className="mono mt-1 block text-[13px]"
-                    style={{ color: marginTone(money.marginPct) }}
-                  >
-                    {money.marginPct.toFixed(0)}%
-                  </span>
-                )}
-              </div>
-            </div>
-          </section>
+            </section>
           )}
         </div>
       )}
 
       {tab === "invoices" && (
-        <div className="space-y-2.5">
+        <div className="space-y-2.5" role="tabpanel" id="panel-invoices" aria-labelledby="tab-invoices">
           {invoices.length === 0 ? (
-            <Empty>
-              {acceptedEstimate
-                ? "Estimate accepted — issue an invoice from the estimates page"
-                : "No invoices — an accepted estimate becomes one"}
+            <Empty
+              hint={
+                acceptedEstimate
+                  ? "The accepted estimate tears off into an invoice with the same lines."
+                  : "An estimate the client accepts becomes the invoice — no retyping."
+              }
+              action={
+                <Link href={`/projects/${project.id}/estimate`} className={buttonClass("ghost")}>
+                  {acceptedEstimate ? "Issue invoice" : "Go to estimates"}
+                </Link>
+              }
+            >
+              No invoices on this job
             </Empty>
           ) : (
             invoices.map((inv) => {
-              const paidCents = inv.payments.reduce((s, p) => s + p.amountCents, 0);
+              const invPaidCents = inv.payments.reduce((s, p) => s + p.amountCents, 0);
               return (
-                <Link
-                  key={inv.id}
-                  href={`/invoices/${inv.id}`}
-                  className="ticket block px-4 py-3"
-                  style={{ ["--spine" as string]: spineFor(inv.status) } as React.CSSProperties}
-                >
+                <Ticket key={inv.id} href={`/invoices/${inv.id}`} status={inv.status}>
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="mono text-[11px] font-bold tracking-[0.08em] text-ink-2">
-                      {inv.number}
-                    </span>
+                    <span className="mono eyebrow font-bold text-ink-2">{inv.number}</span>
                     <span className="eyebrow" style={{ color: textToneFor(inv.status) }}>
                       {inv.status}
                     </span>
                   </div>
                   <div className="mt-1.5 flex items-baseline justify-between gap-3">
-                    <span className="text-[13px] text-ink-2">
-                      {inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : "No due date"}
+                    <span className="t-body text-ink-2">
+                      {inv.dueDate ? (
+                        <>
+                          Due <Stamp date={inv.dueDate} />
+                        </>
+                      ) : (
+                        "No due date"
+                      )}
                     </span>
-                    <span className="mono text-[16px] font-medium text-ink">
-                      {formatCents(inv.totalCents)}
-                      {paidCents > 0 && paidCents < inv.totalCents && (
-                        <span className="ml-2 text-[11px] text-ink-3">
-                          paid {formatCents(paidCents)}
+                    <span className="text-ink">
+                      <Money cents={inv.totalCents} className="t-row font-medium" />
+                      {invPaidCents > 0 && invPaidCents < inv.totalCents && (
+                        <span className="eyebrow ml-2">
+                          PAID <Money cents={invPaidCents} />
                         </span>
                       )}
                     </span>
                   </div>
-                </Link>
+                </Ticket>
               );
             })
           )}
         </div>
       )}
 
-      {tab === "crew" && (
-        <div className="space-y-2.5">
+      {tab === "tasks" && (
+        <div role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks">
           {project.tasks.length === 0 ? (
-            <Empty>No crew tasks on this job</Empty>
+            <Empty
+              hint="Tasks are the steps the crew ticks off on the board — add them there and they show up here."
+              action={
+                <Link href="/tasks" className={buttonClass("ghost")}>
+                  Open the crew board
+                </Link>
+              }
+            >
+              No crew tasks on this job
+            </Empty>
           ) : (
-            project.tasks.map((task) => (
-              <div
-                key={task.id}
-                className="ticket ticket-hover flex items-center justify-between gap-3 px-4 py-3"
-                style={{ ["--spine" as string]: spineFor(task.status) } as React.CSSProperties}
-              >
-                <div className="min-w-0">
-                  <p className="text-[14px] font-bold text-ink">{task.title}</p>
-                  <p className="text-[12px] text-ink-2">
-                    {task.assignedTo.name}
-                    {task.dueDate ? ` · due ${formatDate(task.dueDate)}` : ""}
-                  </p>
-                </div>
-                <select
-                  value={task.status}
-                  onChange={(e) => handleTaskStatusChange(task.id, e.target.value)}
-                  className="mono shrink-0 px-2 py-1 text-[11px] uppercase tracking-[0.06em]"
-                >
-                  <option value="TODO">TODO</option>
-                  <option value="IN_PROGRESS">IN PROGRESS</option>
-                  <option value="DONE">DONE</option>
-                </select>
-              </div>
-            ))
+            <Lane>
+              {project.tasks.map((task) => (
+                <Row key={task.id} status={task.status}>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <div className="min-w-0">
+                      <p className="t-row font-bold text-ink">{task.title}</p>
+                      <p className="t-meta text-ink-2">
+                        {task.assignedTo.name}
+                        {task.dueDate && (
+                          <>
+                            {" · due "}
+                            <Stamp date={task.dueDate} className="t-meta" />
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="shrink-0">
+                      <label className="sr-only" htmlFor={`task-state-${task.id}`}>
+                        State of {task.title}
+                      </label>
+                      <select
+                        id={`task-state-${task.id}`}
+                        value={task.status}
+                        onChange={(e) => handleTaskStatusChange(task.id, e.target.value)}
+                        className="mono t-micro px-2 py-1 uppercase leading-[16px] tracking-[0.06em]"
+                      >
+                        <option value="TODO">QUEUED</option>
+                        <option value="IN_PROGRESS">ON THE TRUCK</option>
+                        <option value="DONE">CLOSED</option>
+                      </select>
+                    </div>
+                  </div>
+                </Row>
+              ))}
+            </Lane>
           )}
         </div>
       )}
 
       {tab === "money" && (
-        <div className="space-y-6">
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h2 className="eyebrow">Payments in</h2>
-              <button
-                onClick={() => setShowPaymentForm(!showPaymentForm)}
-                className={buttonClass("ghost")}
-              >
-                <Plus className="h-3.5 w-3.5" /> Payment
-              </button>
-            </div>
+        <div className="space-y-10" role="tabpanel" id="panel-money" aria-labelledby="tab-money">
+          {/* What to ask for at the door. Without it the man on the step phoned the
+              office for the figure on every visit — the role filter had taken the
+              balance out along with the margin. */}
+          {!ownerView && typeof project.dueAtDoorCents === "number" && (
+            <section>
+              <LaneHead title="Owing on this job" />
+              <div className="border-t border-line pt-4">
+                <Readout value={formatCents(project.dueAtDoorCents)} className="block" />
+                <p className="measure t-body mt-2 text-ink-2">
+                  {/* Zero says two different things, and the man at the door has to be
+                      told which one. Paid up reads as «walk away»; nothing billed yet
+                      reads as «ask the office». One sentence covered both and sent him
+                      back for money he had already taken. */}
+                  {project.dueAtDoorCents === 0
+                    ? paidCents > 0
+                      ? "Paid up — this job owes nothing at the door. The office closes the paper."
+                      : "Nothing invoiced yet — take what the office told you to."
+                    : "That is the balance on the paper the office sent. Cash, cheque and e-transfer all land in the same book."}
+                </p>
+              </div>
+            </section>
+          )}
+
+          <section>
+            <LaneHead
+              title="Payments in"
+              right={
+                <button
+                  onClick={() => {
+                    /* The amount is on the screen above the button. Making the man in
+                       the doorway retype it, glove on, is how $519.80 becomes $51.98. */
+                    if (!showPaymentForm && !paymentForm.amount && project.dueAtDoorCents) {
+                      setPaymentForm((f) => ({ ...f, amount: dollarText(project.dueAtDoorCents ?? 0) }));
+                    }
+                    setShowPaymentForm(!showPaymentForm);
+                  }}
+                  className={buttonClass("ghost")}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Payment
+                </button>
+              }
+            />
 
             {showPaymentForm && (
-              <Plate className="p-4">
-                <form onSubmit={handleAddPayment} className="grid grid-cols-2 gap-4">
-                  {/* What to ask for. Without it the man at the door phoned the office
-                      for the figure on every visit — the role filter had taken the
-                      balance out along with the margin. */}
-                  {!ownerView && typeof project.dueAtDoorCents === "number" && (
-                    <div className="col-span-2 border-l-2 border-line bg-sunk px-3 py-2">
-                      <div className="eyebrow">Owing on this job</div>
-                      <div className="mono mt-0.5 text-[19px] font-bold text-ink">
-                        {formatCents(project.dueAtDoorCents)}
-                      </div>
-                      {project.dueAtDoorCents === 0 && (
-                        <p className="mt-0.5 text-[12px] text-ink-2">
-                          Nothing invoiced yet — take what the office told you to.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <div>
-                    <label className="eyebrow">Amount *</label>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      value={paymentForm.amount}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Method</label>
-                    <select
-                      value={paymentForm.method}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
-                      className={`${field} mono uppercase tracking-[0.06em]`}
-                    >
-                      {["CASH", "E_TRANSFER", "CHEQUE", "CARD"].map((m) => (
-                        <option key={m} value={m}>
-                          {m.replace("_", "-")}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Date</label>
-                    <input
-                      type="date"
-                      value={paymentForm.date}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Notes</label>
-                    <input
-                      value={paymentForm.notes}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                      className={field}
-                    />
-                  </div>
-                  <div className="col-span-2 flex gap-2">
+              <Plate className="mb-4 p-4">
+                <form
+                  onSubmit={handleAddPayment}
+                  className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-end"
+                >
+                  <Field id="pay-amount" label="Amount" required className="sm:w-[148px]">
+                    {(f) => (
+                      <input
+                        {...f}
+                        type="number"
+                        step="0.01"
+                        className={`${f.className} mono`}
+                        value={paymentForm.amount}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field id="pay-method" label="Method" className="sm:w-[168px]">
+                    {(f) => (
+                      <select
+                        {...f}
+                        className={`${f.className} mono uppercase tracking-[0.06em]`}
+                        value={paymentForm.method}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
+                      >
+                        {["E_TRANSFER", "CASH", "CHEQUE", "CARD"].map((m) => (
+                          <option key={m} value={m}>
+                            {m.replace("_", "-")}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="pay-date" label="Date" className="sm:w-[164px]">
+                    {(f) => (
+                      <input
+                        {...f}
+                        type="date"
+                        className={`${f.className} mono`}
+                        value={paymentForm.date}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field id="pay-notes" label="Notes" className="col-span-2 sm:col-span-1 sm:min-w-[200px] sm:flex-1">
+                    {(f) => (
+                      <input
+                        {...f}
+                        value={paymentForm.notes}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <div className="actions col-span-2 sm:w-full">
                     <button type="submit" className={buttonClass("primary")}>
                       Record
                     </button>
@@ -832,92 +984,111 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             )}
 
             {project.payments.length === 0 ? (
-              <Empty>{ownerView ? "Nothing collected yet" : "Recorded straight to the owner's books"}</Empty>
+              <Empty hint="Money against this job lands here — from the door, from the bank, from the invoice.">
+                Nothing collected yet
+              </Empty>
             ) : (
               <div className="border-t border-line">
                 {project.payments.map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between border-b border-line px-1 py-2.5"
+                    className="flex items-baseline justify-between gap-4 border-b border-line px-1 py-2.5"
                   >
-                    <span className="mono text-[12px] text-ink-3">
-                      {formatDate(p.date)} · {p.method.replace("_", "-")}
+                    <span className="mono t-meta text-ink-3">
+                      <Stamp date={p.date} className="t-meta" /> · {p.method.replace("_", "-")}
                       {p.notes ? ` · ${p.notes}` : ""}
                     </span>
-                    <span className="mono text-[14px] font-medium" style={{ color: "var(--emerald-ink)" }}>
-                      {formatCents(p.amountCents)}
-                    </span>
+                    <Money
+                      cents={p.amountCents}
+                      className="t-body font-medium"
+                      tone="var(--emerald-ink)"
+                    />
                   </div>
                 ))}
-                <div className="flex items-center justify-between px-1 py-2.5">
+                <div className="flex items-baseline justify-between gap-4 px-1 py-2.5">
                   <span className="eyebrow">Total in</span>
-                  <span className="mono text-[15px] font-bold" style={{ color: "var(--emerald-ink)" }}>
-                    {formatCents(paidCents)}
-                  </span>
+                  <Money
+                    cents={paidCents}
+                    className="t-row font-bold"
+                    tone="var(--emerald-ink)"
+                  />
                 </div>
               </div>
             )}
           </section>
 
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h2 className="eyebrow">Costs out</h2>
-              <button
-                onClick={() => setShowExpenseForm(!showExpenseForm)}
-                className={buttonClass("ghost")}
-              >
-                <Plus className="h-3.5 w-3.5" /> Expense
-              </button>
-            </div>
+          <section>
+            <LaneHead
+              title="Costs out"
+              right={
+                <button
+                  onClick={() => setShowExpenseForm(!showExpenseForm)}
+                  className={buttonClass("ghost")}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Expense
+                </button>
+              }
+            />
 
             {showExpenseForm && (
-              <Plate className="p-4">
-                <form onSubmit={handleAddExpense} className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="eyebrow">Amount *</label>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      value={expenseForm.amount}
-                      onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Category</label>
-                    <select
-                      value={expenseForm.category}
-                      onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                      className={`${field} mono uppercase tracking-[0.06em]`}
-                    >
-                      {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Date</label>
-                    <input
-                      type="date"
-                      value={expenseForm.date}
-                      onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Description</label>
-                    <input
-                      value={expenseForm.description}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, description: e.target.value })
-                      }
-                      className={field}
-                    />
-                  </div>
-                  <div className="col-span-2 flex gap-2">
+              <Plate className="mb-4 p-4">
+                <form
+                  onSubmit={handleAddExpense}
+                  className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-end"
+                >
+                  <Field id="cost-amount" label="Amount" required className="sm:w-[148px]">
+                    {(f) => (
+                      <input
+                        {...f}
+                        type="number"
+                        step="0.01"
+                        className={`${f.className} mono`}
+                        value={expenseForm.amount}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field id="cost-category" label="Category" className="sm:w-[168px]">
+                    {(f) => (
+                      <select
+                        {...f}
+                        className={`${f.className} mono uppercase tracking-[0.06em]`}
+                        value={expenseForm.category}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, category: e.target.value })
+                        }
+                      >
+                        {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="cost-date" label="Date" className="sm:w-[164px]">
+                    {(f) => (
+                      <input
+                        {...f}
+                        type="date"
+                        className={`${f.className} mono`}
+                        value={expenseForm.date}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field id="cost-description" label="What it was" className="col-span-2 sm:col-span-1 sm:min-w-[200px] sm:flex-1">
+                    {(f) => (
+                      <input
+                        {...f}
+                        value={expenseForm.description}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, description: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <div className="actions col-span-2 sm:w-full">
                     <button type="submit" className={buttonClass("primary")}>
                       Record
                     </button>
@@ -934,28 +1105,36 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             )}
 
             {project.expenses.length === 0 ? (
-              <Empty>{ownerView ? "No costs logged" : "Recorded straight to the owner's books"}</Empty>
+              <Empty
+                hint={
+                  ownerView
+                    ? "Materials, dump runs and hired hands go here — margin is collected minus this."
+                    : "Receipts you log against the job go straight to the owner's books."
+                }
+              >
+                {ownerView ? "No costs logged" : "Nothing logged on this job yet"}
+              </Empty>
             ) : (
               <div className="border-t border-line">
                 {project.expenses.map((e) => (
                   <div
                     key={e.id}
-                    className="flex items-center justify-between border-b border-line px-1 py-2.5"
+                    className="flex items-baseline justify-between gap-4 border-b border-line px-1 py-2.5"
                   >
-                    <span className="mono text-[12px] text-ink-3">
-                      {formatDate(e.date)} · {e.category}
+                    <span className="mono t-meta text-ink-3">
+                      <Stamp date={e.date} className="t-meta" /> · {e.category}
                       {e.description ? ` · ${e.description}` : ""}
                     </span>
-                    <span className="mono text-[14px] font-medium" style={{ color: "var(--rose-ink)" }}>
-                      {formatCents(e.amountCents)}
-                    </span>
+                    <Money
+                      cents={e.amountCents}
+                      className="t-body font-medium"
+                      tone="var(--rose-ink)"
+                    />
                   </div>
                 ))}
-                <div className="flex items-center justify-between px-1 py-2.5">
+                <div className="flex items-baseline justify-between gap-4 px-1 py-2.5">
                   <span className="eyebrow">Total out</span>
-                  <span className="mono text-[15px] font-bold" style={{ color: "var(--rose-ink)" }}>
-                    {formatCents(expensesCents)}
-                  </span>
+                  <Money cents={expensesCents} className="t-row font-bold" tone="var(--rose-ink)" />
                 </div>
               </div>
             )}

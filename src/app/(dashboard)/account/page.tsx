@@ -2,12 +2,23 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
+import {
+  Button,
+  ErrorNote,
+  Field,
+  Lane,
+  LaneHead,
+  PageHead,
+} from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 /**
  * Your own account. Deliberately outside /settings, which is the owner's desk — the
  * crew has to be able to change the password they were handed on day one too.
+ *
+ * The identity block used to carry a mono «01» borrowed from the settings index, which
+ * numbered a man like a section. It carries what he actually needs to know instead:
+ * which workspace this login opens and how much of it he sees.
  */
 export default function AccountPage() {
   const { data: session } = useSession();
@@ -15,12 +26,24 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const user = (session?.user || {}) as any;
+  const name: string = user.name || "Signed in";
+  const role: string = user.role || "";
+  const workspace: string = user.tenantSlug || "";
+  const initials = name
+    .split(" ")
+    .map((n: string) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
     if (form.newPassword !== form.confirm) {
-      setError("The two new passwords do not match");
+      setError("The two new passwords do not match — type the new one again in both boxes.");
       return;
     }
 
@@ -41,87 +64,101 @@ export default function AccountPage() {
       return;
     }
     const data = await res.json().catch(() => ({}));
-    setError(data.error || "Could not change the password");
+    setError(data.error || "The password did not change. Check the current one and try again.");
   }
 
-  const field = "mt-1.5 w-full px-3 py-2 text-[13px]";
-
   return (
-    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
-      <PageHead eyebrow="Your account" title="Account" />
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <PageHead
+        eyebrow="Your account"
+        title="Account"
+        sub="This login and its password. Everything else about the desk lives in Settings."
+      />
 
-      <div className="border border-line bg-plate">
-        <div className="flex items-baseline gap-5 border-b border-line px-5 py-5">
-          <span className="mono text-[12px] tracking-[0.1em] text-ink-3">01</span>
-          <span className="flex-1">
-            <span className="block text-[17px] font-bold leading-none text-ink">
-              {session?.user?.name || "Signed in"}
-            </span>
-            <span className="mono mt-1.5 block text-[13px] text-ink-2">
-              {session?.user?.email}
-            </span>
+      <Lane>
+        {/* No spine: a person is not a status. `.row` is display:block, so the line
+            lives on an inner flex element. */}
+        <div className="row">
+          <div className="flex items-center gap-3 sm:gap-4">
+          <span
+            className="mono flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy-900 t-meta font-bold text-plate"
+            aria-hidden
+          >
+            {initials}
           </span>
+          <span className="min-w-0 flex-1">
+            <span className="t-row block truncate font-bold leading-tight text-ink">{name}</span>
+            <span className="mono t-meta mt-1 block truncate text-ink-3">{user.email}</span>
+            {/* Access and workspace read as one detail line under the name. Pinned to
+                the far right of a 980px row they hung on their own in open deck. */}
+            {(role || workspace) && (
+              <span className="eyebrow mt-2 block">
+                {role && <span className="text-ink">{role}</span>}
+                {role && workspace && " · "}
+                {workspace && <span>Workspace {workspace}</span>}
+              </span>
+            )}
+          </span>
+          </div>
         </div>
-      </div>
+      </Lane>
 
-      <Plate className="p-5">
-        <div className="eyebrow">Change password</div>
-        <p className="mt-1.5 text-[13px] text-ink-2">
-          The password you were given when this desk was set up is known to whoever set it
-          up. Ten characters minimum.
+      <section className="lane mt-10 pt-4">
+        <LaneHead title="Change password" />
+        <p className="measure t-body mt-4 text-ink-2">
+          The password you were handed when this desk was set up is known to whoever set it up.
+          Ten characters minimum.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          <div>
-            <label className="eyebrow">Current password *</label>
-            <input
-              required
-              type="password"
-              autoComplete="current-password"
-              value={form.currentPassword}
-              onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
-              className={field}
-            />
-          </div>
-          <div>
-            <label className="eyebrow">New password *</label>
-            <input
-              required
-              type="password"
-              minLength={10}
-              autoComplete="new-password"
-              value={form.newPassword}
-              onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-              className={field}
-            />
-          </div>
-          <div>
-            <label className="eyebrow">Repeat new password *</label>
-            <input
-              required
-              type="password"
-              minLength={10}
-              autoComplete="new-password"
-              value={form.confirm}
-              onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-              className={field}
-            />
-          </div>
+          <Field id="pw-current" label="Current password" required>
+            {(f) => (
+              <input
+                {...f}
+                type="password"
+                autoComplete="current-password"
+                value={form.currentPassword}
+                onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
+                className={`${f.className} max-w-[300px]`}
+              />
+            )}
+          </Field>
+          <Field id="pw-new" label="New password" required>
+            {(f) => (
+              <input
+                {...f}
+                type="password"
+                minLength={10}
+                autoComplete="new-password"
+                value={form.newPassword}
+                onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                className={`${f.className} max-w-[300px]`}
+              />
+            )}
+          </Field>
+          <Field id="pw-repeat" label="Repeat new password" required>
+            {(f) => (
+              <input
+                {...f}
+                type="password"
+                minLength={10}
+                autoComplete="new-password"
+                value={form.confirm}
+                onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+                className={`${f.className} max-w-[300px]`}
+              />
+            )}
+          </Field>
 
-          {error && (
-            <p
-              className="mono border-l-2 py-1 pl-3 text-[12px]"
-              style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-            >
-              {error}
-            </p>
-          )}
+          {error && <ErrorNote>{error}</ErrorNote>}
 
-          <button type="submit" disabled={saving} className={buttonClass("primary")}>
-            {saving ? "Saving…" : "Change password"}
-          </button>
+          <div className="actions">
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Change password"}
+            </Button>
+          </div>
         </form>
-      </Plate>
+      </section>
     </div>
   );
 }

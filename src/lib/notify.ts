@@ -554,7 +554,7 @@ async function sendTelegram(token: string, chatId: string, message: string): Pro
 }
 
 async function sendEmail(to: string, message: Message): Promise<Delivery> {
-  if (!smtpConfigured()) return { ok: false, detail: "email skipped (SMTP not configured)" };
+  if (!smtpConfigured()) return { ok: false, detail: "email is not set up on this desk yet" };
 
   try {
     await mailer(CHANNEL_TIMEOUT_MS).sendMail({
@@ -826,14 +826,14 @@ export async function sendTestNotification(
   tenantId: string
 ): Promise<{ ok: boolean; detail: string }> {
   const row = await loadRow(tenantId);
-  if (!row) return { ok: false, detail: "nothing is configured yet" };
+  if (!row) return { ok: false, detail: "no channel is set up yet — save a Telegram chat id or an email address above" };
 
   const settings = settingsOf(row);
   const shop = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { businessName: true, slug: true, ownerEmail: true },
   });
-  if (!shop) return { ok: false, detail: "workspace not found" };
+  if (!shop) return { ok: false, detail: "this desk could not be read — sign out and back in" };
 
   const message: Message = {
     subject: `Test alert · ${shop.businessName}`,
@@ -841,7 +841,7 @@ export async function sendTestNotification(
       `TEST ALERT · ${shop.businessName}`,
       "",
       "If you can read this, a new lead will reach you here within seconds of landing.",
-      `Sent ${clockAt(new Date(), settings.timezone)} from your CRM.`,
+      `Sent ${clockAt(new Date(), settings.timezone)} from your desk.`,
     ].join("\n"),
   };
 

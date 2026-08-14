@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest) {
     where: { id: userId, tenantId },
     select: { id: true, name: true, email: true, password: true },
   });
-  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!user) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   if (!(await bcrypt.compare(current, user.password)))
     return NextResponse.json({ error: "That is not your current password" }, { status: 403 });

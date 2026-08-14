@@ -2,15 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { formatDate } from "@/lib/utils";
 import { formatCents, inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   LaneHead,
   Plate,
   Empty,
+  Field,
   Money,
+  Num,
   Readout,
+  Skeleton,
+  ErrorNote,
+  Stamp,
+  Button,
   buttonClass,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
@@ -62,10 +67,59 @@ const MONTHS = [
   "December",
 ];
 
-/* The compact ghost button that lives inside a lane head — same rank language
-   as buttonClass("ghost"), scaled to the eyebrow line it sits on. */
-const laneBtn =
-  "inline-flex items-center gap-1 rounded border border-line bg-plate px-2 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink-2 transition-all duration-[140ms] ease-instrument hover:border-ink-3 hover:text-ink active:translate-y-px";
+/** The four files a bookkeeper asks for, cut to the period on screen. */
+const EXPORTS = [
+  ["invoices", "Invoices"],
+  ["payments", "Payments"],
+  ["expenses", "Costs"],
+  ["jobs", "Jobs"],
+] as const;
+
+/**
+ * ONE LINE OF THE BOOK.
+ *
+ * On the desk it reads the way a ledger reads: stamp and method, what it was, a
+ * dotted leader, the money on the right margin. On a phone the leader and the
+ * stamp step out of the way — at 390 the stamp is 190px of the 358 available, and
+ * with it in the line every amount in the book was pushed off the right edge of
+ * the screen and the owner's books showed no money at all.
+ */
+function BookLine({
+  date,
+  kind,
+  title,
+  hint,
+  cents,
+  tone,
+}: {
+  date: string;
+  kind: string;
+  title: string;
+  hint?: string;
+  cents: number;
+  tone: string;
+}) {
+  const stamp = (
+    <>
+      <Stamp date={date} /> · {kind}
+    </>
+  );
+  return (
+    <div className="flex items-baseline gap-3 py-2">
+      <span className="eyebrow hidden shrink-0 sm:inline">{stamp}</span>
+      {/* On the phone this fills the line so the amount keeps the right margin and a
+          column of money stays a column. On the desk it yields to the dot leader. */}
+      <span className="min-w-0 flex-1 sm:flex-none">
+        <span className="t-body block truncate font-medium text-ink" title={hint}>
+          {title}
+        </span>
+        <span className="eyebrow mt-1 block sm:hidden">{stamp}</span>
+      </span>
+      <span className="dotlead hidden sm:block" aria-hidden="true" />
+      <Money cents={cents} tone={tone} className="t-body shrink-0" />
+    </div>
+  );
+}
 
 export default function FinancePage() {
   const [data, setData] = useState<FinanceSummary | null>(null);
@@ -88,6 +142,13 @@ export default function FinancePage() {
     date: "",
   });
   const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
+  /**
+   * A refused month used to look like an honest one: the skeleton stayed up for
+   * good and TOTAL IN, TOTAL OUT and NET all printed `$0.00`. The books saying
+   * zero is the one thing this screen must never guess at.
+   */
+  const [refused, setRefused] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function fetchData() {
     const params = new URLSearchParams({ year: String(year) });
@@ -96,10 +157,17 @@ export default function FinancePage() {
       fetch(`/api/finance/summary?${params}`),
       fetch("/api/projects"),
     ]);
+    if (!finRes.ok) {
+      setRefused(true);
+      setData(null);
+      return;
+    }
+    setRefused(false);
     // The one door on this screen: dollars off the wire, cents in the ledger. Both
     // forms below post the other way, in the dollars the owner typed.
     setData(inCents((await finRes.json()) as ApiFinanceSummary));
-    setProjects(await projRes.json());
+    const proj = projRes.ok ? await projRes.json() : [];
+    setProjects(Array.isArray(proj) ? proj : []);
   }
 
   useEffect(() => {
@@ -107,13 +175,20 @@ export default function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
+  /* Both handlers used to fire and forget: a 400 closed the form, cleared the
+     fields and said «Payment recorded» over money that never reached the book. */
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/finance/payments", {
+    setSaveError(null);
+    const res = await fetch("/api/finance/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(paymentForm),
     });
+    if (!res.ok) {
+      setSaveError("That payment was not written down — check the job and the amount, then press Save again.");
+      return;
+    }
     setShowPaymentForm(false);
     setPaymentForm({ projectId: "", amount: "", method: "CASH", notes: "", date: "" });
     toast("Payment recorded");
@@ -122,188 +197,236 @@ export default function FinancePage() {
 
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
-    await fetch("/api/finance/expenses", {
+    setSaveError(null);
+    const res = await fetch("/api/finance/expenses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(expenseForm),
     });
+    if (!res.ok) {
+      setSaveError("That cost was not written down — check the job and the amount, then press Save again.");
+      return;
+    }
     setShowExpenseForm(false);
     setExpenseForm({ projectId: "", amount: "", category: "MATERIALS", description: "", date: "" });
     toast("Cost recorded");
     fetchData();
   }
 
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
+  const loading = data === null;
   const netCents = data?.netProfitCents || 0;
   const payments = data?.payments || [];
   const expenses = data?.expenses || [];
   const periodLabel = month ? `${MONTHS[month]} ${year}` : `Full year ${year}`;
+  const exportQuery = `year=${year}${month ? `&month=${month}` : ""}`;
 
   return (
-    <div className="space-y-8 pb-24 md:pb-0">
+    <div className="space-y-10 pb-24 md:pb-0">
       <PageHead
         eyebrow="Books"
         title="Finance"
         sub="What came in, what went out, what is left."
         action={
-          <div className="flex gap-2">
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : "")}
-              className="mono px-2.5 py-2 text-[12px] uppercase tracking-[0.06em]"
-            >
-              <option value="">Full year</option>
-              {MONTHS.slice(1).map((m, i) => (
-                <option key={i + 1} value={i + 1}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="mono px-2.5 py-2 text-[12px]"
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            {/* The period drives the whole page, the totals and the export, so it
+                carries its own name instead of leaving two bare boxes by the title. */}
+            <Field id="books-month" label="Month">
+              {(f) => (
+                <select
+                  {...f}
+                  className={`${f.className} mono uppercase tracking-[0.06em]`}
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : "")}
+                >
+                  <option value="">Full year</option>
+                  {MONTHS.slice(1).map((m, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field id="books-year" label="Year">
+              {(f) => (
+                <select
+                  {...f}
+                  className={`${f.className} mono`}
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                >
+                  {[2024, 2025, 2026, 2027].map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          </>
         }
       />
+
+      {saveError && <ErrorNote>{saveError}</ErrorNote>}
 
       {/* ================================================================
           THE T-ACCOUNT — money in on the left page, money out on the
           right, one center rule between them. The month-end books.
           ================================================================ */}
+      {refused ? (
+        <ErrorNote
+          className="measure"
+          retry={
+            <Button variant="ghost" onClick={fetchData}>
+              Try again
+            </Button>
+          }
+        >
+          The books for {periodLabel} did not open — the office did not answer. Nothing
+          is wrong with the money; this page could not read it.
+        </ErrorNote>
+      ) : (
       <section>
         <div className="grid md:grid-cols-2">
-          {/* IN — the left page of the book */}
-          <div className="md:pr-8">
+          {/* IN — the left page of the book. `min-w-0`: a grid track will not go
+              narrower than its widest line unless it is told it may, and without
+              it the ledger pushed the phone's whole page sideways. */}
+          <div className="min-w-0 md:pr-8">
             <LaneHead
               title="In — Payments"
               lamp="var(--emerald)"
               right={
-                <button
+                <Button
+                  variant="quiet"
                   onClick={() => setShowPaymentForm(!showPaymentForm)}
-                  className={laneBtn}
+                  aria-expanded={showPaymentForm}
                 >
-                  <Plus className="h-3 w-3" /> Payment in
-                </button>
+                  <Plus className="h-3 w-3" aria-hidden /> Payment in
+                </Button>
               }
             />
 
             {showPaymentForm && (
               <Plate className="mb-4 p-5">
                 <div className="eyebrow">Record payment</div>
-                <form onSubmit={handleAddPayment} className="mt-4 grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="eyebrow">Job *</label>
-                    <select
-                      required
-                      value={paymentForm.projectId}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, projectId: e.target.value })
-                      }
-                      className={field}
-                    >
-                      <option value="">Select job…</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Amount *</label>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      value={paymentForm.amount}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, amount: e.target.value })
-                      }
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Method</label>
-                    <select
-                      value={paymentForm.method}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, method: e.target.value })
-                      }
-                      className={`${field} mono uppercase tracking-[0.06em]`}
-                    >
-                      {["CASH", "E_TRANSFER", "CHEQUE", "CARD"].map((m) => (
-                        <option key={m} value={m}>
-                          {m.replace("_", "-")}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Date</label>
-                    <input
-                      type="date"
-                      value={paymentForm.date}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, date: e.target.value })
-                      }
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Notes</label>
-                    <input
-                      value={paymentForm.notes}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, notes: e.target.value })
-                      }
-                      className={field}
-                    />
-                  </div>
-                  <div className="col-span-2 flex gap-2">
-                    <button type="submit" className={buttonClass("primary")}>
-                      Save
-                    </button>
-                    <button
+                <form
+                  onSubmit={handleAddPayment}
+                  className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+                >
+                  <Field id="pay-job" label="Job" required className="sm:col-span-2">
+                    {(f) => (
+                      <select
+                        {...f}
+                        value={paymentForm.projectId}
+                        onChange={(e) =>
+                          setPaymentForm({ ...paymentForm, projectId: e.target.value })
+                        }
+                      >
+                        <option value="">Select job…</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="pay-amount" label="Amount" required>
+                    {(f) => (
+                      <input
+                        {...f}
+                        className={`${f.className} mono`}
+                        type="number"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={paymentForm.amount}
+                        onChange={(e) =>
+                          setPaymentForm({ ...paymentForm, amount: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field id="pay-method" label="Method">
+                    {(f) => (
+                      <select
+                        {...f}
+                        className={`${f.className} mono uppercase tracking-[0.06em]`}
+                        value={paymentForm.method}
+                        onChange={(e) =>
+                          setPaymentForm({ ...paymentForm, method: e.target.value })
+                        }
+                      >
+                        {["CASH", "E_TRANSFER", "CHEQUE", "CARD"].map((m) => (
+                          <option key={m} value={m}>
+                            {m.replace("_", "-")}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="pay-date" label="Date" hint="Leave it blank for today">
+                    {(f) => (
+                      <input
+                        {...f}
+                        className={`${f.className} mono`}
+                        type="date"
+                        value={paymentForm.date}
+                        onChange={(e) =>
+                          setPaymentForm({ ...paymentForm, date: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field id="pay-notes" label="Notes">
+                    {(f) => (
+                      <input
+                        {...f}
+                        value={paymentForm.notes}
+                        onChange={(e) =>
+                          setPaymentForm({ ...paymentForm, notes: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <div className="actions sm:col-span-2">
+                    <Button type="submit">Save</Button>
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setShowPaymentForm(false)}
-                      className={buttonClass("ghost")}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </Plate>
             )}
 
-            {payments.length === 0 ? (
-              <Empty>No money in this period</Empty>
+            {loading ? (
+              <Skeleton lines={3} />
+            ) : payments.length === 0 ? (
+              <Empty
+                hint="Money lands here when the crew takes a payment at the door or you record one against a job."
+                action={
+                  <Button variant="ghost" onClick={() => setShowPaymentForm(true)}>
+                    Payment in
+                  </Button>
+                }
+              >
+                No money in · {periodLabel}
+              </Empty>
             ) : (
               <div className="border-t border-line pt-1.5">
                 {payments.map((p) => (
-                  <div key={p.id} className="flex items-baseline gap-2.5 py-2">
-                    <span className="mono shrink-0 text-[11px] text-ink-3">
-                      {formatDate(p.date)} · {p.method.replace("_", "-")}
-                    </span>
-                    <span
-                      className="min-w-0 truncate text-[13px] font-medium text-ink"
-                      title={p.notes || undefined}
-                    >
-                      {p.project.clientName} · {p.project.title}
-                    </span>
-                    <span className="dotlead" aria-hidden="true" />
-                    <Money
-                      cents={p.amountCents}
-                      className="shrink-0 text-[13px] text-emerald-ink"
-                    />
-                  </div>
+                  <BookLine
+                    key={p.id}
+                    date={p.date}
+                    kind={p.method.replace("_", "-")}
+                    title={`${p.project.clientName} · ${p.project.title}`}
+                    hint={p.notes || undefined}
+                    cents={p.amountCents}
+                    tone="var(--emerald-ink)"
+                  />
                 ))}
               </div>
             )}
@@ -320,126 +443,152 @@ export default function FinancePage() {
 
           {/* OUT — the right page. The center rule is this column's left edge;
               below md it becomes a horizontal rule and OUT stacks under IN. */}
-          <div className="mt-10 border-t border-line pt-6 md:mt-0 md:border-t-0 md:border-l md:pt-0 md:pl-8">
+          <div className="mt-10 min-w-0 border-t border-line pt-6 md:mt-0 md:border-l md:border-t-0 md:pl-8 md:pt-0">
             <LaneHead
-              title="Out — Expenses"
+              title="Out — Costs"
               lamp="var(--rose)"
               right={
-                <button
+                <Button
+                  variant="quiet"
                   onClick={() => setShowExpenseForm(!showExpenseForm)}
-                  className={laneBtn}
+                  aria-expanded={showExpenseForm}
                 >
-                  <Plus className="h-3 w-3" /> Cost out
-                </button>
+                  <Plus className="h-3 w-3" aria-hidden /> Cost out
+                </Button>
               }
             />
 
             {showExpenseForm && (
               <Plate className="mb-4 p-5">
                 <div className="eyebrow">Record cost</div>
-                <form onSubmit={handleAddExpense} className="mt-4 grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="eyebrow">Job (optional)</label>
-                    <select
-                      value={expenseForm.projectId}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, projectId: e.target.value })
-                      }
-                      className={field}
-                    >
-                      <option value="">General overhead</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Amount *</label>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      value={expenseForm.amount}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, amount: e.target.value })
-                      }
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Category</label>
-                    <select
-                      value={expenseForm.category}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, category: e.target.value })
-                      }
-                      className={`${field} mono uppercase tracking-[0.06em]`}
-                    >
-                      {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="eyebrow">Date</label>
-                    <input
-                      type="date"
-                      value={expenseForm.date}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, date: e.target.value })
-                      }
-                      className={`${field} mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className="eyebrow">Description</label>
-                    <input
-                      value={expenseForm.description}
-                      onChange={(e) =>
-                        setExpenseForm({ ...expenseForm, description: e.target.value })
-                      }
-                      className={field}
-                    />
-                  </div>
-                  <div className="col-span-2 flex gap-2">
-                    <button type="submit" className={buttonClass("primary")}>
-                      Save
-                    </button>
-                    <button
+                <form
+                  onSubmit={handleAddExpense}
+                  className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+                >
+                  <Field
+                    id="cost-job"
+                    label="Job"
+                    hint="Leave it on general overhead for rent, fuel and advertising."
+                    className="sm:col-span-2"
+                  >
+                    {(f) => (
+                      <select
+                        {...f}
+                        value={expenseForm.projectId}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, projectId: e.target.value })
+                        }
+                      >
+                        <option value="">General overhead</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="cost-amount" label="Amount" required>
+                    {(f) => (
+                      <input
+                        {...f}
+                        className={`${f.className} mono`}
+                        type="number"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={expenseForm.amount}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, amount: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field id="cost-category" label="Category">
+                    {(f) => (
+                      <select
+                        {...f}
+                        className={`${f.className} mono uppercase tracking-[0.06em]`}
+                        value={expenseForm.category}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, category: e.target.value })
+                        }
+                      >
+                        {["MATERIALS", "LABOR", "TOOLS", "VEHICLE", "OTHER"].map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <Field id="cost-date" label="Date" hint="Leave it blank for today">
+                    {(f) => (
+                      <input
+                        {...f}
+                        className={`${f.className} mono`}
+                        type="date"
+                        value={expenseForm.date}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, date: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field
+                    id="cost-description"
+                    label="Description"
+                    hint='Advertising goes in as "Ad spend: FACEBOOK" so Reports can count it.'
+                  >
+                    {(f) => (
+                      <input
+                        {...f}
+                        value={expenseForm.description}
+                        onChange={(e) =>
+                          setExpenseForm({ ...expenseForm, description: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <div className="actions sm:col-span-2">
+                    <Button type="submit">Save</Button>
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setShowExpenseForm(false)}
-                      className={buttonClass("ghost")}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </Plate>
             )}
 
-            {expenses.length === 0 ? (
-              <Empty>No costs this period</Empty>
+            {loading ? (
+              <Skeleton lines={3} />
+            ) : expenses.length === 0 ? (
+              <Empty
+                hint="Materials, fuel, tools and the advertising bill go here. A cost with no job on it counts as overhead."
+                action={
+                  <Button variant="ghost" onClick={() => setShowExpenseForm(true)}>
+                    Cost out
+                  </Button>
+                }
+              >
+                No costs out · {periodLabel}
+              </Empty>
             ) : (
               <div className="border-t border-line pt-1.5">
                 {expenses.map((e) => (
-                  <div key={e.id} className="flex items-baseline gap-2.5 py-2">
-                    <span className="mono shrink-0 text-[11px] text-ink-3">
-                      {formatDate(e.date)} · {e.category}
-                    </span>
-                    <span className="min-w-0 truncate text-[13px] font-medium text-ink">
-                      {e.description || e.category}
-                      {e.project ? ` · ${e.project.title}` : ""}
-                    </span>
-                    <span className="dotlead" aria-hidden="true" />
-                    <Money
-                      cents={e.amountCents}
-                      className="shrink-0 text-[13px] text-rose-ink"
-                    />
-                  </div>
+                  <BookLine
+                    key={e.id}
+                    date={e.date}
+                    kind={e.category}
+                    title={`${e.description || e.category}${
+                      e.project ? ` · ${e.project.title}` : ""
+                    }`}
+                    cents={e.amountCents}
+                    tone="var(--rose-ink)"
+                  />
                 ))}
               </div>
             )}
@@ -459,8 +608,8 @@ export default function FinancePage() {
         <div className="rule-double mt-10 flex flex-wrap items-end justify-between gap-4 pt-4">
           <div>
             <div className="eyebrow">Net · {periodLabel}</div>
-            <div className="mono mt-2 text-[11px] uppercase tracking-[0.08em] text-ink-3">
-              Jobs closed {data?.projectCount || 0}
+            <div className="eyebrow mt-2">
+              Jobs closed <Num>{data?.projectCount || 0}</Num>
             </div>
           </div>
           <Readout
@@ -475,19 +624,32 @@ export default function FinancePage() {
             }
           />
         </div>
+      </section>
+      )}
 
-        {/* Straight to the bookkeeper — the period above is what gets exported. */}
-        <div className="mono flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-3 text-[11px] uppercase tracking-[0.08em] text-ink-3">
-          <span>Export CSV</span>
-          {(["invoices", "payments", "expenses", "jobs"] as const).map((kind) => (
-            <a
-              key={kind}
-              href={`/api/export/${kind}?year=${year}${month ? `&month=${month}` : ""}`}
-              className="underline underline-offset-4 transition-colors duration-[140ms] ease-instrument hover:text-ink"
-            >
-              {kind}
-            </a>
-          ))}
+      {/* ================================================================
+          STRAIGHT TO THE BOOKKEEPER. Four grey words under the total were
+          63px wide and read as a footnote; the files the accountant comes
+          for get their own lane and their own buttons.
+          ================================================================ */}
+      <section>
+        <LaneHead title="Export CSV" right={<span className="eyebrow">{periodLabel}</span>} />
+        <div className="border-t border-line pt-4">
+          <p className="measure t-body text-ink-2">
+            Every file is cut to the period above — change the month and the download
+            follows it.
+          </p>
+          <div className="actions mt-4">
+            {EXPORTS.map(([kind, label]) => (
+              <a
+                key={kind}
+                href={`/api/export/${kind}?${exportQuery}`}
+                className={buttonClass("ghost")}
+              >
+                {label}
+              </a>
+            ))}
+          </div>
         </div>
       </section>
     </div>

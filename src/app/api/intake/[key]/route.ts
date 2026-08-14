@@ -78,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
     // endpoint into free memory for anyone who could send a large POST.
     const raw = await readTextCapped(req, MAX_BODY_BYTES);
     if (raw === null) {
-      return json({ ok: false, error: "Payload too large" }, 413);
+      return json({ ok: false, error: "That form sent too much — trim the longest answer" }, 413);
     }
 
     let body: unknown;

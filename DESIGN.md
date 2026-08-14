@@ -421,3 +421,78 @@ line that names the next move. Gates: `tsc` clean, `next lint` clean, **354 of 3
 One trap worth writing down beside the service worker: `npm run test` and a running dev
 server share `dev.db`. Run together they produce up to five red files and a shifting
 skipped-test count; run apart, the suite is green. Kill the server before the gate.
+
+### Revision 5, 2026-08-13 — the wave closes: one word, one number, one height
+
+Eight tracks polished a screen group each, three checked the result across all of them, and
+this pass swept the seams the group reports named. Nothing here is a new direction: it is
+the «НАРЯД / WORK ORDER» language finished where the implementation had drifted from it.
+
+**What the check found and this pass fixed.** Every drift was invisible inside its own
+screen and obvious the moment you walked from one screen to the next:
+
+1. **One fact, six spellings.** The same overdue invoice read `23 DAYS LATE`, `23D LATE`,
+   `8 DAYS PAST DUE`, `OVERDUE · 23D`, `IN 49D` and `IN 19 DAYS`. There is now one pair of
+   helpers in `lib/invoice-state.ts` — `lateWord` / `dueWord` (plus the `…Tail` halves for
+   the places that set the numeral in mono themselves). Full form by default; the short
+   form is for a fixed-width column, and it is the same short form everywhere a column is
+   narrow.
+2. **One concept, one word.** Debt is `Owing` on the deck, in the book, on the invoice, in
+   the dossier and in the card index — it had been `Outstanding` / `OPEN` / `Owed` /
+   `Owing now` / `OWES`. People are `crew`, never `team`. The full glossary is
+   `docs/COPY.md` §1; it is the canon, and the next screen takes its words from there.
+3. **One counter shape.** `LaneHead` grew `count` and `unit`: right end of the head, mono,
+   no leading zero. The work board had written it into the `h2` in a proportional face
+   (`ON THE GO · 2`) and the whiteboard had padded it to `05`.
+4. **Two control heights and no third.** `quiet` finally renders the 26px its own comment
+   promised — `.t-micro { line-height: 1.1 }` is declared after the utilities layer and had
+   been beating `leading-[16px]`, so the rank drew 21–22 on eight screens. `.control` states
+   `min-height: 38px` outright, because a `<select>` and an `<input type="date">` take their
+   height from the widget rather than from `line-height` and were landing at 35 and 40 in
+   the same form as a 38px text field. The chrome's two hand-rolled buttons (31px) moved
+   onto the shared rank. Measured after: **26 and 38, nothing else**.
+5. **Three row densities became one plus two named ones.** `.row` is the law; `.row-tight`
+   (8) belongs to the receivables ledger, `.row-tab` (16 above) to the card index whose
+   file tab straddles the top rule. Both are declared in `globals.css`, so a screen can no
+   longer invent a density with an inline `!py-2`.
+6. **The filter bar has one home.** Anything that narrows a whole screen sits on the
+   screen's own rule under the page head. The work board had folded it into the first
+   lane's head, which made it read as that lane's control and left whichever lane came
+   first without a count.
+7. **The record heading is 22px on all five records.** The estimate had been carrying a
+   44px page title, so walking lead → job → estimate → invoice the heading went
+   22 → 22 → **44** → 22. The job record lost its two `mx-auto`, which had been pushing it
+   84 points right of every neighbour.
+8. **The lamp marks what is live.** An archive band (`Settled`) carries none.
+
+**Three things the screens were saying that were not true**, all caught by walking the
+product rather than by reading it:
+
+- The deck's receivable summed `totalCents` and ignored payments, so the first number of
+  the morning disagreed with the book it links to. The aging bar folded drafts into `OPEN`,
+  and on a real book the drafts are the bigger half — $19,741 of paper the client had never
+  seen was being read as money owed. Both now compute and name exactly what they show.
+- The crew's MONEY tab printed «NOTHING RECORDED ON THIS JOB YET» over money the tech had
+  taken himself, because the API strips `payments` for the role and the lane read an empty
+  array as a fact. Silence is not a fact: the lane says the office book holds them.
+- `Finance` had a loading state and an empty state and no refused state, so a 500 left the
+  skeleton up for good and printed `$0.00` across all three totals. It names the refusal and
+  offers Try again; both of its forms now read `res.ok` before saying «recorded».
+
+**The offline card joined the product.** `public/offline.html` was the one surface set in a
+system grotesque, with a hand-copied token set whose `--ink-3` was a revision behind. It
+carries Chivo from `/fonts` (precached by the service worker, system stack as the fallback)
+and the current tokens.
+
+**One trap worth writing down beside the service worker and the shared `dev.db`:** the desk
+throttles sign-ins at ten per IP per fifteen minutes (`lib/auth.ts`). A screenshot sweep
+across two widths and two roles walks straight into it and then fails at the login form
+with no explanation. Sign in once per role, save the storage state, and hand it to every
+context.
+
+Loop: two cycles at 1440 and 390 in both roles (`var/polish/integrate/iter1`, `after`), plus
+a DOM probe over nine screens. Cycle 1 caught two of my own: removing the card index's
+`!pt-4` dropped the file tab onto the row rule and into the client's name (hence `.row-tab`),
+and the phone's More sheet printed section codes `04 · 06 · 07 · 08…`, a gap sequence that
+asks a question it cannot answer — the codes came out. Gates: `tsc` clean, `next lint`
+clean, **354 of 354 tests**, `next build` clean.

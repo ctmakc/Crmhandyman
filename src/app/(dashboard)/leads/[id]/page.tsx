@@ -1,11 +1,19 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, Mail, Phone, X } from "lucide-react";
+import { ArrowRight, Mail, Phone } from "lucide-react";
 import {
+  BackLink,
+  Button,
   buttonClass,
+  Chip,
+  Empty,
+  ErrorNote,
+  Field,
+  LaneHead,
+  Stamp,
   spineFor,
   textToneFor,
   Skeleton,
@@ -46,6 +54,56 @@ const LADDER = [
   { status: "CONVERTED", label: "JOB" },
 ];
 
+/**
+ * ONE `notes` COLUMN, TWO WRITERS — and the screen used to print them as one wall.
+ *
+ * The visitor's quiz lands in `notes` as `Label: value` lines under the channel's
+ * name (src/lib/intake.ts), and the desk appends `[13 AUG 09:07] …` lines to the same
+ * column. Rendered as one list under the heading CALL LOG, nine answers the customer
+ * typed looked exactly like the two calls the desk made, and a dispatcher had to read
+ * every sentence to find out what the job even was.
+ *
+ * Nothing here changes what is stored. It sorts what is already there into what the
+ * customer asked for and what the desk has done about it.
+ */
+type Enquiry = {
+  /** «Facebook lead form — Moving quiz» — the first line the intake writes. */
+  channel?: string;
+  answers: { label: string; value: string }[];
+  calls: { stamp: string; text: string }[];
+  /** Anything typed free-hand: an old note, a line pasted from an email. */
+  prose: string[];
+};
+
+function readNotes(notes: string | undefined | null): Enquiry {
+  const lines = (notes || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const out: Enquiry = { answers: [], calls: [], prose: [] };
+  for (const line of lines) {
+    const stamped = line.match(/^(\[[^\]]*\])\s*(.*)$/);
+    if (stamped) {
+      out.calls.push({ stamp: stamped[1], text: stamped[2] });
+      continue;
+    }
+    /* A quiz answer is a short label, a colon and the customer's words. The label
+       is capped so a sentence with a colon in it stays a sentence. */
+    const pair = line.match(/^([^:]{1,48}):\s*(.+)$/);
+    if (pair) {
+      out.answers.push({ label: pair[1], value: pair[2] });
+      continue;
+    }
+    out.prose.push(line);
+  }
+  /* The channel headline only exists when a form wrote the block. A hand-typed
+     note stays prose instead of being promoted to a heading. */
+  if (out.answers.length && out.prose.length && lines[0] === out.prose[0]) {
+    out.channel = out.prose.shift();
+  }
+  return out;
+}
 
 /**
  * The status ladder — a horizontal rail of mono eyebrows joined by hairline
@@ -72,16 +130,16 @@ function StatusLadder({ status }: { status: string }) {
               />
             )}
             <span
-              className={`mono shrink-0 text-[11px] uppercase tracking-[0.09em] ${
-                current ? "font-bold" : ""
-              }`}
+              /* The steps ahead used to be dimmed to 55%, which put ink-3 at 2.9:1 —
+                 a rail whose far end could not be read in daylight. They are ink-3
+                 at full strength: quiet against the bold current step, still legible. */
+              className={`eyebrow shrink-0 ${current ? "font-bold" : ""}`}
               style={{
                 color: done
                   ? "var(--emerald-ink)"
                   : current
                     ? textToneFor(toneKey(step.status))
                     : "var(--ink-3)",
-                opacity: done || current ? 1 : 0.55,
               }}
               aria-current={current ? "step" : undefined}
             >
@@ -94,10 +152,29 @@ function StatusLadder({ status }: { status: string }) {
   );
 }
 
+/** A fact about the lead: mono label, then the words themselves. */
+function DetailRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-line px-1 py-3 sm:flex-row sm:gap-4">
+      <span className="eyebrow shrink-0 pt-0.5 sm:w-[168px]">{label}</span>
+      <span className="t-lede measure text-ink">{children}</span>
+    </div>
+  );
+}
+
 export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [lead, setLead] = useState<Lead | null>(null);
+  /* «missing» — the record is gone or belongs to another workspace; «server» — the
+     desk could not reach it. Either way the screen has to say so out loud. */
+  const [failed, setFailed] = useState<"missing" | "server" | null>(null);
   const [editing, setEditing] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [form, setForm] = useState<Partial<Lead>>({});
@@ -111,9 +188,19 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const [saving, setSaving] = useState(false);
   const [logText, setLogText] = useState("");
   const [logging, setLogging] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
 
   async function fetchLead() {
     const res = await fetch(`/api/leads/${params.id}`);
+    /* A 404 body used to be stored as the lead itself, and the header plate then
+       threw on `lead.id.slice(-4)`: a stale link out of a Telegram alert, or a lead
+       a colleague deleted, produced a crashed page with nothing on it. */
+    if (!res.ok) {
+      setFailed(res.status === 404 ? "missing" : "server");
+      return;
+    }
+    setFailed(null);
     const data = await res.json();
     setLead(data);
     setForm(data);
@@ -142,25 +229,84 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead?.id]);
 
+  const closeConvert = useCallback(() => {
+    setShowConvertModal(false);
+    /* Back to the button that opened it — a keyboard that lands at the top of the
+       document after closing a layer has lost its place in the record. */
+    openerRef.current?.focus();
+    openerRef.current = null;
+  }, []);
+
+  function openConvert(e: React.MouseEvent<HTMLButtonElement>) {
+    openerRef.current = e.currentTarget;
+    setShowConvertModal(true);
+  }
+
+  /**
+   * The layer keeps the keyboard inside itself: Esc closes, Tab cycles, and the
+   * first field takes focus on open. Without it Tab walked out of the dialog and
+   * down the record underneath, where every control was still live.
+   */
+  useEffect(() => {
+    if (!showConvertModal) return;
+    const box = modalRef.current;
+    box?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeConvert();
+        return;
+      }
+      if (e.key !== "Tab" || !box) return;
+      const stops = Array.from(
+        box.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      );
+      if (stops.length === 0) return;
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showConvertModal, closeConvert]);
+
   async function handleSave() {
     setSaving(true);
-    await fetch(`/api/leads/${params.id}`, {
+    const res = await fetch(`/api/leads/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
     setSaving(false);
+    if (!res.ok) {
+      toast("Those changes were not saved — no answer from the office", "bad");
+      return;
+    }
     setEditing(false);
-    toast("Lead saved");
+    toast("Lead updated");
     fetchLead();
   }
 
   async function handleStatusChange(status: string) {
-    await fetch(`/api/leads/${params.id}`, {
+    const res = await fetch(`/api/leads/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    if (!res.ok) {
+      toast("The lead did not move — no answer from the office", "bad");
+      return;
+    }
     toast(`Lead marked ${status.toLowerCase()}`);
     fetchLead();
   }
@@ -180,7 +326,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     });
     setLogging(false);
     if (!res.ok) {
-      toast("Could not log the call");
+      toast("The call was not written down — no answer from the office", "bad");
       return;
     }
     setLead({ ...lead, notes });
@@ -217,19 +363,41 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     router.push("/leads");
   }
 
+  if (failed) {
+    return (
+      <div className="page-doc space-y-6 pb-24 md:pb-0">
+        <BackLink href="/leads" label="All leads" />
+        <ErrorNote
+          retry={
+            failed === "server" ? (
+              <Button variant="ghost" onClick={() => fetchLead()}>
+                Try again
+              </Button>
+            ) : (
+              <Link href="/leads" className={buttonClass("ghost")}>
+                Back to the call sheet
+              </Link>
+            )
+          }
+        >
+          {failed === "missing"
+            ? "This lead is no longer on the desk — it was deleted, or the link points at another workspace."
+            : "This lead did not open — the office did not answer. Press Try again."}
+        </ErrorNote>
+      </div>
+    );
+  }
+
   if (!lead) return <Skeleton lines={4} />;
 
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
-  const logLines = (lead.notes || "")
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const notes = readNotes(lead.notes);
+  /* The customer already said when he wants it. The date field cannot fill itself
+     from prose, so his own words sit under it instead of being retyped from memory. */
+  const whenAsked = notes.answers.find((a) => /when|date|day|time/i.test(a.label));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-24 md:pb-0">
-      <Link href="/leads" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> All leads
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/leads" label="All leads" />
 
       {/* THE CALL CARD — the header plate. The phone number is the instrument;
           everything else on the plate exists to make this call. */}
@@ -239,19 +407,21 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <span className="mono text-[11px] tracking-[0.08em] text-ink-3">
+            <span className="mono eyebrow text-ink-3">
               LD-{new Date(lead.createdAt).getFullYear()}-{lead.id.slice(-4).toUpperCase()}
             </span>
-            <h1 className="mt-1.5 text-[26px] font-black leading-none tracking-tight text-ink">
+            <h1 className="t-record mt-1.5 font-black tracking-tight text-ink">
               {lead.name}
             </h1>
-            <p className="mt-2 text-[14px] text-ink-2">
+            <p className="t-lede mt-2 text-ink-2">
               {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
             </p>
           </div>
           {/* THE RESPONSE CLOCK — the age of the lead was decoration; this is the number
               the owner is judged by, and it runs while nobody has called back. */}
-          <div className="text-right">
+          {/* Right-aligned beside the name on the desk; on a phone the plate is one
+              column, so the reading joins the stack instead of hanging off it. */}
+          <div className="text-left md:text-right">
             <LeadClock lead={lead} />
             <p className="eyebrow mt-2">via {lead.source}</p>
           </div>
@@ -261,16 +431,14 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           {lead.phone ? (
             <a
               href={`tel:${lead.phone}`}
-              className="mono text-[24px] font-bold leading-none tracking-[-0.02em] text-ink transition-colors duration-[140ms] ease-instrument hover:text-sky-ink"
+              className="mono t-record w-full font-bold tracking-[-0.02em] text-ink transition-colors duration-fast ease-instrument hover:text-sky-ink md:w-auto"
             >
               {lead.phone}
             </a>
           ) : (
-            <span className="mono text-[24px] leading-none tracking-[-0.02em] text-ink-3">
-              NO NUMBER
-            </span>
+            <span className="mono t-record w-full text-ink-3 md:w-auto">NO NUMBER</span>
           )}
-          <div className="flex items-center gap-2">
+          <div className="actions flex-1">
             {lead.phone && (
               <a href={`tel:${lead.phone}`} className={buttonClass("primary")}>
                 <Phone className="h-3.5 w-3.5" /> Call
@@ -285,17 +453,27 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {/* WHERE IT WENT. The job used to sit at the very bottom, under the call log,
+          so the first question about a converted lead was answered last. */}
+      {lead.project && (
+        <Link
+          href={`/projects/${lead.project.id}`}
+          className="ticket ticket-hover block px-4 py-3"
+          style={{ ["--spine" as string]: spineFor(lead.project.status) } as React.CSSProperties}
+        >
+          <div className="eyebrow">Converted to job</div>
+          <p className="t-row mt-1.5 font-bold text-ink">{lead.project.title}</p>
+          <p className="eyebrow mt-1">{lead.project.status.replace("_", " ")}</p>
+        </Link>
+      )}
+
       {/* THE LADDER — where this lead stands, and the moves available from here.
           A rejected lead gets a stamp instead of a rail. */}
       <section>
-        <div className="pb-2.5">
-          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
-            Pipeline
-          </h2>
-        </div>
+        <LaneHead title="Pipeline" />
         <div className="border-t border-line pt-4">
           {lead.status === "REJECTED" ? (
-            <span className="mono inline-block rounded border border-rose-ink px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.14em] text-rose-ink">
+            <span className="mono t-meta inline-block rounded border border-rose-ink px-3 py-1.5 font-bold uppercase tracking-[0.14em] text-rose-ink">
               Rejected
             </span>
           ) : (
@@ -303,51 +481,77 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           )}
 
           {lead.status !== "CONVERTED" && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="actions mt-4">
               {lead.status !== "CONTACTED" && (
-                <button
-                  onClick={() => handleStatusChange("CONTACTED")}
-                  className={buttonClass("ghost")}
-                >
-                  <Phone className="h-3.5 w-3.5" /> Mark contacted
-                </button>
+                <Button variant="ghost" onClick={() => handleStatusChange("CONTACTED")}>
+                  Mark contacted
+                </Button>
               )}
               {lead.status !== "VERIFIED" && (
-                <button
-                  onClick={() => handleStatusChange("VERIFIED")}
-                  className={buttonClass("ghost")}
-                >
-                  <Check className="h-3.5 w-3.5" /> Verify
-                </button>
+                <Button variant="ghost" onClick={() => handleStatusChange("VERIFIED")}>
+                  Mark verified
+                </Button>
               )}
               {lead.status === "VERIFIED" && !lead.project && (
-                <button
-                  onClick={() => setShowConvertModal(true)}
-                  className={buttonClass("primary")}
-                >
+                <Button variant="primary" onClick={openConvert}>
                   <ArrowRight className="h-3.5 w-3.5" /> Open a job
-                </button>
+                </Button>
               )}
               {lead.status !== "REJECTED" && (
-                <button
+                <Button
+                  variant="danger"
+                  className="md:ml-auto"
                   onClick={() => handleStatusChange("REJECTED")}
-                  className={`${buttonClass("danger")} ml-auto`}
                 >
-                  <X className="h-3.5 w-3.5" /> Reject
-                </button>
+                  Reject
+                </Button>
               )}
             </div>
           )}
         </div>
       </section>
 
+      {/* WHAT THE CUSTOMER ASKED FOR — the quiz, read as a form and not as prose. */}
       <section>
-        <div className="flex items-center justify-between pb-2.5">
-          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">Contact</h2>
-          <button onClick={() => setEditing(!editing)} className="eyebrow hover:text-ink">
-            {editing ? "Cancel" : "Edit"}
-          </button>
+        <LaneHead
+          title="What they asked for"
+          right={notes.channel ? <Chip>{notes.channel}</Chip> : undefined}
+        />
+        <div className="border-t border-line">
+          {notes.answers.length === 0 && notes.prose.length === 0 ? (
+            <Empty className="pl-1" hint="This one came in without a form — everything known about the job is in the contact block and the call log.">
+              No quiz answers on this lead
+            </Empty>
+          ) : (
+            <>
+              {notes.answers.map((a, i) => (
+                <DetailRow key={i} label={a.label}>
+                  {a.value}
+                </DetailRow>
+              ))}
+              {notes.prose.map((line, i) => (
+                <div key={i} className="border-b border-line px-1 py-3">
+                  <p className="t-lede measure text-ink">{line}</p>
+                </div>
+              ))}
+            </>
+          )}
         </div>
+      </section>
+
+      <section>
+        <LaneHead
+          title="Contact"
+          right={
+            <button
+              type="button"
+              onClick={() => setEditing(!editing)}
+              className="eyebrow hover:text-ink"
+            >
+              {editing ? "Cancel" : "Edit"}
+            </button>
+          }
+        />
 
         {editing ? (
           <div className="grid grid-cols-1 gap-4 border-t border-line pt-5 sm:grid-cols-2">
@@ -359,136 +563,127 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
               { label: "City", key: "city", type: "text" },
               { label: "Job type", key: "jobType", type: "text" },
             ].map(({ label, key, type }) => (
-              <div key={key}>
-                <label className="eyebrow">{label}</label>
-                <input
-                  type={type}
-                  value={(form as Record<string, string>)[key] || ""}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  className={key === "phone" ? `${field} mono` : field}
-                />
-              </div>
+              <Field key={key} id={`lead-${key}`} label={label}>
+                {(f) => (
+                  <input
+                    {...f}
+                    type={type}
+                    value={(form as Record<string, string>)[key] || ""}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    className={key === "phone" ? `${f.className} mono` : f.className}
+                  />
+                )}
+              </Field>
             ))}
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Notes</label>
-              <textarea
-                value={form.notes || ""}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                rows={3}
-                className={field}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Status</label>
-              <select
-                value={form.status || lead.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className={`${field} mono uppercase tracking-[0.06em]`}
-              >
-                {["NEW", "CONTACTED", "VERIFIED", "REJECTED"].map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <button onClick={handleSave} disabled={saving} className={buttonClass("primary")}>
+            <Field id="lead-notes" label="Notes" className="sm:col-span-2">
+              {(f) => (
+                <textarea
+                  {...f}
+                  rows={3}
+                  value={form.notes || ""}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="lead-status" label="Status" className="sm:col-span-2">
+              {(f) => (
+                <select
+                  {...f}
+                  value={form.status || lead.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  className={`${f.className} mono uppercase tracking-[0.06em]`}
+                >
+                  {["NEW", "CONTACTED", "VERIFIED", "REJECTED"].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <div className="actions sm:col-span-2">
+              <Button variant="primary" onClick={handleSave} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
           <div className="border-t border-line">
-            {[
-              ["Phone", lead.phone, `tel:${lead.phone}`],
-              ["Email", lead.email, `mailto:${lead.email}`],
-              ["Address", [lead.address, lead.city].filter(Boolean).join(", "), null],
-              ["Logged", new Date(lead.createdAt).toLocaleDateString("en-CA"), null],
-            ]
-              .filter(([, v]) => v)
-              .map(([k, v, href]) => (
-                <div key={k as string} className="flex gap-4 border-b border-line px-1 py-3">
-                  <span className="eyebrow w-[90px] shrink-0 pt-0.5">{k}</span>
-                  {href ? (
-                    <a
-                      href={href as string}
-                      className="mono text-[14px] text-ink underline underline-offset-4"
-                    >
-                      {v}
-                    </a>
-                  ) : (
-                    <span className="text-[14px] text-ink">{v}</span>
-                  )}
-                </div>
-              ))}
+            {/* The phone lives at the top of the plate, at twice this size and under
+                a thumb; printing it again here was the same fact twice. */}
+            {lead.email && (
+              <DetailRow label="Email">
+                <a
+                  href={`mailto:${lead.email}`}
+                  className="mono text-ink underline underline-offset-4"
+                >
+                  {lead.email}
+                </a>
+              </DetailRow>
+            )}
+            {[lead.address, lead.city].filter(Boolean).length > 0 && (
+              <DetailRow label="Address">
+                {[lead.address, lead.city].filter(Boolean).join(", ")}
+              </DetailRow>
+            )}
+            <DetailRow label="Landed">
+              <Stamp date={lead.createdAt} />
+            </DetailRow>
           </div>
         )}
       </section>
 
-      {/* THE CALL LOG — notes read as a log; stamped lines are the calls. */}
+      {/* THE CALL LOG — what the desk has done about this lead, and nothing else. */}
       <section>
-        <div className="pb-2.5">
-          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
-            Call log
-          </h2>
-        </div>
+        <LaneHead
+          title="Call log"
+          right={
+            <span className="eyebrow">
+              {notes.calls.length === 1 ? "1 call" : `${notes.calls.length} calls`}
+            </span>
+          }
+        />
         <div className="border-t border-line">
-          {logLines.length === 0 && (
-            <p className="border-b border-line px-1 py-3 text-[13px] text-ink-3">
-              No calls logged yet.
-            </p>
+          {notes.calls.length === 0 && (
+            <Empty className="pl-1" hint="Write down every attempt — no answer, voicemail, call back Tuesday. The stamp on the first line is what the response clock reads.">
+              No calls logged yet
+            </Empty>
           )}
-          {logLines.map((line, i) => {
-            const m = line.match(/^(\[[^\]]*\])\s*(.*)$/);
-            return m ? (
-              <p
-                key={i}
-                className="mono border-b border-line px-1 py-2.5 text-[12px] leading-snug text-ink"
-              >
-                <span className="text-ink-3">{m[1]}</span> {m[2]}
-              </p>
-            ) : (
-              <p
-                key={i}
-                className="border-b border-line px-1 py-2.5 text-[13px] leading-snug text-ink-2"
-              >
-                {line}
-              </p>
-            );
-          })}
-          <form onSubmit={handleLogCall} className="flex gap-2 px-1 py-3">
-            <input
-              value={logText}
-              onChange={(e) => setLogText(e.target.value)}
-              placeholder="Log a call — no answer, callback Tuesday…"
-              className="w-full px-3 py-2 text-[13px]"
-            />
-            <button
+          {notes.calls.map((call, i) => (
+            <p
+              key={i}
+              className="mono t-meta border-b border-line px-1 py-2.5 leading-snug text-ink"
+            >
+              <span className="text-ink-3">{call.stamp}</span> {call.text}
+            </p>
+          ))}
+          <form onSubmit={handleLogCall} className="flex items-start gap-2 px-1 py-3">
+            <div className="min-w-0 flex-1">
+              <label className="sr-only" htmlFor="log-a-call">
+                Log a call
+              </label>
+              <input
+                id="log-a-call"
+                value={logText}
+                onChange={(e) => setLogText(e.target.value)}
+                placeholder="No answer, callback Tuesday…"
+                className="control"
+              />
+            </div>
+            <Button
               type="submit"
+              variant="ghost"
+              className="shrink-0"
               disabled={logging || !logText.trim()}
-              className={buttonClass("ghost")}
             >
               {logging ? "…" : "Log"}
-            </button>
+            </Button>
           </form>
         </div>
       </section>
 
-      {lead.project && (
-        <Link
-          href={`/projects/${lead.project.id}`}
-          className="ticket ticket-hover block px-4 py-3"
-          style={{ ["--spine" as string]: spineFor(lead.project.status) } as React.CSSProperties}
-        >
-          <div className="eyebrow">Converted to job</div>
-          <p className="mt-1.5 text-[15px] font-bold text-ink">{lead.project.title}</p>
-          <p className="eyebrow mt-1">{lead.project.status.replace("_", " ")}</p>
-        </Link>
-      )}
-
       {!lead.project && (
-        <button onClick={handleDelete} className="eyebrow hover:text-rose">
+        <button onClick={handleDelete} className="eyebrow hover:text-rose-ink">
           Delete lead
         </button>
       )}
@@ -498,72 +693,74 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           {/* Announced as a dialog and named by its own heading, so a reader is told a
               layer opened over the lead rather than that the page changed under them. */}
           <div
+            ref={modalRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="convert-lead-title"
-            className="plate w-full max-w-md p-6"
+            className="plate max-h-full w-full max-w-md overflow-y-auto p-6"
           >
-            <div className="eyebrow">New work order</div>
+            <div className="eyebrow">New job</div>
             <h2
               id="convert-lead-title"
-              className="mt-2 text-[22px] font-black leading-none tracking-tight text-ink"
+              className="t-record mt-2 font-black tracking-tight text-ink"
             >
               Open a job
             </h2>
             <form onSubmit={handleConvert} className="mt-5 space-y-4">
-              <div>
-                <label className="eyebrow">Job title *</label>
-                <input
-                  required
-                  value={convertForm.title}
-                  onChange={(e) => setConvertForm({ ...convertForm, title: e.target.value })}
-                  className={field}
-                />
-              </div>
-              <div>
-                <label className="eyebrow">Address *</label>
-                <input
-                  required
-                  value={convertForm.address}
-                  onChange={(e) => setConvertForm({ ...convertForm, address: e.target.value })}
-                  className={field}
-                />
-              </div>
-              <div>
-                <label className="eyebrow">Scheduled date</label>
-                <input
-                  type="date"
-                  value={convertForm.scheduledDate}
-                  onChange={(e) =>
-                    setConvertForm({ ...convertForm, scheduledDate: e.target.value })
-                  }
-                  className={`${field} mono`}
-                />
-              </div>
-              <div>
-                <label className="eyebrow">Description</label>
-                <textarea
-                  value={convertForm.description}
-                  onChange={(e) => setConvertForm({ ...convertForm, description: e.target.value })}
-                  rows={2}
-                  className={field}
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className={`${buttonClass("primary")} flex-1`}
-                >
+              <Field id="convert-title" label="Job title" required>
+                {(f) => (
+                  <input
+                    {...f}
+                    value={convertForm.title}
+                    onChange={(e) => setConvertForm({ ...convertForm, title: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field id="convert-address" label="Address" required>
+                {(f) => (
+                  <input
+                    {...f}
+                    value={convertForm.address}
+                    onChange={(e) => setConvertForm({ ...convertForm, address: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field
+                id="convert-date"
+                label="Scheduled date"
+                hint={whenAsked ? `They asked for: ${whenAsked.value}` : undefined}
+              >
+                {(f) => (
+                  <input
+                    {...f}
+                    type="date"
+                    value={convertForm.scheduledDate}
+                    onChange={(e) =>
+                      setConvertForm({ ...convertForm, scheduledDate: e.target.value })
+                    }
+                    className={`${f.className} mono`}
+                  />
+                )}
+              </Field>
+              <Field id="convert-description" label="Description">
+                {(f) => (
+                  <textarea
+                    {...f}
+                    rows={2}
+                    value={convertForm.description}
+                    onChange={(e) =>
+                      setConvertForm({ ...convertForm, description: e.target.value })
+                    }
+                  />
+                )}
+              </Field>
+              <div className="actions pt-1">
+                <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? "Opening…" : "Open job"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowConvertModal(false)}
-                  className={`${buttonClass("ghost")} flex-1`}
-                >
+                </Button>
+                <Button type="button" variant="ghost" onClick={closeConvert}>
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           </div>

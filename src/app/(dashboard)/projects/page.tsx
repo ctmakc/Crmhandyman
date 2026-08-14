@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, X } from "lucide-react";
-import { formatCents, inCents, type InCents } from "@/lib/money";
+import { inCents, type InCents } from "@/lib/money";
 import { conflictsFor, formatDuration, spanDays } from "@/lib/schedule";
 import {
   PageHead,
@@ -13,9 +13,13 @@ import {
   Ticket,
   WoNumber,
   Money,
+  Num,
+  Stamp,
   Empty,
+  Field,
   Plate,
   buttonClass,
+  controlClass,
   Skeleton,
   textToneFor,
 } from "@/components/ui/primitives";
@@ -44,6 +48,8 @@ interface ApiProject {
   assignedToId?: string | null;
   assignedTo?: { id: string; name: string } | null;
   durationMinutes?: number | null;
+  /** Sent by the API to the crew: their board is served with the money stripped out. */
+  viewerRole?: "ADMIN" | "WORKER";
   payments: { amount: number }[];
   estimates: { total: number; status: string }[];
   tasks: { id: string; status: string }[];
@@ -84,30 +90,31 @@ interface Dispatch {
 function CrewPicker({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
   if (!dispatch.crew.length) return null;
   const clashes = dispatch.clashesOn(project);
-  const runs = spanDays(project);
+  const id = `crew-${project.id}`;
 
   return (
     <span className="relative z-[1] flex shrink-0 items-center gap-2">
-      {runs > 1 && (
-        <span className="mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
-          {formatDuration(project.durationMinutes)}
-        </span>
-      )}
       {clashes.length > 0 && (
         <span
-          className="mono text-[10px] uppercase tracking-[0.08em]"
+          className="eyebrow"
           style={{ color: "var(--rose-ink)" }}
           title={`Also on ${clashes.map((c) => c.title).join(", ")} at this time`}
         >
           ! double
         </span>
       )}
+      <label className="sr-only" htmlFor={id}>
+        Crew on {project.title}
+      </label>
       <select
-        aria-label={`Crew on ${project.title}`}
+        id={id}
         value={project.assignedToId ?? ""}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => dispatch.assign(project, e.target.value)}
-        className="mono px-2 py-1 text-[11px] uppercase tracking-[0.06em]"
+        /* Row scale, the same box as a `quiet` button: 26px on the desk, 44 on the
+           phone from the field rule. A full `.control` here would be a 38px slab
+           inside a 15px line of type. */
+        className="mono t-micro px-2 py-1 uppercase leading-[16px] tracking-[0.06em]"
         style={clashes.length ? { borderColor: "var(--rose)" } : undefined}
       >
         <option value="">— UNCREWED —</option>
@@ -118,6 +125,70 @@ function CrewPicker({ project, dispatch }: { project: Project; dispatch: Dispatc
         ))}
       </select>
     </span>
+  );
+}
+
+/**
+ * WHEN · WHO — the two facts a row is opened to find, in one mono line.
+ * A worker's board carries no picker, so his row prints the name instead of an
+ * empty control; an unassigned job says so in amber, because a truck with nobody
+ * on it does not leave the yard.
+ */
+function WhenWho({
+  project,
+  dispatch,
+  showPicker,
+}: {
+  project: Project;
+  dispatch: Dispatch;
+  showPicker: boolean;
+}) {
+  const runs = spanDays(project);
+  const done = project.tasks.filter((t) => t.status === "DONE").length;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span className="eyebrow">
+        {project.scheduledDate ? (
+          <Stamp date={project.scheduledDate} />
+        ) : (
+          <span style={{ color: "var(--amber-ink)" }}>NO DAY BOOKED</span>
+        )}
+        {runs > 1 && ` · ${formatDuration(project.durationMinutes)}`}
+      </span>
+
+      {project.tasks.length > 0 && (
+        <span className="flex items-center gap-2">
+          <span className="flex items-center gap-1" aria-hidden>
+            {project.tasks.slice(0, 10).map((t) => (
+              <span
+                key={t.id}
+                className="inline-block h-2 w-2 rounded-full"
+                style={
+                  t.status === "DONE"
+                    ? { background: "var(--emerald)" }
+                    : { background: "var(--sunk)", border: "1px solid var(--line)" }
+                }
+              />
+            ))}
+          </span>
+          <span className="eyebrow">
+            TASKS <Num>{done}</Num>/<Num>{project.tasks.length}</Num>
+          </span>
+        </span>
+      )}
+
+      <span className="ml-auto">
+        {showPicker ? (
+          <CrewPicker project={project} dispatch={dispatch} />
+        ) : project.assignedTo ? (
+          <span className="eyebrow">CREW · {project.assignedTo.name}</span>
+        ) : (
+          <span className="eyebrow" style={{ color: "var(--amber-ink)" }}>
+            UNCREWED
+          </span>
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -142,12 +213,19 @@ function groupByDate(jobs: Project[]) {
     }));
 }
 
-/** ON THE GO — the full work order in your hand: crew tally + EST→PAID fill. */
-function LiveTicket({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
+/** ON THE GO — the full work order in your hand: when, where, who, EST→PAID fill. */
+function LiveTicket({
+  project,
+  dispatch,
+  ownerView,
+}: {
+  project: Project;
+  dispatch: Dispatch;
+  ownerView: boolean;
+}) {
   const paidCents = paidCentsOf(project);
   const estCents = estCentsOf(project);
   const pct = estCents && estCents > 0 ? Math.min(paidCents / estCents, 1) * 100 : 0;
-  const done = project.tasks.filter((t) => t.status === "DONE").length;
   return (
     <Ticket status={project.status} className="ticket-hover px-5 py-4">
       {/* Stretched link: the plate still opens the work order, while the crew select
@@ -157,65 +235,55 @@ function LiveTicket({ project, dispatch }: { project: Project; dispatch: Dispatc
         className="absolute inset-0"
         aria-label={`Open ${project.title}`}
       />
-      <div className="flex items-baseline justify-between gap-3">
+      {/* The plate number never breaks: at 390px it was folding into
+          «WO-2026-» / «MHJP» to make room for the date beside it. The status word
+          used to sit opposite it and said IN PROGRESS on every plate of a lane
+          called ON THE GO, under an amber lamp, beside an amber spine. */}
+      <span className="whitespace-nowrap">
         <WoNumber id={project.id} date={project.createdAt} />
-        <span className="flex items-center gap-3">
-          {project.scheduledDate && (
-            <span className="mono text-[11px] text-ink-3">
-              {project.scheduledDate.slice(0, 10)}
-            </span>
-          )}
-          <CrewPicker project={project} dispatch={dispatch} />
-        </span>
-      </div>
-      <p className="mt-2 text-[17px] font-black leading-tight tracking-[-0.01em] text-ink">
-        {project.title}
-      </p>
-      <p className="mt-1 truncate text-[13px] text-ink-2">
+      </span>
+      <p className="t-record mt-2 font-black tracking-[-0.01em] text-ink">{project.title}</p>
+      <p className="t-body mt-1 truncate text-ink-2">
         {project.clientName} · {project.address}
       </p>
-      {project.tasks.length > 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            {project.tasks.slice(0, 10).map((t) => (
-              <span
-                key={t.id}
-                className="inline-block h-2 w-2 rounded-full"
-                style={
-                  t.status === "DONE"
-                    ? { background: "var(--emerald)" }
-                    : { background: "var(--sunk)", border: "1px solid var(--line)" }
-                }
-              />
-            ))}
-          </span>
-          <span className="mono text-[11px] text-ink-3">
-            CREW {done}/{project.tasks.length}
-          </span>
+
+      <WhenWho project={project} dispatch={dispatch} showPicker={ownerView} />
+
+      {/* The EST→PAID fill is the owner's rule. A worker's payload carries no
+          estimates and no payments, and the bar was drawing that hole as an
+          empty gauge reading $0.00. */}
+      {ownerView && (
+        <div className="mt-3.5">
+          <div className="h-1 bg-sunk">
+            <div
+              className="h-full transition-[width] duration-[380ms] ease-instrument"
+              style={{ width: `${pct}%`, background: "var(--emerald)" }}
+            />
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <span className="eyebrow" style={{ color: "var(--emerald-ink)" }}>
+              PAID <Money cents={paidCents} className="t-meta font-bold" />
+            </span>
+            <span className="eyebrow">
+              / EST {estCents != null ? <Money cents={estCents} className="t-meta" /> : "—"}
+            </span>
+          </div>
         </div>
       )}
-      <div className="mt-3.5">
-        <div className="h-1 bg-sunk">
-          <div
-            className="h-full transition-[width] duration-[380ms] ease-instrument"
-            style={{ width: `${pct}%`, background: "var(--emerald)" }}
-          />
-        </div>
-        <div className="mt-1.5 flex items-baseline gap-1.5">
-          <span className="mono text-[11px] font-bold" style={{ color: "var(--emerald-ink)" }}>
-            PAID {formatCents(paidCents)}
-          </span>
-          <span className="mono text-[11px] text-ink-3">
-            / EST {estCents != null ? formatCents(estCents) : "—"}
-          </span>
-        </div>
-      </div>
     </Ticket>
   );
 }
 
 /** BOOKED — a standard ruled row, hanging to the right of its date rail. */
-function BookedRow({ project, dispatch }: { project: Project; dispatch: Dispatch }) {
+function BookedRow({
+  project,
+  dispatch,
+  ownerView,
+}: {
+  project: Project;
+  dispatch: Dispatch;
+  ownerView: boolean;
+}) {
   const estCents = estCentsOf(project);
   const done = project.tasks.filter((t) => t.status === "DONE").length;
   return (
@@ -225,30 +293,36 @@ function BookedRow({ project, dispatch }: { project: Project; dispatch: Dispatch
         className="absolute inset-0"
         aria-label={`Open ${project.title}`}
       />
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="min-w-0">
-          <WoNumber id={project.id} date={project.createdAt} />
-          <p className="mt-1 truncate text-[15px] font-bold leading-tight text-ink">
-            {project.title}
-          </p>
-          <p className="truncate text-[13px] text-ink-2">
+      {/* Wraps rather than squeezes. At 390px the right cluster used to be pushed
+          off the screen by the date rail — the answer to «who» was past the edge. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1 basis-[190px]">
+          <span className="whitespace-nowrap">
+            <WoNumber id={project.id} date={project.createdAt} />
+          </span>
+          <p className="t-row mt-1 truncate font-bold text-ink">{project.title}</p>
+          <p className="t-body truncate text-ink-2">
             {project.clientName} · {project.address}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <div className="text-right">
-            {estCents != null && (
-              <div className="mono text-[12px] text-ink-2">
-                EST <Money cents={estCents} className="text-[13px]" />
+            {ownerView && estCents != null && (
+              <div className="eyebrow">
+                EST <Money cents={estCents} className="t-body text-ink-2" />
               </div>
             )}
             {project.tasks.length > 0 && (
-              <div className="mono mt-1 text-[11px] text-ink-3">
-                CREW {done}/{project.tasks.length}
+              <div className="eyebrow mt-1">
+                TASKS <Num>{done}</Num>/<Num>{project.tasks.length}</Num>
               </div>
             )}
           </div>
-          <CrewPicker project={project} dispatch={dispatch} />
+          {ownerView ? (
+            <CrewPicker project={project} dispatch={dispatch} />
+          ) : project.assignedTo ? (
+            <span className="eyebrow shrink-0">{project.assignedTo.name}</span>
+          ) : null}
         </div>
       </div>
     </Row>
@@ -256,30 +330,30 @@ function BookedRow({ project, dispatch }: { project: Project; dispatch: Dispatch
 }
 
 /** CLOSED — the drawer: one compressed ledger line per order. */
-function ClosedRow({ project }: { project: Project }) {
+function ClosedRow({ project, ownerView }: { project: Project; ownerView: boolean }) {
   const paidCents = paidCentsOf(project);
   const estCents = estCentsOf(project);
   const moneyCents = paidCents > 0 ? paidCents : estCents ?? 0;
   return (
     <Row href={`/projects/${project.id}`} status={project.status} className="!py-2">
-      <div className="flex min-w-0 items-baseline gap-3 text-[13px]">
-        <WoNumber id={project.id} date={project.createdAt} />
+      <div className="t-body flex min-w-0 items-baseline gap-3">
+        <span className="hidden whitespace-nowrap sm:inline">
+          <WoNumber id={project.id} date={project.createdAt} />
+        </span>
         <span className="truncate font-medium text-ink-2">{project.title}</span>
         <span className="hidden min-w-0 truncate text-ink-3 sm:inline">
           {project.clientName}
         </span>
         <span className="ml-auto flex shrink-0 items-baseline gap-3">
-          <span
-            className="mono text-[10px] uppercase tracking-[0.09em]"
-            style={{ color: textToneFor(project.status) }}
-          >
+          <span className="eyebrow" style={{ color: textToneFor(project.status) }}>
             {project.status.replace("_", " ")}
           </span>
-          {moneyCents > 0 ? (
-            <Money cents={moneyCents} className="text-[13px]" tone="var(--ink-3)" />
-          ) : (
-            <span className="mono text-[13px] text-ink-3">—</span>
-          )}
+          {ownerView &&
+            (moneyCents > 0 ? (
+              <Money cents={moneyCents} className="t-body" tone="var(--ink-3)" />
+            ) : (
+              <span className="mono t-body text-ink-3">—</span>
+            ))}
         </span>
       </div>
     </Row>
@@ -440,8 +514,6 @@ export default function ProjectsPage() {
     fetchProjects();
   }
 
-  const field = "w-full mt-1.5 px-3 py-2 text-[13px]";
-
   /* The ladder split. The server already narrows by statusFilter; the split
      just routes what came back into the right rung. */
   const live = projects.filter((p) => p.status === "IN_PROGRESS");
@@ -451,39 +523,68 @@ export default function ProjectsPage() {
   );
   const bookedGroups = groupByDate(booked);
 
+  /** The crew is served the same board with the money taken out of the payload. */
+  const ownerView = !projects.some((p) => p.viewerRole === "WORKER");
+
   const showLive = !statusFilter || statusFilter === "IN_PROGRESS";
   const showBooked = !statusFilter || statusFilter === "SCHEDULED";
   const showClosed =
     !statusFilter || statusFilter === "COMPLETED" || statusFilter === "CANCELLED";
-  const firstLane = showLive ? "live" : showBooked ? "booked" : "closed";
 
-  /* Search + filter fold into the first lane head — no full-width bar. */
+  const filtering = Boolean(search || statusFilter);
+  /** A filter that matched nothing is one answer, not three empty lanes. */
+  const noMatch = !loading && filtering && projects.length === 0;
+
+  function clearFilters() {
+    setSearch("");
+    setStatusFilter("");
+  }
+
+  /* Search and the state filter narrow the WHOLE screen, so they sit on the
+     screen's own rule under the page head — the same place the receivables book,
+     Finance and Reports keep theirs. Folded into the first lane's head they read
+     as that lane's controls, and whichever lane happened to come first was the
+     one lane without a count beside its name. */
   const controls = (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
-      <div className="relative">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-line pb-4">
+      {/* Both boxes are `.control`, so the search and the filter are the same height
+          as every other field in the product. `.control` is width:100%, which is why
+          each one is sized by the box it sits in rather than by a width utility. */}
+      <div className="relative w-[168px] sm:w-[210px]">
+        <label className="sr-only" htmlFor="jobs-search">
+          Search jobs
+        </label>
         <Search
-          className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
+          className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
           strokeWidth={2}
+          aria-hidden
         />
         <input
+          id="jobs-search"
           placeholder="Search jobs…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-[140px] max-w-[240px] py-1.5 pl-7 pr-2 text-[12px] sm:w-[200px]"
+          className={controlClass("!pl-8")}
         />
       </div>
-      <select
-        value={statusFilter}
-        onChange={(e) => setStatusFilter(e.target.value)}
-        className="mono px-2 py-1.5 text-[11px] uppercase tracking-[0.06em]"
-      >
-        <option value="">All</option>
-        {STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {s.replace("_", " ")}
-          </option>
-        ))}
-      </select>
+      <div className="w-[132px]">
+        <label className="sr-only" htmlFor="jobs-status">
+          Job state
+        </label>
+        <select
+          id="jobs-status"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={controlClass("mono uppercase tracking-[0.06em]")}
+        >
+          <option value="">All states</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replace("_", " ")}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 
@@ -502,71 +603,82 @@ export default function ProjectsPage() {
       />
 
       {showAddForm && (
-        <Plate className="p-5">
-          <div className="eyebrow">New work order</div>
-          <div className="mt-4 border border-line bg-sunk px-3 py-2.5">
-            <label className="eyebrow">Existing client</label>
-            <select
-              value={form.clientId}
-              onChange={(e) => pickClient(e.target.value)}
-              className="mt-1.5 w-full px-3 py-2 text-[13px]"
-            >
-              <option value="">— New client, type the details below —</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.address ? ` · ${c.address}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+        <Plate className="page-doc p-5">
+          <div className="eyebrow">New job</div>
           <form onSubmit={handleAddProject} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              id="job-client-pick"
+              label="Existing client"
+              hint="Pick a repeat customer and the details fill themselves in."
+              className="sm:col-span-2"
+            >
+              {(f) => (
+                <select
+                  {...f}
+                  value={form.clientId}
+                  onChange={(e) => pickClient(e.target.value)}
+                >
+                  <option value="">— New client, type the details below —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.address ? ` · ${c.address}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+
             {[
-              { label: "Client name *", key: "clientName", type: "text", required: true },
-              { label: "Phone", key: "phone", type: "tel" },
-              { label: "Email", key: "email", type: "email" },
-              { label: "Job type", key: "jobType", type: "text" },
-              { label: "Scheduled date", key: "scheduledDate", type: "date" },
-            ].map(({ label, key, type, required }) => (
-              <div key={key}>
-                <label className="eyebrow">{label}</label>
-                <input
-                  required={required}
-                  type={type}
-                  value={(form as Record<string, string>)[key] || ""}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  className={key === "phone" || key === "scheduledDate" ? `${field} mono` : field}
-                />
-              </div>
+              { id: "job-client-name", label: "Client name", key: "clientName", type: "text", required: true },
+              { id: "job-phone", label: "Phone", key: "phone", type: "tel", mono: true, w: "sm:max-w-[240px]" },
+              { id: "job-email", label: "Email", key: "email", type: "email" },
+              { id: "job-type", label: "Job type", key: "jobType", type: "text", w: "sm:max-w-[280px]" },
+              { id: "job-day", label: "Scheduled day", key: "scheduledDate", type: "date", mono: true, w: "sm:max-w-[186px]" },
+            ].map(({ id, label, key, type, required, mono, w }) => (
+              <Field key={key} id={id} label={label} required={required} className={w}>
+                {(f) => (
+                  <input
+                    {...f}
+                    type={type}
+                    value={(form as Record<string, string>)[key] || ""}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    className={mono ? `${f.className} mono` : f.className}
+                  />
+                )}
+              </Field>
             ))}
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Job title *</label>
-              <input
-                required
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Address *</label>
-              <input
-                required
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className={field}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="eyebrow">Description</label>
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                rows={2}
-                className={field}
-              />
-            </div>
-            <div className="flex gap-2 sm:col-span-2">
+
+            <Field id="job-title" label="Job title" required className="sm:col-span-2">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="job-address" label="Address" required className="sm:col-span-2">
+              {(f) => (
+                <input
+                  {...f}
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field id="job-description" label="What the work is" className="sm:col-span-2">
+              {(f) => (
+                <textarea
+                  {...f}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={2}
+                />
+              )}
+            </Field>
+
+            <div className="actions sm:col-span-2">
               <button type="submit" className={buttonClass("primary")}>
                 Open job
               </button>
@@ -582,10 +694,35 @@ export default function ProjectsPage() {
         </Plate>
       )}
 
+      {controls}
+
       {loading ? (
         <section>
-          <LaneHead title="ON THE GO" lamp="var(--amber)" right={controls} />
+          <LaneHead title="On the go" lamp="var(--amber)" />
           <Skeleton lines={4} />
+        </section>
+      ) : noMatch ? (
+        /* One answer instead of three. A filter that matched nothing used to
+           print «nothing on the desk», «nothing on the peg» and «the drawer is
+           empty» in a column, and never named the search that caused them. */
+        <section>
+          <LaneHead title="Nothing found" />
+          <Empty
+            /* The typed words go in the hint, in the case the person typed them:
+               the first line is a mono eyebrow and would shout «ZZZZZ» back at him. */
+            hint={
+              search
+                ? `Nothing matches “${search}”. The search runs over the job title, the client and the address.`
+                : "No job is in that state right now."
+            }
+            action={
+              <button onClick={clearFilters} className={buttonClass("ghost")}>
+                Clear search
+              </button>
+            }
+          >
+            No job matches that
+          </Empty>
         </section>
       ) : (
         <>
@@ -593,16 +730,24 @@ export default function ProjectsPage() {
           {showLive && (
             <section>
               <LaneHead
-                title={`ON THE GO · ${live.length}`}
+                title="On the go"
                 lamp="var(--amber)"
-                right={firstLane === "live" ? controls : undefined}
+                count={live.length}
+                unit="job"
               />
               {live.length === 0 ? (
-                <Empty>Nothing on the desk — no jobs running</Empty>
+                <Empty hint="A booked job lands here the moment the crew hits Start on it.">
+                  Nothing on the desk — no jobs running
+                </Empty>
               ) : (
                 <div className="flex flex-col gap-3">
                   {live.map((p) => (
-                    <LiveTicket key={p.id} project={p} dispatch={dispatch} />
+                    <LiveTicket
+                      key={p.id}
+                      project={p}
+                      dispatch={dispatch}
+                      ownerView={ownerView}
+                    />
                   ))}
                 </div>
               )}
@@ -613,28 +758,46 @@ export default function ProjectsPage() {
           {showBooked && (
             <section>
               <LaneHead
-                title={`BOOKED · ${booked.length}`}
+                title="Booked"
                 lamp="var(--sky)"
-                right={firstLane === "booked" ? controls : undefined}
+                count={booked.length}
+                unit="job"
               />
               {booked.length === 0 ? (
-                <Empty>Nothing on the peg — no work booked</Empty>
+                <Empty
+                  hint="Open a work order and give it a day — it hangs on the peg until the crew starts."
+                  action={
+                    ownerView ? (
+                      <button
+                        onClick={() => setShowAddForm(true)}
+                        className={buttonClass("ghost")}
+                      >
+                        New job
+                      </button>
+                    ) : undefined
+                  }
+                >
+                  Nothing on the peg — no work booked
+                </Empty>
               ) : (
                 <div className="border-t border-line">
                   {bookedGroups.map((g) => (
                     <div
                       key={g.key}
-                      className="grid grid-cols-[48px_1fr] border-b border-line last:border-b-0 sm:grid-cols-[64px_1fr]"
+                      className="grid grid-cols-[44px_1fr] border-b border-line last:border-b-0 sm:grid-cols-[64px_1fr]"
                     >
                       <div className="border-r border-line pr-2 pt-4">
-                        <div className="mono text-[22px] font-medium leading-none text-ink">
-                          {g.day}
-                        </div>
+                        <div className="mono t-record font-medium text-ink">{g.day}</div>
                         <div className="eyebrow mt-1.5">{g.mon}</div>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         {g.items.map((p) => (
-                          <BookedRow key={p.id} project={p} dispatch={dispatch} />
+                          <BookedRow
+                            key={p.id}
+                            project={p}
+                            dispatch={dispatch}
+                            ownerView={ownerView}
+                          />
                         ))}
                       </div>
                     </div>
@@ -648,16 +811,18 @@ export default function ProjectsPage() {
           {showClosed && (
             <section>
               <LaneHead
-                title={`CLOSED · ${closed.length}`}
-                lamp="var(--emerald)"
-                right={firstLane === "closed" ? controls : undefined}
+                title="Closed"
+                count={closed.length}
+                unit="job"
               />
               {closed.length === 0 ? (
-                <Empty>The drawer is empty — no closed orders</Empty>
+                <Empty hint="Finished and cancelled orders drop in here and stay searchable.">
+                  The drawer is empty — no closed orders
+                </Empty>
               ) : (
                 <div className="border-t border-line">
                   {closed.map((p) => (
-                    <ClosedRow key={p.id} project={p} />
+                    <ClosedRow key={p.id} project={p} ownerView={ownerView} />
                   ))}
                 </div>
               )}

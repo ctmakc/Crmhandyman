@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { spineFor } from "@/components/ui/primitives";
+import { Empty, LaneHead, spineFor } from "@/components/ui/primitives";
 import {
   dayIndexOf,
   dayLoad,
@@ -140,7 +140,7 @@ export default function DayRail({
   function LoadLines({ load }: { load: DayLoad }) {
     if (load.total === 0) return null;
     return (
-      <div className="mono mt-2 space-y-[3px] px-0.5 text-[10px] leading-none tracking-[0.06em]">
+      <div className="mono t-micro mt-2 space-y-1 px-0.5 leading-none tracking-[0.06em]">
         {load.crew.map((p) => (
           <div
             key={p.id}
@@ -165,23 +165,41 @@ export default function DayRail({
     );
   }
 
+  const emptyWeek = scheduled.length === 0;
+
+  /**
+   * Nothing booked is a state of the week, and it says what puts work on it. No button:
+   * the lane below it carries the one press that opens a job, and two identical calls
+   * to action on one empty deck is a poster, not a desk.
+   */
+  const nothingBooked = (
+    <Empty
+      className="border-t-0"
+      hint="A job with a date on it takes its place on this rule — a stop sits inside its day, a run draws a bar across the days it holds."
+    >
+      Nothing booked this week
+    </Empty>
+  );
+
   return (
     <section>
-      <div className="flex items-baseline justify-between gap-4 pb-2.5">
-        <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
-          The week
-        </h2>
-        <span className="eyebrow">
-          {clashDays > 0 && (
-            <span style={{ color: "var(--rose-ink)" }}>
-              {clashDays} DAY{clashDays === 1 ? "" : "S"} DOUBLE-BOOKED ·{" "}
+      <LaneHead
+        title="The week"
+        right={
+          <>
+            {clashDays > 0 && (
+              <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
+                {clashDays} DAY{clashDays === 1 ? "" : "S"} DOUBLE-BOOKED
+              </span>
+            )}
+            <span className="eyebrow">
+              {booked} BOOKED{crewSize > 0 ? ` · CREW OF ${crewSize}` : ""} ·{" "}
+              {days[0].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })} —{" "}
+              {days[6].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })}
             </span>
-          )}
-          {booked} booked{crewSize > 0 ? ` · crew of ${crewSize}` : ""} ·{" "}
-          {days[0].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })} —{" "}
-          {days[6].toLocaleDateString("en-CA", { month: "short", day: "2-digit" })}
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {/* The board is edged like a measuring rule — ticks per day, a taller one
           on today. This is the device the product is named for. */}
@@ -202,25 +220,25 @@ export default function DayRail({
           return (
             <div
               key={day.toISOString()}
-              className={`arm-col min-h-[188px] border-r border-line px-2.5 pb-3 pt-4 last:border-r-0 ${
-                isToday ? "today-glow" : ""
-              }`}
+              className={`arm-col border-r border-line px-2.5 pb-3 pt-4 last:border-r-0 ${
+                emptyWeek ? "min-h-[84px]" : "min-h-[188px]"
+              } ${isToday ? "today-glow" : ""}`}
               style={{ ["--i" as string]: i } as React.CSSProperties}
             >
               {/* The date is the biggest thing in the cell — the week has to read
-                  as a calendar at a glance, not as seven equal boxes. */}
+                  as a calendar at a glance, not as seven equal boxes. Today steps up
+                  one step of the scale (22 → 30); it used to step up to a private 28. */}
               <div className="flex items-baseline justify-between px-0.5">
                 <span
-                  className="mono text-[10px] uppercase tracking-[0.12em]"
+                  className="mono t-micro uppercase tracking-[0.12em]"
                   style={{ color: isToday ? "var(--ink-2)" : "var(--ink-3)" }}
                 >
                   {day.toLocaleDateString("en-CA", { weekday: "short" })}
                 </span>
                 <span
-                  className="mono leading-none"
+                  className={`mono leading-none ${isToday ? "t-readout" : "t-record"}`}
                   style={{
                     color: isToday ? "var(--amber-ink)" : "var(--ink-3)",
-                    fontSize: isToday ? "28px" : "22px",
                     fontWeight: isToday ? 700 : 500,
                     letterSpacing: "-0.02em",
                   }}
@@ -239,13 +257,13 @@ export default function DayRail({
                   <Link
                     key={job.id}
                     href={`/projects/${job.id}`}
-                    className="block bg-plate px-2 py-1.5 transition-colors duration-[140ms] ease-instrument hover:bg-sunk"
+                    className="block bg-plate px-2 py-1.5 transition-colors duration-fast ease-instrument hover:bg-sunk"
                     style={{ borderLeft: `3px solid ${spineFor(job.status)}` }}
                   >
-                    <p className="truncate text-[12px] font-bold leading-tight text-ink">
+                    <p className="t-body truncate font-bold leading-tight text-ink">
                       {job.title}
                     </p>
-                    <p className="truncate text-[11px] text-ink-3">{job.client}</p>
+                    <p className="t-meta truncate text-ink-3">{job.client}</p>
                   </Link>
                 ))}
               </div>
@@ -266,7 +284,7 @@ export default function DayRail({
               <Link
                 key={s.job.id}
                 href={`/projects/${s.job.id}`}
-                className="pointer-events-auto mx-[3px] flex h-[16px] items-center gap-1.5 overflow-hidden bg-plate pl-1.5 pr-1 transition-colors duration-[140ms] ease-instrument hover:bg-sunk"
+                className="pointer-events-auto mx-[3px] flex h-[16px] items-center gap-1.5 overflow-hidden bg-plate pl-1.5 pr-1 transition-colors duration-fast ease-instrument hover:bg-sunk"
                 style={{
                   gridColumn: `${s.start + 1} / span ${s.span}`,
                   gridRow: s.lane + 1,
@@ -274,27 +292,33 @@ export default function DayRail({
                 }}
                 title={`${s.job.title} · ${formatDuration(s.job.durationMinutes)}`}
               >
-                {s.continuesBefore && <span className="mono text-[9px] text-ink-3">◀</span>}
-                <span className="truncate text-[11px] font-bold leading-none text-ink">
+                {s.continuesBefore && <span className="mono t-micro text-ink-3">◀</span>}
+                <span className="t-meta truncate font-bold leading-none text-ink">
                   {s.job.title}
                 </span>
-                <span className="mono ml-auto shrink-0 pl-1 text-[9px] uppercase tracking-[0.08em] text-ink-3">
+                <span className="mono t-micro ml-auto shrink-0 pl-1 uppercase tracking-[0.08em] text-ink-3">
                   {formatDuration(s.job.durationMinutes)}
                 </span>
-                {s.continuesAfter && <span className="mono text-[9px] text-ink-3">▶</span>}
+                {s.continuesAfter && <span className="mono t-micro text-ink-3">▶</span>}
               </Link>
             ))}
           </div>
         )}
+
+        {/*
+          A WEEK WITH NOTHING ON IT IS A STATE, NOT A BLANK.
+          The board is the biggest object on the deck, and on a shop's first morning it
+          held seven empty columns and 188px of nothing — the one screen that is supposed
+          to open the day read as a page that had failed to load. The rule and the dates
+          stay (this is still the week of the 9th), and under them the board says what
+          puts work on it.
+        */}
+        {emptyWeek && nothingBooked}
       </div>
 
-      {/* Phone: only the days with work, stacked. A week with none of it prints one
-          bare rule, which reads exactly like a page that failed to load — so the empty
-          week says out loud that it is empty. */}
+      {/* Phone: only the days with work, stacked. */}
       <div className="border-t border-line md:hidden">
-        {scheduled.length === 0 && (
-          <p className="px-4 py-5 text-[13px] text-ink-2">Nothing booked this week.</p>
-        )}
+        {emptyWeek && nothingBooked}
         {days
           .map((day, i) => ({
             day,
@@ -311,13 +335,13 @@ export default function DayRail({
               }}
             >
               <div className="flex items-baseline justify-between gap-3">
-                <div className="mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+                <div className="mono t-micro uppercase tracking-[0.12em] text-ink-3">
                   {day.toLocaleDateString("en-CA", { weekday: "long", day: "2-digit", month: "short" })}
-                  {day.toDateString() === todayKey ? " · today" : ""}
+                  {day.toDateString() === todayKey ? " · TODAY" : ""}
                 </div>
                 {load.clashes.length > 0 && (
                   <div
-                    className="mono text-[10px] uppercase tracking-[0.08em]"
+                    className="mono t-micro uppercase tracking-[0.08em]"
                     style={{ color: "var(--rose-ink)" }}
                   >
                     ! {load.clashes.map((p) => shortName(p.name)).join(" · ")}
@@ -331,11 +355,13 @@ export default function DayRail({
                     <Link
                       key={job.id}
                       href={`/projects/${job.id}`}
-                      className="block border border-line bg-plate px-3 py-2"
+                      /* Surface shift and a spine, no frame: eight hairline rectangles
+                         stacked on a phone are the box grid this design took out. */
+                      className="block bg-plate px-3 py-2"
                       style={{ borderLeft: `3px solid ${spineFor(job.status)}` }}
                     >
-                      <p className="text-[13px] font-bold leading-tight text-ink">{job.title}</p>
-                      <p className="text-[12px] text-ink-3">
+                      <p className="t-row font-bold text-ink">{job.title}</p>
+                      <p className="t-meta text-ink-3">
                         {job.client}
                         {runs > 1 ? ` · day ${dayIndexOf(job, day)}/${runs}` : ""}
                         {job.assignedToName ? ` · ${job.assignedToName}` : ""}

@@ -14,7 +14,7 @@ import { sessionTenant } from "@/lib/session";
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId, id: userId, role } = sessionTenant(session);
 
   return NextResponse.json(await board(tenantId, userId, role));

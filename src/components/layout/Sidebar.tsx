@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -16,22 +17,26 @@ import {
   DollarSign,
   TrendingUp,
   Settings,
+  MoreHorizontal,
+  Search,
+  UserCircle,
+  X,
 } from "lucide-react";
 
 /** `owner: true` means the books — the API refuses these to the crew, so the rail hides
  *  them rather than offering a door that answers 403. */
 const navItems = [
-  { href: "/", label: "Dispatch", code: "01", icon: LayoutDashboard },
-  { href: "/today", label: "Today", code: "02", icon: Truck },
-  { href: "/leads", label: "Leads", code: "03", icon: Users },
-  { href: "/clients", label: "Clients", code: "04", icon: Contact },
-  { href: "/projects", label: "Jobs", code: "05", icon: Briefcase },
-  { href: "/contracts", label: "Contracts", code: "06", icon: CalendarClock, owner: true },
-  { href: "/tasks", label: "Crew", code: "07", icon: CheckSquare },
-  { href: "/invoices", label: "Invoices", code: "08", icon: FileText, owner: true },
-  { href: "/finance", label: "Finance", code: "09", icon: DollarSign, owner: true },
-  { href: "/reports", label: "Reports", code: "10", icon: TrendingUp, owner: true },
-  { href: "/settings", label: "Settings", code: "11", icon: Settings, owner: true },
+  { href: "/", label: "Dispatch", icon: LayoutDashboard },
+  { href: "/today", label: "Today", icon: Truck },
+  { href: "/leads", label: "Leads", icon: Users },
+  { href: "/clients", label: "Clients", icon: Contact },
+  { href: "/projects", label: "Jobs", icon: Briefcase },
+  { href: "/contracts", label: "Contracts", icon: CalendarClock, owner: true },
+  { href: "/tasks", label: "Crew", icon: CheckSquare },
+  { href: "/invoices", label: "Invoices", icon: FileText, owner: true },
+  { href: "/finance", label: "Finance", icon: DollarSign, owner: true },
+  { href: "/reports", label: "Reports", icon: TrendingUp, owner: true },
+  { href: "/settings", label: "Settings", icon: Settings, owner: true },
 ];
 
 /**
@@ -42,13 +47,38 @@ const navItems = [
  * in a driveway at 08:40 could not get to the morning's enquiries at all. Invoices come
  * off it; that is a desk job, and the rail still carries it on any wider screen.
  */
-const mobileItems = ["/today", "/", "/leads", "/projects", "/clients"];
+const mobileItems = ["/today", "/", "/leads", "/projects"];
 
 export default function Sidebar({ business }: { business?: string | null }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN";
-  const items = navItems.filter((i) => isAdmin || !i.owner);
+  /* The lane number is drawn from the list the person can actually see. Hard-coded
+     codes made the crew's rail count 01 02 03 04 05 07 — a gap where a door he is
+     not allowed through used to be. */
+  const items = navItems
+    .filter((i) => isAdmin || !i.owner)
+    .map((i, n) => ({ ...i, code: String(n + 1).padStart(2, "0") }));
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const rest = items.filter((i) => !mobileItems.includes(i.href));
+
+  /* The sheet closes on Escape and on a route change, and hands the caret back to
+     the button that opened it. */
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMoreOpen(false);
+        moreButton.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
 
   /**
    * The rail is the first thing in the DOM, so the first tab used to land on
@@ -144,7 +174,7 @@ export default function Sidebar({ business }: { business?: string | null }) {
       >
         {mobileItems
           .map((href) => items.find((n) => n.href === href))
-          .filter((item): item is (typeof navItems)[number] => Boolean(item))
+          .filter((item): item is (typeof items)[number] => Boolean(item))
           .map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -169,7 +199,95 @@ export default function Sidebar({ business }: { business?: string | null }) {
             </Link>
           );
         })}
+
+        {/* THE FIFTH STOP — everything else.
+            Six of eleven sections and the global search lived behind `hidden md:flex`
+            with no other door, so the owner holding his phone at 06:40 could not reach
+            Invoices, Finance or Reports at all — the three screens he took the phone
+            out for. The bar keeps five thumb-sized stops; the rest open in a sheet. */}
+        <button
+          ref={moreButton}
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          aria-expanded={moreOpen}
+          aria-haspopup="dialog"
+          className={cn(
+            "focus-rail focus-inset relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors",
+            moreOpen ? "text-plate" : "text-ink-rail"
+          )}
+        >
+          <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+          <span>More</span>
+        </button>
       </nav>
+
+      {moreOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden" role="dialog" aria-modal="true" aria-label="All sections">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => {
+              setMoreOpen(false);
+              moreButton.current?.focus();
+            }}
+            className="absolute inset-0 bg-navy-900/70"
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto border-t border-navy-700 bg-navy-900 pb-3">
+            <div className="flex items-center justify-between border-b border-navy-700 px-5 py-4">
+              <span className="mono text-[11px] uppercase tracking-[0.09em] text-ink-rail">
+                All sections
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  moreButton.current?.focus();
+                }}
+                className="focus-rail flex min-h-[44px] min-w-[44px] items-center justify-center text-ink-rail"
+                aria-label="Close all sections"
+              >
+                <X className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                window.dispatchEvent(
+                  new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })
+                );
+              }}
+              className="focus-rail flex min-h-[52px] w-full items-center gap-3 border-b border-navy-700 px-5 text-left text-[13px] font-medium text-plate"
+            >
+              <Search className="h-[17px] w-[17px] shrink-0" strokeWidth={1.75} aria-hidden />
+              Search the desk
+            </button>
+
+            {rest.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="focus-rail flex min-h-[52px] items-center gap-3 border-b border-navy-700 px-5 text-[13px] font-medium text-plate"
+                >
+                  <Icon className="h-[17px] w-[17px] shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span className="flex-1">{item.label}</span>
+                </Link>
+              );
+            })}
+
+            <Link
+              href="/account"
+              className="focus-rail flex min-h-[52px] items-center gap-3 px-5 text-[13px] font-medium text-plate"
+            >
+              <UserCircle className="h-[17px] w-[17px] shrink-0" strokeWidth={1.75} aria-hidden />
+              Your account
+            </Link>
+          </div>
+        </div>
+      )}
     </>
   );
 }

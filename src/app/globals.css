@@ -207,6 +207,13 @@ body {
 .control {
   display: block;
   width: 100%;
+  /* 20 of line box + 16 of padding + 2 of border = 38, the same 38 a button
+     works out to, so a field and the button beside it sit on one line.
+     `min-height` states it outright because a <select> and an
+     <input type="date"> do NOT take `line-height` from this rule — Chrome sizes
+     both from their own widget — and they were landing at 35 and 40 inside the
+     same form as a 38px text field. The box is one box now, whatever is in it. */
+  min-height: 38px;
   padding: 8px 11px;
   font-size: var(--fs-body);
   line-height: 20px;
@@ -262,6 +269,30 @@ body {
   border-bottom: 1px solid var(--line);
   transition: background-color var(--t) var(--ease);
   display: block;
+}
+
+/* THE ONE ALLOWED DENSITY VARIANT. The receivables book is a ledger: its lines
+   are one line of type each and earn 8 instead of 12. Before this existed the
+   book set `!py-2` and `!py-2.5` inline and the card index set `!pt-4`, so the
+   product had four row densities and each screen read as somebody else's. */
+.row-tight {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.row-tight::before {
+  top: 8px;
+  bottom: 8px;
+}
+
+/* THE CARD-INDEX ROW. The file tab straddles the top rule, so this row and only
+   this row buys 4 more of air above it. Declared here rather than as an inline
+   `!pt-4` on the card index, so the product has named densities instead of
+   private ones. */
+.row-tab {
+  padding-top: 16px;
+}
+.row-tab::before {
+  top: 16px;
 }
 
 /* The status spine survives from v1 — it is the one thing that must never go. */

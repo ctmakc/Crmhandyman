@@ -33,7 +33,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   const { tenantId } = guard.identity;
 
   if (!(await ownedProject(params.id, tenantId)))
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const estimates = await prisma.estimate.findMany({
     where: { projectId: params.id, tenantId },
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { tenantId } = guard.identity;
 
   if (!(await ownedProject(params.id, tenantId)))
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const body = await req.json();
 
@@ -103,7 +103,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     // status comes along so the journal can say what the estimate moved away from.
     select: { id: true, status: true },
   });
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!owned) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const estimate = await prisma.estimate.update({
     where: { id: owned.id },

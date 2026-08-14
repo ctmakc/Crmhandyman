@@ -7,7 +7,7 @@ import { inDollars } from "@/lib/money";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
@@ -145,7 +145,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const body = await req.json();

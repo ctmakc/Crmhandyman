@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!project.ok) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
   const assignee = await scopedUserId(tenantId, body.assignedToId);
-  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+  if (!assignee.ok) return NextResponse.json({ error: "That crew member is not on this desk" }, { status: 400 });
 
   const task = await prisma.task.create({
     data: {

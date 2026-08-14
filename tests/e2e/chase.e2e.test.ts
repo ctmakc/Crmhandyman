@@ -160,7 +160,7 @@ describe.sequential("Scenario C — the chase ladder and the call band", () => {
     const html = String(desk.body);
 
     expect(html).toContain("Chase list");
-    expect(html).toContain("Call");
+    expect(html).toContain("Chase by hand");
     // The number is a real link: the dispatcher taps it instead of copying it out.
     expect(html).toContain("tel:613-555-0134");
     // What they ordered, so the call opens with the job rather than with the number.

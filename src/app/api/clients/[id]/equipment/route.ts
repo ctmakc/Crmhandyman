@@ -7,7 +7,7 @@ import { parseDayInput } from "@/lib/dates";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const client = await prisma.client.findFirst({ where: { id: params.id, tenantId } });
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const equipmentId = new URL(req.url).searchParams.get("equipmentId");
@@ -45,7 +45,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const equipment = await prisma.equipment.findFirst({
     where: { id: equipmentId, tenantId, clientId: params.id },
   });
-  if (!equipment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!equipment) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   await prisma.equipment.delete({ where: { id: equipment.id } });
   return NextResponse.json({ ok: true });

@@ -10,7 +10,7 @@ const isNotAdmin = (session: Parameters<typeof isAdmin>[0]) => !isAdmin(session)
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const users = await prisma.user.findMany({
@@ -24,7 +24,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
@@ -56,13 +56,13 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
 
   const { tenantId, id: selfId } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Nothing was picked to remove" }, { status: 400 });
 
   if (id === selfId) {
     return NextResponse.json({ error: "You cannot remove your own account" }, { status: 400 });
@@ -75,7 +75,7 @@ export async function DELETE(req: NextRequest) {
     where: { id, tenantId },
     select: { role: true, name: true, email: true },
   });
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!target) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   if (target.role === "ADMIN") {
     const admins = await prisma.user.count({ where: { tenantId, role: "ADMIN" } });

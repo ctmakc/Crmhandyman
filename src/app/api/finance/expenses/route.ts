@@ -52,11 +52,11 @@ export async function DELETE(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Nothing was picked to remove" }, { status: 400 });
 
   // Scoped delete: a bare id let anyone erase another contractor's costs.
   const { count } = await prisma.expense.deleteMany({ where: { id, tenantId } });
-  if (count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (count === 0) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   return NextResponse.json({ ok: true });
 }

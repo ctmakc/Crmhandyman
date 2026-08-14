@@ -8,9 +8,27 @@
       The last card in the deck: shown when the phone is offline AND this browser has
       never loaded the field screen, so there is nothing honest to show. Tokens are
       copied here by hand because the built stylesheet is hashed and this page has to
-      stand on its own with no network at all.
+      stand on its own with no network at all — keep them in step with
+      src/app/globals.css. `--ink-3` sat one revision behind, and this was the one
+      surface where the product's own contrast fix had never landed.
     -->
     <style>
+      /* The product is set in Chivo everywhere else, and this card is the surface
+         the tech sees most often. `next/font` hashes its files, so this page keeps
+         its own copy under /fonts and the service worker precaches both. If they
+         ever go missing the stack below falls back to what this page used to be. */
+      @font-face {
+        font-family: "Chivo Offline";
+        src: url("/fonts/chivo-latin.woff2") format("woff2");
+        font-weight: 400 900;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Chivo Mono Offline";
+        src: url("/fonts/chivo-mono-latin.woff2") format("woff2");
+        font-weight: 400 700;
+        font-display: swap;
+      }
       :root {
         --navy-900: #0e1626;
         --deck: #edf0f4;
@@ -18,7 +36,7 @@
         --line: #d3dbe4;
         --ink: #131a26;
         --ink-2: #45536c;
-        --ink-3: #5d6b82;
+        --ink-3: #59677d;
         --amber: #ffb020;
         --r: 3px;
       }
@@ -34,7 +52,7 @@
         padding: 24px;
         background: var(--deck);
         color: var(--ink);
-        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-family: "Chivo Offline", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         -webkit-font-smoothing: antialiased;
       }
       .ticket {
@@ -62,7 +80,7 @@
         border-radius: 999px 999px 0 0;
       }
       .eyebrow {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: "Chivo Mono Offline", ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11px;
         letter-spacing: 0.09em;
         text-transform: uppercase;

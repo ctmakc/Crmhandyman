@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id, tenantId },
     select: { id: true },
   });
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!owned) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
   const estimateId = searchParams.get("estimateId");
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
     },
   });
-  if (!estimate) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!estimate) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const html = renderDocument({
     kind: "ESTIMATE",

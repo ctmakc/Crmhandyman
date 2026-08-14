@@ -524,13 +524,13 @@ export function clockLabel(at: number): string {
 /** Why the server said no, in five words the tech can act on. */
 export function rejectionReason(r: Rejection): string {
   if (r.reason === "gone") return "no longer on your board";
-  if (r.reason === "invalid") return "the server refused the change";
+  if (r.reason === "invalid") return "the office would not take it";
   return `dispatch set ${(r.serverStatus ?? "another status").replace(/_/g, " ")}`;
 }
 
 /** The whole sentence — for the toast and for the job card. */
 export function rejectionLine(r: Rejection): string {
   const verb = r.to === "COMPLETED" ? "Finish" : "Start";
-  if (r.reason === "gone") return `${verb} rejected — the job is no longer on your board`;
-  return `${verb} rejected — ${rejectionReason(r)}`;
+  if (r.reason === "gone") return `${verb} did not stick — this job is off your board now`;
+  return `${verb} did not stick — ${rejectionReason(r)}`;
 }

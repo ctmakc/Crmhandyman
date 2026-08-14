@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Check, Copy, Plus, Trash2 } from "lucide-react";
-import { PageHead, Plate, buttonClass } from "@/components/ui/primitives";
+import { Check, Copy, Plus } from "lucide-react";
+import {
+  BackLink,
+  Button,
+  Chip,
+  Empty,
+  Skeleton,
+  ErrorNote,
+  Field,
+  Lane,
+  LaneHead,
+  PageHead,
+  buttonClass,
+} from "@/components/ui/primitives";
 
 interface IntakeKey {
   id: string;
@@ -39,11 +50,13 @@ export default function IntakePage() {
   const [fresh, setFresh] = useState<FreshKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   async function fetchKeys() {
     const res = await fetch("/api/settings/intake-keys");
     if (res.ok) setKeys(await res.json());
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -68,13 +81,14 @@ export default function IntakePage() {
       fetchKeys();
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not create the key");
+      setError(data.error || "That key was not created. Give the channel a name and try again.");
     }
     setSaving(false);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Revoke this key? The landing page stops delivering leads immediately.")) return;
+  async function handleDelete(id: string, label: string) {
+    if (!confirm(`Revoke the key for «${label}»? That landing page stops delivering leads immediately.`))
+      return;
     await fetch(`/api/settings/intake-keys?id=${id}`, { method: "DELETE" });
     fetchKeys();
   }
@@ -84,127 +98,166 @@ export default function IntakePage() {
     setCopied(true);
   }
 
+  const freshUrl = fresh ? `${origin}${fresh.path}` : "";
+
   return (
-    <div className="max-w-2xl space-y-6 pb-24 md:pb-0">
-      <Link href="/settings" className="eyebrow inline-flex items-center gap-1.5 hover:text-ink">
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
+    <div className="page-doc space-y-6 pb-24 md:pb-0">
+      <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 03"
+        eyebrow="Desk setup · 04"
         title="Landing intake"
-        sub="A quiz on your own site posts straight into this desk. One key per landing page."
+        sub="A quiz on your own site posts straight onto the call sheet. One key per landing page."
         action={
-          <button onClick={() => setShowForm(true)} className={buttonClass("primary")}>
-            <Plus className="h-4 w-4" /> New key
-          </button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4" aria-hidden /> New key
+          </Button>
         }
       />
 
       {showForm && (
-        <Plate className="p-5">
-          <div className="eyebrow">New intake key</div>
-          <form onSubmit={handleCreate} className="mt-4 space-y-4">
-            <div>
-              <label className="eyebrow">Channel name *</label>
-              <input
+        <section className="lane pt-4">
+          <LaneHead title="New intake key" />
+          <form onSubmit={handleCreate}>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field
+                id="key-label"
+                label="Channel name"
                 required
-                value={form.label}
-                onChange={(e) => setForm({ ...form, label: e.target.value })}
-                placeholder="Korvex renovation quiz"
-                className="mt-1.5 w-full px-3 py-2 text-[13px]"
-              />
-            </div>
-            <div>
-              <label className="eyebrow">Counts as source</label>
-              <select
-                value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-                className="mt-1.5 w-full px-3 py-2 text-[13px]"
+                hint="What you will recognise in six months — the page it lives on."
               >
-                {SOURCES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                {(f) => (
+                  <input
+                    {...f}
+                    value={form.label}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                    placeholder="Kitchen quiz — korvex.ca"
+                    className={`${f.className} max-w-[320px]`}
+                  />
+                )}
+              </Field>
+              <Field id="key-source" label="Counts as source">
+                {(f) => (
+                  <select
+                    {...f}
+                    value={form.source}
+                    onChange={(e) => setForm({ ...form, source: e.target.value })}
+                    className={`${f.className} mono max-w-[220px]`}
+                  >
+                    {SOURCES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
             </div>
-            {error && (
-              <p
-                className="mono border-l-2 py-1 pl-3 text-[12px]"
-                style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-              >
-                {error}
-              </p>
-            )}
-            <div className="flex gap-2">
-              <button type="submit" disabled={saving} className={buttonClass("primary")}>
+
+            {error && <ErrorNote className="mt-4">{error}</ErrorNote>}
+
+            <div className="actions mt-4">
+              <Button type="submit" disabled={saving}>
                 {saving ? "Creating…" : "Create key"}
-              </button>
-              <button type="button" onClick={() => setShowForm(false)} className={buttonClass("ghost")}>
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
-        </Plate>
+        </section>
       )}
 
-      {/* The one moment the key is readable. Recessed lane, mono, copy in one tap. */}
+      {/* THE ONE MOMENT THE KEY IS READABLE.
+          The band stays on the screen until the owner says he has it: the copy button
+          is the loud one, the URL sits in a field he can select by hand on a phone,
+          and the line under it names what a lost key costs. */}
       {fresh && (
-        <div className="border-l-2 bg-sunk px-5 py-4" style={{ borderColor: "var(--amber)" }}>
+        <section
+          className="border-l-2 bg-sunk px-5 py-4"
+          style={{ borderColor: "var(--amber)" }}
+          role="status"
+        >
           <div className="eyebrow" style={{ color: "var(--amber-ink)" }}>
-            Copy this URL now — it is shown once
+            Copy this address now — it is shown once
           </div>
-          <p className="mono mt-2.5 break-all text-[12px] text-ink">
-            {origin}
-            {fresh.path}
-          </p>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              onClick={() => copyUrl(`${origin}${fresh.path}`)}
-              className={buttonClass("ghost")}
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {copied ? "Copied" : "Copy URL"}
-            </button>
-            <button onClick={() => setFresh(null)} className="eyebrow hover:text-ink">
-              Hide
-            </button>
+
+          <label className="sr-only" htmlFor="fresh-key-url">
+            Intake address for {fresh.label}
+          </label>
+          {/* A textarea rather than an input: the address is longer than a phone is
+              wide, and in a single line the half that matters scrolled out of sight on
+              the one screen where it is ever readable. Tapping it selects the lot. */}
+          <textarea
+            id="fresh-key-url"
+            readOnly
+            rows={2}
+            value={freshUrl}
+            onFocus={(e) => e.currentTarget.select()}
+            className="control mono mt-3 max-w-[560px] resize-none break-all bg-plate"
+          />
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Button onClick={() => copyUrl(freshUrl)}>
+              {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+              {copied ? "Copied" : "Copy address"}
+            </Button>
+            <Button variant="ghost" onClick={() => setFresh(null)}>
+              I have saved it
+            </Button>
           </div>
-          <p className="mt-3 text-[13px] text-ink-2">
-            Paste it into <span className="mono text-[12px]">send_lead.php</span> on the landing
-            page. Setup steps live in <span className="mono text-[12px]">docs/INTAKE.md</span>.
+
+          <p className="measure t-body mt-3 text-ink-2">
+            {copied
+              ? "It is on the clipboard. Paste it into send_lead.php on the landing page before you leave this screen."
+              : "Paste it into the form handler on your landing page. Whoever built the page needs this address and nothing else."}{" "}
+            <span className="text-ink">
+              Leaving this screen closes the only view of the key — a lost one means creating
+              another and editing the landing page again.
+            </span>
           </p>
-        </div>
+        </section>
       )}
 
-      <Plate>
-        {keys.length === 0 && (
-          <p className="px-5 py-9 text-center">
-            <span className="eyebrow">No landing page is wired up yet</span>
-          </p>
-        )}
-        {keys.map((key) => (
-          <div
-            key={key.id}
-            className="flex items-center justify-between gap-4 border-b border-line px-5 py-4 last:border-b-0"
+      <Lane>
+        {loading && <Skeleton lines={2} />}
+
+        {!loading && keys.length === 0 && (
+          <Empty
+            hint="Wire a form on your own site to this desk and its leads land on the call sheet with the rest."
+            action={
+              <Button onClick={() => setShowForm(true)}>
+                <Plus className="h-4 w-4" aria-hidden /> New key
+              </Button>
+            }
           >
-            <div>
-              <p className="text-[15px] font-bold leading-tight text-ink">{key.label}</p>
-              <p className="mono mt-1 text-[12px] text-ink-3">
-                {key.source} · {whenText(key.lastUsedAt)}
-              </p>
-            </div>
+            No landing page is wired up yet
+          </Empty>
+        )}
+
+        {/* No spine: a key is either there or revoked, and the line under the name
+            already reports whether it is delivering. */}
+        {keys.map((key) => (
+          <div key={key.id} className="row">
+            <div className="flex items-center gap-3 sm:gap-4">
+            <span className="min-w-0 flex-1">
+              <span className="t-row block truncate font-bold leading-tight text-ink">
+                {key.label}
+              </span>
+              <span className="mono t-meta mt-1.5 block text-ink-3">{whenText(key.lastUsedAt)}</span>
+            </span>
+            <Chip className="hidden sm:inline-flex">{key.source}</Chip>
             <button
-              onClick={() => handleDelete(key.id)}
-              className="text-ink-3 transition-colors hover:text-rose"
-              aria-label="Revoke key"
+              type="button"
+              onClick={() => handleDelete(key.id, key.label)}
+              className={`${buttonClass("quiet")} shrink-0`}
             >
-              <Trash2 className="h-4 w-4" />
+              Revoke
             </button>
+            </div>
           </div>
         ))}
-      </Plate>
+      </Lane>
     </div>
   );
 }

@@ -71,13 +71,13 @@ export async function DELETE(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Nothing was picked to remove" }, { status: 400 });
 
   // Scoped delete: an id from another workspace must silence nobody else's landing page.
   const removed = await prisma.intakeKey.deleteMany({
     where: { id, tenantId: guard.identity.tenantId },
   });
-  if (removed.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (removed.count === 0) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   return NextResponse.json({ ok: true });
 }

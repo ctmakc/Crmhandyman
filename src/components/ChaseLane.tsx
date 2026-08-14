@@ -3,8 +3,8 @@ import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { sessionTenant } from "@/lib/session";
-import { formatCents } from "@/lib/money";
-import { chaseStage, daysOverdue, isOverdue, owingCents } from "@/lib/invoice-state";
+import { LaneHead, Money, Num } from "@/components/ui/primitives";
+import { chaseStage, daysOverdue, isOverdue, lateTail, owingCents } from "@/lib/invoice-state";
 
 /**
  * The chase lane — money already earned and not yet in the bank. This is the one thing
@@ -72,7 +72,15 @@ export default async function ChaseLane({ invoices }: { invoices: { id: string }
     <>
       {byMail.length > 0 && (
         <section>
-          <LaneTitle dot="var(--rose)" title="Chase list" href="/invoices?status=overdue" />
+          <LaneHead
+            title="Chase list"
+            lamp="var(--rose)"
+            right={
+              <Link href="/invoices?status=overdue" className="eyebrow hover:text-ink">
+                All →
+              </Link>
+            }
+          />
           <div className="lane">
             {byMail.map((r) => (
               <Link
@@ -83,7 +91,7 @@ export default async function ChaseLane({ invoices }: { invoices: { id: string }
               >
                 <Head number={r.number} days={r.days} level={r.stage?.level} />
                 <Amount name={r.clientName} owingCents={r.owingCents} level={r.stage?.level} />
-                <p className="mt-0.5 truncate text-[12px] text-ink-2">{r.stage?.hint}</p>
+                <p className="t-meta mt-1 truncate text-ink-2">{r.stage?.hint}</p>
               </Link>
             ))}
           </div>
@@ -95,7 +103,7 @@ export default async function ChaseLane({ invoices }: { invoices: { id: string }
           {/* Rose again, and no second "All →": these are the same debts as the band
               above, sorted by how they get collected. Amber is the live-job lamp and
               the deck already spends its three. */}
-          <LaneTitle dot="var(--rose)" title="Call · no email on file" />
+          <LaneHead title="Chase by hand · no email on file" lamp="var(--rose)" />
           <div className="lane">
             {byPhone.map((r) => (
               /* The row opens the invoice through a stretched link so the phone below
@@ -112,16 +120,16 @@ export default async function ChaseLane({ invoices }: { invoices: { id: string }
                 />
                 <Head number={r.number} days={r.days} level={r.stage?.level} />
                 <Amount name={r.clientName} owingCents={r.owingCents} level={r.stage?.level} />
-                <p className="mt-0.5 truncate text-[12px] text-ink-2">{r.job}</p>
+                <p className="t-meta mt-1 truncate text-ink-2">{r.job}</p>
                 {r.phone ? (
                   <a
                     href={`tel:${r.phone}`}
-                    className="mono relative z-[1] mt-1.5 inline-block text-[14px] font-medium text-ink underline underline-offset-4 hover:text-sky-ink"
+                    className="mono t-row relative z-[1] mt-1.5 inline-block font-medium text-ink underline underline-offset-4 hover:text-sky-ink"
                   >
                     {r.phone}
                   </a>
                 ) : (
-                  <p className="mono mt-1.5 text-[12px] text-ink-3">NO PHONE ON FILE</p>
+                  <p className="eyebrow mt-1.5">No phone on file</p>
                 )}
               </div>
             ))}
@@ -146,28 +154,12 @@ function moneyToneOf(level: number | undefined) {
   return level ? "var(--rose-ink)" : "var(--ink)";
 }
 
-function LaneTitle({ dot, title, href }: { dot: string; title: string; href?: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 pb-2.5">
-      <h2 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ink">
-        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: dot }} />
-        {title}
-      </h2>
-      {href && (
-        <Link href={href} className="eyebrow hover:text-ink">
-          All →
-        </Link>
-      )}
-    </div>
-  );
-}
-
 function Head({ number, days, level }: { number: string; days: number; level?: number }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="mono text-[11px] font-bold tracking-[0.08em] text-ink-2">{number}</span>
-      <span className="mono text-[11px] tracking-[0.08em]" style={{ color: toneOf(level) }}>
-        {days} {days === 1 ? "DAY" : "DAYS"} LATE
+      <span className="eyebrow font-bold text-ink-2">{number}</span>
+      <span className="eyebrow" style={{ color: toneOf(level) }}>
+        <Num>{days}</Num> {lateTail(days)}
       </span>
     </div>
   );
@@ -184,10 +176,8 @@ function Amount({
 }) {
   return (
     <div className="mt-1 flex items-baseline justify-between gap-3">
-      <p className="truncate text-[14px] font-bold leading-tight text-ink">{name}</p>
-      <span className="mono shrink-0 text-[15px] font-medium" style={{ color: moneyToneOf(level) }}>
-        {formatCents(owingCents)}
-      </span>
+      <p className="t-row truncate font-bold text-ink">{name}</p>
+      <Money cents={owingCents} tone={moneyToneOf(level)} className="t-row shrink-0" />
     </div>
   );
 }

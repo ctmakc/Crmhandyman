@@ -36,7 +36,7 @@ export { smtpConfigured };
 
 export function reminderCopy(t: ReminderTarget) {
   const owingCents = t.totalCents - t.amountPaidCents;
-  const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-CA") : "on receipt";
+  const due = t.dueDate ? new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "short", day: "numeric" }).format(new Date(t.dueDate)) : "on receipt";
   const money = formatCents(owingCents);
 
   if (t.daysOverdue >= CHASE_DAYS.final) {
@@ -111,7 +111,7 @@ export async function sendReminder(t: ReminderTarget): Promise<ReminderResult> {
     return { sent: false, channel: "phone", reason: "no email on file", phone: t.phone, ...copy };
   }
   if (!smtpConfigured()) {
-    return { sent: false, channel: "email", reason: "SMTP not configured", ...copy };
+    return { sent: false, channel: "email", reason: "email is not set up on this desk", ...copy };
   }
 
   try {

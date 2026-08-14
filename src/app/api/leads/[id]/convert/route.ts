@@ -11,7 +11,7 @@ import { docRef } from "@/lib/document";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // straight through, the empty string hit the foreign key and every single press of
   // the button answered 500 — the one step of the whole desk that has to work.
   const assignee = await scopedUserId(tenantId, body.assignedToId);
-  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+  if (!assignee.ok) return NextResponse.json({ error: "That crew member is not on this desk" }, { status: 400 });
   const lead = await prisma.lead.findFirst({
     where: { id: params.id, tenantId },
     include: { project: { select: { id: true } } },

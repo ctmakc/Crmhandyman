@@ -40,7 +40,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     where: { id: params.id, tenantId },
     select: { id: true },
   });
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!project) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const photos = await prisma.jobPhoto.findMany({
     where: { tenantId, projectId: project.id },
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: params.id, tenantId },
     select: { id: true },
   });
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!project) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   const limit = maxUploadBytes();
   // Refuse on the declared size first. Past this line the multipart parser holds the
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     form = await req.formData();
   } catch {
-    return NextResponse.json({ error: "Expected a multipart upload" }, { status: 400 });
+    return NextResponse.json({ error: "No photo came with that request" }, { status: 400 });
   }
 
   const file = form.get("file");

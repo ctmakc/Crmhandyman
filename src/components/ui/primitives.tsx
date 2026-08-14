@@ -121,10 +121,21 @@ export function LaneHead({
   title,
   right,
   lamp,
+  count,
+  unit,
 }: {
   title: string;
   right?: React.ReactNode;
   lamp?: string;
+  /**
+   * How many rows the lane holds. It has ONE place — the right end of the head,
+   * in mono, no leading zero. The work board wrote it into the `h2` in caps and
+   * a proportional face (`ON THE GO · 2`), the whiteboard padded it to `05`, and
+   * everybody else printed a word beside it, so one fact had three shapes.
+   */
+  count?: number;
+  /** The singular noun. `2 invoices`, `1 job`. */
+  unit?: string;
 }) {
   return (
     /**
@@ -144,7 +155,17 @@ export function LaneHead({
         )}
         {title}
       </h2>
-      {right && <div className="flex min-w-0 flex-wrap items-center gap-2">{right}</div>}
+      {(count !== undefined || right) && (
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          {count !== undefined && (
+            <span className="eyebrow shrink-0">
+              <Num>{count}</Num>
+              {unit ? ` ${count === 1 ? unit : unit + "s"}` : ""}
+            </span>
+          )}
+          {right}
+        </div>
+      )}
     </div>
   );
 }
@@ -469,7 +490,12 @@ export function buttonClass(variant: ButtonVariant = "primary") {
   if (variant === "quiet")
     return cn(
       base,
-      "mono t-micro px-2 py-1 leading-[16px] tracking-[0.08em]",
+      /* `!leading-[16px]`: `.t-micro` is written in `globals.css` AFTER the
+         utilities layer, so at equal specificity its `line-height: 1.1` won and
+         the rank rendered 21–22px instead of the 26 this comment promises.
+         Three separate groups measured the same drift. The bang is the one
+         place the rank asserts its own line box. */
+      "mono t-micro px-2 py-1 !leading-[16px] tracking-[0.08em]",
       "border-line bg-plate text-ink-2 hover:border-ink-3 hover:text-ink active:translate-y-px"
     );
   return cn(

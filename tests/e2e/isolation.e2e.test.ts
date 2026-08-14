@@ -427,8 +427,17 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       expect(res.status).toBe(200);
       expect(res.body.viewerRole).toBe("WORKER");
       expect(res.body.title).toContain(a.workspace.slug);
-      for (const field of ["estimates", "invoices", "payments", "expenses"]) {
+      for (const field of ["estimates", "invoices", "expenses"]) {
         expect(res.body[field], field).toEqual([]);
+      }
+      /**
+       * Payments on THIS job are the exception, and they earned it: the crew collects at
+       * the door, and a card that showed him nothing back read as a lost payment and had
+       * him asking for the same money twice. Four facts per line — when, how much, by
+       * what, his note — and no thread back into the book.
+       */
+      for (const p of res.body.payments as Array<Record<string, unknown>>) {
+        expect(Object.keys(p).sort()).toEqual(["amount", "date", "id", "method", "notes"]);
       }
       // Name the money fields instead of scanning the serialised body for the digits of
       // a price: cuids are random, and one of them containing "5000" failed this run
@@ -706,6 +715,78 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       expect(typeof card.body.dueAtDoor).toBe("number");
       // Dollars, once — a hundredfold error here is the most expensive bug in the shop.
       expect(card.body.dueAtDoor).toBeLessThan(1_000_000);
+    });
+
+    /**
+     * Money taken at the door is filed against the JOB and carries no invoice, so a
+     * balance computed from invoices alone never moved: the tech collected $40, opened
+     * the same card and read the same $100 owing, with «nothing recorded on this job»
+     * underneath it. He asks for the money a second time and the client is right to be
+     * angry. The balance now counts what he already took, and he is shown his own line.
+     */
+    it("counts the money the crew already took at the door", async () => {
+      const job = await a.admin.post("/api/projects", {
+        clientName: "Door Payment Probe",
+        address: "9 Sussex Dr, Ottawa",
+        title: "Furnace service",
+      });
+      expect(job.status).toBe(201);
+
+      const invoice = await a.admin.post("/api/invoices", {
+        projectId: job.body.id,
+        taxRate: 0,
+        lineItems: [{ description: "Service call", qty: 1, unit: "ea", unitPrice: 100 }],
+      });
+      expect(invoice.status).toBe(201);
+      expect(
+        (await a.admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" })).status,
+      ).toBe(200);
+
+      const before = await a.worker.get(`/api/projects/${job.body.id}`);
+      expect(before.body.dueAtDoor).toBe(100);
+      expect(before.body.payments).toEqual([]);
+
+      const paid = await a.worker.post("/api/finance/payments", {
+        projectId: job.body.id,
+        amount: 40,
+        method: "E_TRANSFER",
+      });
+      expect(paid.status).toBe(201);
+
+      const after = await a.worker.get(`/api/projects/${job.body.id}`);
+      expect(after.body.dueAtDoor).toBe(60);
+      expect(after.body.payments).toHaveLength(1);
+      expect(after.body.payments[0].amount).toBe(40);
+      // His own line, and not a step further into the book.
+      expect(after.body.estimates).toEqual([]);
+      expect(after.body.invoices).toEqual([]);
+      expect(after.body.expenses).toEqual([]);
+    });
+
+    /** Overpaying at the door owes nothing back through this figure. */
+    it("never lets the door balance run below zero", async () => {
+      const job = await a.admin.post("/api/projects", {
+        clientName: "Overpay Probe",
+        address: "11 Rideau St, Ottawa",
+        title: "Duct cleaning",
+      });
+      const invoice = await a.admin.post("/api/invoices", {
+        projectId: job.body.id,
+        taxRate: 0,
+        lineItems: [{ description: "Clean", qty: 1, unit: "ea", unitPrice: 50 }],
+      });
+      await a.admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" });
+
+      expect(
+        (await a.worker.post("/api/finance/payments", {
+          projectId: job.body.id,
+          amount: 80,
+          method: "CASH",
+        })).status,
+      ).toBe(201);
+
+      const card = await a.worker.get(`/api/projects/${job.body.id}`);
+      expect(card.body.dueAtDoor).toBe(0);
     });
   });
 

@@ -11,7 +11,7 @@ export type Guard =
 export async function requireUser(): Promise<Guard> {
   const session = await getServerSession(authOptions);
   if (!session) {
-    return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+    return { ok: false, response: NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 }) };
   }
   return { ok: true, identity: sessionTenant(session) };
 }
@@ -28,7 +28,7 @@ export async function requireAdmin(): Promise<Guard> {
   if (guard.identity.role !== "ADMIN") {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Admins only" }, { status: 403 }),
+      response: NextResponse.json({ error: "The owner's login opens this" }, { status: 403 }),
     };
   }
   return guard;

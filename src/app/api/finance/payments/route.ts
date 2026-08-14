@@ -71,7 +71,7 @@ export async function DELETE(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Nothing was picked to remove" }, { status: 400 });
 
   // Scoped delete: an unscoped one reached into another contractor's books and could
   // silently turn their settled invoice back into money owed.
@@ -80,7 +80,7 @@ export async function DELETE(req: NextRequest) {
   const doomed = await prisma.payment.findFirst({ where: { id, tenantId } });
 
   const { count } = await prisma.payment.deleteMany({ where: { id, tenantId } });
-  if (count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (count === 0) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
   if (doomed) {
     await record({

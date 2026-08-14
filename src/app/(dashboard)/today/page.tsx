@@ -6,7 +6,11 @@ import Link from "next/link";
 import { Phone, Navigation, Check, Play, Clock } from "lucide-react";
 import {
   Empty,
+  LaneHead,
+  Num,
+  PageHead,
   Skeleton,
+  Stamp,
   spineFor,
   textToneFor,
   buttonClass,
@@ -48,24 +52,16 @@ import {
 
 /**
  * A job booked for a date but no time (contract visits, most bookings) lands on
- * midnight — printing "00:00" reads as a real 12am appointment. Show the day instead,
- * and flag anything carried over from a day that is already finished.
+ * midnight — printing "00:00" reads as a real 12am appointment. Show the day instead.
  *
- * CARRIED used to be decided by the START date alone, so a four-day renovation was
- * stamped «carried over» every morning from its second day — on a job that is exactly
- * where it should be. A stamp that fires on work running to plan is a stamp the crew
- * learns to scroll past, and then the genuinely missed stop goes unnoticed too. The
- * shared `isCarried` asks whether the RUN is over, which is the real question.
+ * Work carried over from a finished day is no longer stamped inside the row: it is
+ * lifted out into its own band under today's stops (see the two lanes below), so the
+ * stamp does not have to compete with the time the tech is actually due somewhere.
  */
 function slotLabel(job: FieldJob) {
   const scheduled = job.scheduledDate;
   if (!scheduled) return "ANYTIME";
   const d = new Date(scheduled);
-
-  // The shared arithmetic reads a job's id, date, run length and status; the field row
-  // carries all four under the same names.
-  if (isCarried(job))
-    return `CARRIED · ${d.toLocaleDateString("en-CA", { day: "2-digit", month: "short" }).toUpperCase()}`;
 
   const runs = spanDays(job);
   const midnight = d.getHours() === 0 && d.getMinutes() === 0;
@@ -229,152 +225,231 @@ export default function TodayPage() {
   const outbox = readOutbox();
   const rejectionFor = (jobId: string) => outbox.rejections.find((r) => r.jobId === jobId);
 
-  return (
-    <div className="mx-auto max-w-2xl space-y-5 pb-24 md:pb-0">
-      <div className="border-b border-line pb-4">
-        <div className="eyebrow">Field · {today}</div>
-        <h1 className="mt-2 text-[30px] font-black leading-none tracking-tight text-ink">
-          Today
-        </h1>
-        <p className="mt-2 text-[14px] text-ink-2">
-          {open.length === 0
-            ? "Nothing left on the board."
-            : `${open.length} stop${open.length === 1 ? "" : "s"} to go.`}
-        </p>
+  /**
+   * TWO BANDS, AND TODAY IS THE TOP ONE.
+   *
+   * The board arrives sorted by the date it was booked for, so a job left open on the
+   * 27th of last month stood above the 08:00 the tech is due at this morning — every
+   * morning, for as long as it stayed open. The real first stop was reading second,
+   * third or sixth. Nothing is hidden: work that was never closed out keeps its own
+   * band directly underneath, where it reads as a debt from an earlier day instead of
+   * as the top of today.
+   */
+  const carried = jobs.filter((j) => isCarried(j));
+  const todayJobs = jobs.filter((j) => !isCarried(j));
+
+  function JobCard({ job, carriedRow }: { job: FieldJob; carriedRow?: boolean }) {
+    const pending = pendingFor(job.id);
+    const rejection = rejectionFor(job.id);
+    return (
+      <div
+        /* A column, so the actions can be pinned to the foot of the plate: two cards
+           side by side on the desk hold different amounts of detail, and their buttons
+           landed at two different heights in the same row. */
+        className="ticket flex h-full flex-col px-4 py-4"
+        style={{ ["--spine" as string]: spineFor(job.status) } as React.CSSProperties}
+      >
+        <div className="flex items-baseline justify-between gap-3">
+          {carriedRow ? (
+            <Stamp date={job.scheduledDate} className="eyebrow" />
+          ) : (
+            <span className="eyebrow">{slotLabel(job)}</span>
+          )}
+          <span className="eyebrow" style={{ color: textToneFor(job.status) }}>
+            {job.status.replace("_", " ")}
+          </span>
+        </div>
+
+        {/*
+          WHERE beats WHO. Both lines used to be 15px ink-2, so the address — the one
+          thing the tech does not already know — was set exactly like the customer's
+          name. The address now carries the row; the name is its detail.
+        */}
+        <Link href={`/projects/${job.id}`} className="mt-2 block">
+          <p className="t-record font-bold text-ink">{job.title}</p>
+        </Link>
+        <p className="t-row mt-2 font-medium text-ink">{job.address}</p>
+        <p className="t-body mt-1 text-ink-2">{job.clientName}</p>
+
+        {/* The tap this phone is still holding, and for how long. */}
+        {pending && (
+          <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
+            <Clock className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--amber-ink)" }} />
+            <span className="eyebrow" style={{ color: "var(--amber-ink)" }}>
+              {pending.to === "COMPLETED" ? "Finish" : "Start"} queued · waiting{" "}
+              {waitedLabel(Date.now() - pending.queuedAt)}
+            </span>
+          </div>
+        )}
+
+        {/* The server said no. Never a silent revert. */}
+        {rejection && (
+          <div className="mt-3 border-t border-line pt-2.5">
+            <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
+              {rejectionLine(rejection)}
+            </span>
+          </div>
+        )}
+
+        {job.equipment && job.equipment.length > 0 && (
+          <div className="mt-3 border-t border-line pt-2.5">
+            <div className="eyebrow">On site</div>
+            {job.equipment.map((eq, i) => (
+              <p key={i} className="t-body mt-1 text-ink-2">
+                <span className="eyebrow">{eq.kind.replace(/_/g, " ")}</span>{" "}
+                {[eq.brand, eq.model].filter(Boolean).join(" ")}
+                {eq.serial ? ` · S/N ${eq.serial}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {job.description && (
+          <p className="t-body mt-3 border-t border-line pt-2.5 text-ink-2">
+            {job.description}
+          </p>
+        )}
+
+        {/*
+          One tap each. The height comes from the button primitive — 44px in the field,
+          38px on the desk — where this screen used to force 48px on both and hand the
+          product a third button height nothing else had.
+        */}
+        <div className="mt-4 grid grid-cols-3 gap-2 md:mt-auto md:flex md:flex-wrap md:pt-4">
+          <a
+            href={job.phone ? `tel:${job.phone}` : undefined}
+            aria-disabled={!job.phone}
+            className={`${buttonClass("ghost")} ${job.phone ? "" : inertLook}`}
+          >
+            <Phone className="h-4 w-4" aria-hidden /> Call
+          </a>
+          <a
+            href={`https://maps.google.com/?q=${encodeURIComponent(job.address)}`}
+            target="_blank"
+            rel="noopener"
+            className={`${buttonClass("ghost")}`}
+          >
+            <Navigation className="h-4 w-4" aria-hidden /> Drive
+          </a>
+          {job.status === "COMPLETED" ? (
+            <span className={`${buttonClass("ghost")} ${inertLook}`}>
+              <Check className="h-4 w-4" aria-hidden /> Done
+            </span>
+          ) : (
+            <button
+              disabled={busy === job.id}
+              onClick={() => advance(job)}
+              className={`${buttonClass("primary")}`}
+            >
+              {job.status === "SCHEDULED" ? (
+                <>
+                  <Play className="h-4 w-4" aria-hidden /> Start
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" aria-hidden /> Finish
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
+    );
+  }
+
+  return (
+    /* The page runs on the document width every other record screen runs on. It was
+       the one centred column in the product, and its title started 238px to the right
+       of every neighbour's. */
+    <div className="page-doc pb-24 md:pb-0">
+      <PageHead eyebrow={`Field · ${today}`} title="Today" />
+      {/* The one number on the screen, in the face every other number in the product
+          is set in. It rode in the page sub-line as body text.
+
+          A board with nothing on it says so once, in the empty state below — the
+          sub-line used to say it too, in different words, two lines above. */}
+      {jobs.length > 0 && (
+        <p className="measure t-lede mt-3 text-ink-2">
+          {open.length === 0 ? (
+            "Nothing left on the board."
+          ) : (
+            <>
+              <Num>{open.length}</Num> stop{open.length === 1 ? "" : "s"} to go.
+            </>
+          )}
+        </p>
+      )}
 
       {/* How old the board is. A cached list that does not say so is worse than none. */}
       {source && !source.live && (
-        <div className="flex items-center gap-2 border-b border-line pb-2.5">
+        <div className="mt-6 flex items-center gap-2 border-b border-line pb-2.5">
           <span
             className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
             style={{ background: "var(--amber)" }}
           />
+          {/* «No connection since» ended mid-sentence. What the tech needs is the age
+              of what he is reading and the fact that it has not moved since. */}
           <span className="eyebrow" style={{ color: "var(--amber-ink)" }}>
-            Board as of {clockLabel(source.at)} · no connection since
+            Board saved at {clockLabel(source.at)} · no signal since
           </span>
         </div>
       )}
 
-      {loading ? (
-        <Skeleton lines={3} />
-      ) : jobs.length === 0 ? (
-        <Empty>
-          {source === null
-            ? "No signal and nothing saved on this phone yet"
-            : "No work booked for today"}
-        </Empty>
-      ) : (
-        jobs.map((job) => {
-          const pending = pendingFor(job.id);
-          const rejection = rejectionFor(job.id);
-          return (
-            <div
-              key={job.id}
-              className="ticket px-4 py-4"
-              style={{ ["--spine" as string]: spineFor(job.status) } as React.CSSProperties}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="mono text-[12px] tracking-[0.06em] text-ink-3">
-                  {slotLabel(job)}
-                </span>
-                <span className="eyebrow" style={{ color: textToneFor(job.status) }}>
-                  {job.status.replace("_", " ")}
-                </span>
+      <div className="mt-6 space-y-5">
+        {loading ? (
+          <Skeleton lines={3} />
+        ) : jobs.length === 0 ? (
+          <Empty
+            hint={
+              source === null
+                ? "Open this screen once while the phone has a signal and the day's stops are kept on it for the basement."
+                : "The dispatcher puts stops on the board from the week view. Anything left open on an earlier day shows up here too."
+            }
+          >
+            {source === null
+              ? "No signal and nothing saved on this phone yet"
+              : "No work booked for today"}
+          </Empty>
+        ) : (
+          <>
+            {/* Two columns on the desk. One column of 980px-wide tickets is a phone
+                screen stretched across a dispatcher's monitor, with the status word
+                marooned a foot away from the date it belongs to. */}
+            {todayJobs.length > 0 && (
+              <div className="grid gap-5 md:grid-cols-2">
+                {todayJobs.map((job) => (
+                  <JobCard key={job.id} job={job} />
+                ))}
               </div>
+            )}
 
-              <Link href={`/projects/${job.id}`}>
-                <p className="mt-2 text-[19px] font-bold leading-tight text-ink">{job.title}</p>
-              </Link>
-              <p className="mt-1 text-[15px] text-ink-2">{job.clientName}</p>
-              <p className="text-[15px] text-ink-2">{job.address}</p>
+            {todayJobs.length === 0 && carried.length > 0 && (
+              <Empty hint="Everything below was booked for an earlier day and never closed out.">
+                Nothing new booked for today
+              </Empty>
+            )}
 
-              {/* The tap this phone is still holding, and for how long. */}
-              {pending && (
-                <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
-                  <Clock className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--amber-ink)" }} />
-                  <span className="eyebrow" style={{ color: "var(--amber-ink)" }}>
-                    {pending.to === "COMPLETED" ? "Finish" : "Start"} queued · waiting{" "}
-                    {waitedLabel(Date.now() - pending.queuedAt)}
-                  </span>
-                </div>
-              )}
-
-              {/* The server said no. Never a silent revert. */}
-              {rejection && (
-                <div className="mt-3 border-t border-line pt-2.5">
-                  <span className="eyebrow" style={{ color: "var(--rose-ink)" }}>
-                    {rejectionLine(rejection)}
-                  </span>
-                </div>
-              )}
-
-              {job.equipment && job.equipment.length > 0 && (
-                <div className="mt-3 border-t border-line pt-2.5">
-                  <div className="eyebrow">On site</div>
-                  {job.equipment.map((eq, i) => (
-                    <p key={i} className="mt-1 text-[13px] text-ink-2">
-                      <span className="mono text-[12px] text-ink-3">
-                        {eq.kind.replace(/_/g, " ")}
-                      </span>{" "}
-                      {[eq.brand, eq.model].filter(Boolean).join(" ")}
-                      {eq.serial ? ` · S/N ${eq.serial}` : ""}
-                    </p>
+            {carried.length > 0 && (
+              <div className="pt-5">
+                <LaneHead
+                  title="Carried over"
+                  lamp="var(--amber)"
+                  right={
+                    <span className="eyebrow">
+                      <Num>{carried.length}</Num> STILL OPEN
+                    </span>
+                  }
+                />
+                <div className="grid gap-5 border-t border-line pt-5 md:grid-cols-2">
+                  {carried.map((job) => (
+                    <JobCard key={job.id} job={job} carriedRow />
                   ))}
                 </div>
-              )}
-
-              {job.description && (
-                <p className="mt-3 border-t border-line pt-2.5 text-[14px] text-ink-2">
-                  {job.description}
-                </p>
-              )}
-
-              {/* One tap each. Targets are 48px tall on purpose. */}
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <a
-                  href={job.phone ? `tel:${job.phone}` : undefined}
-                  aria-disabled={!job.phone}
-                  className={`${buttonClass("ghost")} h-12 ${job.phone ? "" : inertLook}`}
-                >
-                  <Phone className="h-4 w-4" /> Call
-                </a>
-                <a
-                  href={`https://maps.google.com/?q=${encodeURIComponent(job.address)}`}
-                  target="_blank"
-                  rel="noopener"
-                  className={`${buttonClass("ghost")} h-12`}
-                >
-                  <Navigation className="h-4 w-4" /> Drive
-                </a>
-                {job.status === "COMPLETED" ? (
-                  <span
-                    className={`${buttonClass("ghost")} ${inertLook} h-12`}
-                  >
-                    <Check className="h-4 w-4" /> Done
-                  </span>
-                ) : (
-                  <button
-                    disabled={busy === job.id}
-                    onClick={() => advance(job)}
-                    className={`${buttonClass("primary")} h-12`}
-                  >
-                    {job.status === "SCHEDULED" ? (
-                      <>
-                        <Play className="h-4 w-4" /> Start
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4" /> Finish
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
-            </div>
-          );
-        })
-      )}
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

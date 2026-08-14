@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(req: NextRequest) {
   const secret = process.env.NEXTAUTH_SECRET ?? "";
   if (!secret || req.headers.get("x-internal-resolve") !== secret) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
   }
 
   const slug = req.nextUrl.searchParams.get("slug");

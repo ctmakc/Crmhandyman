@@ -60,5 +60,5 @@ export function choice<T extends readonly string[]>(
 
 /** The 400 body — it names the field and lists what the shop actually offers. */
 export function badChoice(field: string, allowed: readonly string[]) {
-  return { error: `Unknown ${field}`, field, allowed: [...allowed] };
+  return { error: `That ${field} is not one this desk offers`, field, allowed: [...allowed] };
 }

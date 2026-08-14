@@ -26,6 +26,9 @@ const PUBLIC_PATHS = [
   "/manifest.json",
   "/offline.html",
   "/icons",
+  // The offline card sets itself in Chivo, so its font has to come down with the
+  // rest of the install — behind the sign-in redirect it would fetch HTML instead.
+  "/fonts",
 ];
 
 // Simple in-memory cache for tenant resolution (resets on cold start)
@@ -100,7 +103,7 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token) {
     if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
     }
     url.pathname = "/login";
     url.searchParams.set("callbackUrl", pathname);

@@ -59,8 +59,10 @@ describe("reminderCopy", () => {
     expect(copy.body.join(" ")).not.toContain("$1,039.60");
   });
 
-  it("names the due date the client saw on the invoice", () => {
-    expect(reminderCopy(target()).body.join(" ")).toContain("2026-08-01");
+  it("names the due date the way the invoice in the same envelope prints it", () => {
+    // `2026-08-01` reads one way to a Canadian and another to an American, and the
+    // sheet beside it says `Aug 1, 2026`. One form of a date across the product.
+    expect(reminderCopy(target()).body.join(" ")).toContain("Aug 1, 2026");
   });
 
   it("says 'on receipt' when the invoice carried no due date", () => {
@@ -104,7 +106,8 @@ describe("sendReminder without an address", () => {
     const result = await sendReminder(target());
     expect(result.sent).toBe(false);
     expect(result.channel).toBe("email");
-    expect(result.reason).toBe("SMTP not configured");
+    // The reason reaches the owner's screen verbatim, so it is written for him.
+    expect(result.reason).toBe("email is not set up on this desk");
   });
 });
 

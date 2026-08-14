@@ -16,7 +16,7 @@ export interface SearchHit {
 /** One query across the three things a dispatcher jumps to. */
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const q = (new URL(req.url).searchParams.get("q") || "").trim();

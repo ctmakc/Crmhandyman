@@ -8,7 +8,7 @@ import { LEAD_SOURCES, LEAD_STATUSES, badChoice, choice } from "@/lib/enums";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const { searchParams } = new URL(req.url);
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
   const body = await req.json();
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   // Work handed to a stranger's employee also handed their name back through
   // `assignedTo` on the list below.
   const assignee = await scopedUserId(tenantId, body.assignedToId);
-  if (!assignee.ok) return NextResponse.json({ error: "Unknown assignee" }, { status: 400 });
+  if (!assignee.ok) return NextResponse.json({ error: "That crew member is not on this desk" }, { status: 400 });
 
   const source = choice(LEAD_SOURCES, body.source);
   if (source === null) return NextResponse.json(badChoice("lead source", LEAD_SOURCES), { status: 400 });

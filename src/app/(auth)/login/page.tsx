@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { buttonClass } from "@/components/ui/primitives";
+import { Button, Field } from "@/components/ui/primitives";
+import { PublicShell } from "@/components/layout/PublicShell";
 import { slugFromHost } from "@/lib/tenant-slug";
 
 function LoginForm() {
@@ -45,6 +46,8 @@ function LoginForm() {
     return raw;
   }
 
+  const sentHere = landingFrom(params.get("callbackUrl")) !== "/";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -61,126 +64,84 @@ function LoginForm() {
   }
 
   return (
-    <div className="grid min-h-screen bg-deck lg:grid-cols-[5fr_7fr]">
-      {/* Navy plate: the product's face, not a decorative hero. */}
-      <aside className="flex flex-col justify-between bg-navy-900 px-8 py-10 lg:px-12 lg:py-14">
-        <div>
-          <span className="text-[22px] font-black tracking-tight text-plate">
-            HANDYMAN<span className="text-amber">PRO</span>
-          </span>
-          <p className="mono mt-2 text-[10px] uppercase tracking-[0.14em] text-ink-rail">
-            Work-order desk
-          </p>
-        </div>
+    <PublicShell
+      headline={
+        <>
+          Leads in.
+          <br />
+          Jobs booked.
+          <br />
+          <span className="text-amber">Invoices paid.</span>
+        </>
+      }
+      points={["Leads from every channel", "Estimates → invoices", "Crew board", "Profit on every job"]}
+      footnote="HVAC · Moving · Renovation"
+    >
+      <div className="eyebrow">{slug ? `Workspace · ${slug}` : "Sign in"}</div>
+      <h1 className="t-page mt-2 font-black leading-none tracking-tight text-ink">
+        Open the desk
+      </h1>
 
-        <div className="hidden lg:block">
-          <p className="max-w-[22ch] text-[30px] font-black leading-[1.08] tracking-tight text-plate">
-            Leads in.
-            <br />
-            Jobs booked.
-            <br />
-            <span className="text-amber">Invoices paid.</span>
-          </p>
-          <p className="mt-5 max-w-[38ch] text-[14px] leading-relaxed text-ink-rail">
-            Built for HVAC, moving and trade crews who run on tickets, not on
-            enterprise pipelines.
-          </p>
-        </div>
+      {/* The tech who tapped an alert at 06:40 is told his place is being held. */}
+      {sentHere && (
+        <p className="t-body mt-4 border-l-2 py-1 pl-3 text-ink-2" style={{ borderColor: "var(--amber)" }}>
+          Sign in and this takes you straight back to the page the alert pointed at.
+        </p>
+      )}
 
-        <ul className="mono space-y-1.5 text-[10px] uppercase tracking-[0.12em] text-ink-rail">
-          {["Multi-channel intake", "Estimates → invoices", "Crew board", "Job P&L"].map((f) => (
-            <li key={f} className="flex items-center gap-2">
-              <span className="inline-block h-[3px] w-3" style={{ background: "var(--amber)" }} />
-              {f}
-            </li>
-          ))}
-        </ul>
-      </aside>
+      {registered && (
+        <p
+          className="t-body mt-4 border-l-2 py-1 pl-3"
+          style={{ borderColor: "var(--emerald)", color: "var(--emerald-ink)" }}
+        >
+          Account created — sign in to get started.
+        </p>
+      )}
 
-      <main className="flex items-center px-6 py-12 lg:px-16">
-        <div className="w-full max-w-[380px]">
-          <div className="eyebrow">{slug ? `Tenant · ${slug}` : "Sign in"}</div>
-          <h1 className="mt-2 text-[32px] font-black leading-none tracking-tight text-ink">
-            Open the desk
-          </h1>
-
-          {registered && (
-            <p
-              className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]"
-              style={{ borderColor: "var(--emerald)", color: "var(--emerald-ink)" }}
-            >
-              Account created — sign in to get started.
-            </p>
+      <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+        <Field id="login-email" label="Email">
+          {(f) => (
+            <input
+              {...f}
+              type="email"
+              required
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@yourcompany.ca"
+            />
           )}
+        </Field>
 
-          <form onSubmit={handleSubmit} className="mt-7 space-y-4">
-            <div>
-              {/* Tied to the field by id, so a screen reader announces the label and the
-                  refusal below together, and the phone offers the saved password. */}
-              <label className="eyebrow" htmlFor="login-email">
-                Email
-              </label>
-              <input
-                id="login-email"
-                type="email"
-                required
-                autoComplete="username"
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? "login-error" : undefined}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
-                placeholder="you@yourcompany.ca"
-              />
-            </div>
+        {/* The refusal belongs to the password box: the field owns the message, so a
+            screen reader speaks it with the field and the eye finds it under the box
+            it has to fix. */}
+        <Field id="login-password" label="Password" error={error || undefined}>
+          {(f) => (
+            <input
+              {...f}
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          )}
+        </Field>
 
-            <div>
-              <label className="eyebrow" htmlFor="login-password">
-                Password
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                required
-                autoComplete="current-password"
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? "login-error" : undefined}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 w-full px-3 py-2.5 text-[14px]"
-                placeholder="••••••••"
-              />
-            </div>
+        <Button type="submit" disabled={loading} className="w-full">
+          {loading ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
 
-            {error && (
-              <p
-                id="login-error"
-                role="alert"
-                className="mono border-l-2 py-1 pl-3 text-[12px]"
-                style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-              >
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={`${buttonClass("primary")} w-full py-2.5`}
-            >
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
-
-          <p className="mt-6 text-[13px] text-ink-2">
-            No account yet?{" "}
-            <a href="/register" className="font-bold text-ink underline underline-offset-4">
-              Start a free trial
-            </a>
-          </p>
-        </div>
-      </main>
-    </div>
+      <p className="t-body mt-6 text-ink-2">
+        No account yet?{" "}
+        <a href="/register" className="font-bold text-ink underline underline-offset-4">
+          Start a free trial
+        </a>
+      </p>
+    </PublicShell>
   );
 }
 
