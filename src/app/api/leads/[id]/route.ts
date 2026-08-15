@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAuditEvent } from "@/lib/audit";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -46,6 +47,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     },
   });
 
+  const changed = ["name", "phone", "email", "address", "city", "jobType", "notes", "status", "assignedToId"]
+    .filter((key) => body[key] !== undefined && body[key] !== (existing as Record<string, unknown>)[key]);
+
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: "lead.updated",
+    entityType: "lead",
+    entityId: lead.id,
+    summary: `Lead updated: ${lead.name}`,
+    metadata: { changed, fromStatus: existing.status, toStatus: lead.status },
+  });
+
   return NextResponse.json(lead);
 }
 
@@ -59,5 +73,14 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.lead.delete({ where: { id: params.id } });
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: "lead.deleted",
+    entityType: "lead",
+    entityId: existing.id,
+    summary: `Lead deleted: ${existing.name}`,
+    metadata: { source: existing.source, status: existing.status },
+  });
   return NextResponse.json({ ok: true });
 }
