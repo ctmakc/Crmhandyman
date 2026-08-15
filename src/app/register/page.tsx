@@ -5,7 +5,7 @@ import { buttonClass } from "@/components/ui/primitives";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ businessName: "", email: "", password: "", plan: "demo" });
+  const [form, setForm] = useState({ businessName: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -41,9 +41,7 @@ export default function RegisterPage() {
           <span className="text-[22px] font-black tracking-tight text-plate">
             HANDYMAN<span className="text-amber">PRO</span>
           </span>
-          <p className="mono mt-2 text-[10px] uppercase tracking-[0.14em] text-ink-rail">
-            Work-order desk
-          </p>
+          <p className="mono mt-2 text-[10px] uppercase tracking-[0.14em] text-ink-rail">Work-order desk</p>
         </div>
 
         <div className="hidden lg:block">
@@ -58,35 +56,26 @@ export default function RegisterPage() {
               "Job tickets, estimates and invoices",
               "Crew board your techs can use on a phone",
               "Per-job profit and loss",
-            ].map((f) => (
-              <li key={f} className="flex items-baseline gap-3 text-[14px] text-ink-rail">
-                <span
-                  className="inline-block h-[3px] w-3 shrink-0 translate-y-[-3px]"
-                  style={{ background: "var(--amber)" }}
-                />
-                {f}
+            ].map((feature) => (
+              <li key={feature} className="flex items-baseline gap-3 text-[14px] text-ink-rail">
+                <span className="inline-block h-[3px] w-3 shrink-0 translate-y-[-3px]" style={{ background: "var(--amber)" }} />
+                {feature}
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="mono text-[10px] uppercase tracking-[0.12em] text-ink-rail">
-          HVAC · Moving · Trades
-        </p>
+        <p className="mono text-[10px] uppercase tracking-[0.12em] text-ink-rail">HVAC · Moving · Trades</p>
       </aside>
 
       <main className="flex items-center px-6 py-12 lg:px-16">
         <div className="w-full max-w-[380px]">
           <div className="eyebrow">Free trial</div>
-          <h1 className="mt-2 text-[32px] font-black leading-none tracking-tight text-ink">
-            Open your desk
-          </h1>
+          <h1 className="mt-2 text-[32px] font-black leading-none tracking-tight text-ink">Open your desk</h1>
+          <p className="mt-3 text-[13px] text-ink-2">Seven-day demo. Paid access is activated only after billing is confirmed.</p>
 
           {error && (
-            <p
-              className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]"
-              style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}
-            >
+            <p className="mono mt-5 border-l-2 py-1 pl-3 text-[12px]" style={{ borderColor: "var(--rose)", color: "var(--rose-ink)" }}>
               {error}
             </p>
           )}
@@ -97,8 +86,9 @@ export default function RegisterPage() {
               <input
                 type="text"
                 required
+                maxLength={160}
                 value={form.businessName}
-                onChange={(e) => setForm((f) => ({ ...f, businessName: e.target.value }))}
+                onChange={(e) => setForm((value) => ({ ...value, businessName: e.target.value }))}
                 placeholder="Northline Heating & Air"
                 className={field}
               />
@@ -109,7 +99,7 @@ export default function RegisterPage() {
                 type="email"
                 required
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) => setForm((value) => ({ ...value, email: e.target.value }))}
                 placeholder="mike@example.com"
                 className={field}
               />
@@ -119,39 +109,23 @@ export default function RegisterPage() {
               <input
                 type="password"
                 required
-                minLength={6}
+                minLength={10}
                 value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Min 6 characters"
+                onChange={(e) => setForm((value) => ({ ...value, password: e.target.value }))}
+                placeholder="Min 10 characters"
+                autoComplete="new-password"
                 className={field}
               />
             </div>
-            <div>
-              <label className="eyebrow">Plan</label>
-              <select
-                value={form.plan}
-                onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
-                className={field}
-              >
-                <option value="demo">Free trial — 7 days</option>
-                <option value="paid">Full access</option>
-              </select>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className={`${buttonClass("primary")} w-full py-2.5`}
-            >
-              {loading ? "Creating…" : "Create account"}
+            <button type="submit" disabled={loading} className={`${buttonClass("primary")} w-full py-2.5`}>
+              {loading ? "Creating…" : "Start 7-day trial"}
             </button>
           </form>
 
           <p className="mt-6 text-[13px] text-ink-2">
             Already have an account?{" "}
-            <a href="/login" className="font-bold text-ink underline underline-offset-4">
-              Sign in
-            </a>
+            <a href="/login" className="font-bold text-ink underline underline-offset-4">Sign in</a>
           </p>
         </div>
       </main>
