@@ -7,26 +7,27 @@ datasource db {
 }
 
 model Tenant {
-  id           String      @id @default(cuid())
-  slug         String      @unique
-  businessName String
-  ownerEmail   String
-  plan         TenantPlan  @default(DEMO)
-  expiresAt    DateTime?
-  createdAt    DateTime    @default(now())
-  users        User[]
-  clients      Client[]
-  equipment    Equipment[]
-  contracts    ServiceContract[]
-  leads        Lead[]
-  projects     Project[]
-  tasks        Task[]
-  invoices     Invoice[]
-  payments     Payment[]
-  expenses     Expense[]
-  integrations ChannelIntegration[]
-  auditEvents  AuditEvent[]
-  workEvidence WorkEvidence[]
+  id              String           @id @default(cuid())
+  slug            String           @unique
+  businessName    String
+  ownerEmail      String
+  plan            TenantPlan       @default(DEMO)
+  expiresAt       DateTime?
+  createdAt       DateTime         @default(now())
+  users           User[]
+  clients         Client[]
+  equipment       Equipment[]
+  contracts       ServiceContract[]
+  leads           Lead[]
+  projects        Project[]
+  tasks           Task[]
+  invoices        Invoice[]
+  payments        Payment[]
+  expenses        Expense[]
+  integrations    ChannelIntegration[]
+  auditEvents     AuditEvent[]
+  workEvidence    WorkEvidence[]
+  inboundReceipts InboundReceipt[]
 }
 
 enum TenantPlan {
@@ -35,18 +36,18 @@ enum TenantPlan {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  name         String
-  email        String
-  password     String
-  role         Role      @default(WORKER)
-  assignedLeads Lead[]
+  id               String    @id @default(cuid())
+  tenantId         String
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  name             String
+  email            String
+  password         String
+  role             Role      @default(WORKER)
+  assignedLeads    Lead[]
   assignedProjects Project[] @relation("assignedProjects")
-  assignedTasks Task[]   @relation("assignedTasks")
-  createdTasks  Task[]   @relation("createdTasks")
-  createdAt    DateTime  @default(now())
+  assignedTasks    Task[]    @relation("assignedTasks")
+  createdTasks     Task[]    @relation("createdTasks")
+  createdAt        DateTime  @default(now())
 
   @@unique([email, tenantId])
 }
@@ -287,32 +288,32 @@ enum TaskStatus {
 }
 
 model Invoice {
-  id         String        @id @default(cuid())
-  kind       InvoiceKind   @default(FULL)
-  remindedAt DateTime?
-  reminderCount Int        @default(0)
-  tenantId   String
-  tenant     Tenant        @relation(fields: [tenantId], references: [id])
-  project    Project       @relation(fields: [projectId], references: [id])
-  projectId  String
-  estimateId String?
-  number     String
-  clientName String
-  address    String?
-  email      String?
-  lineItems  String
-  subtotal   Float
-  tax        Float
-  total      Float
-  notes      String?
-  status     InvoiceStatus @default(DRAFT)
-  issuedAt   DateTime      @default(now())
-  dueDate    DateTime?
-  sentAt     DateTime?
-  paidAt     DateTime?
-  payments   Payment[]
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  kind          InvoiceKind   @default(FULL)
+  remindedAt    DateTime?
+  reminderCount Int           @default(0)
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  project       Project       @relation(fields: [projectId], references: [id])
+  projectId     String
+  estimateId    String?
+  number        String
+  clientName    String
+  address       String?
+  email         String?
+  lineItems     String
+  subtotal      Float
+  tax           Float
+  total         Float
+  notes         String?
+  status        InvoiceStatus @default(DRAFT)
+  issuedAt      DateTime      @default(now())
+  dueDate       DateTime?
+  sentAt        DateTime?
+  paidAt        DateTime?
+  payments      Payment[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@unique([tenantId, number])
 }
@@ -402,4 +403,26 @@ model AuditEvent {
 
   @@index([tenantId, createdAt])
   @@index([entityType, entityId])
+}
+
+model InboundReceipt {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  channel    String
+  externalId String
+  leadId     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, channel, externalId])
+  @@index([tenantId, createdAt])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int
+  resetAt   BigInt
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([resetAt])
 }
