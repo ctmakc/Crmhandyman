@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "./prisma";
 
 export type NumberedInvoiceData = Omit<
   Prisma.InvoiceUncheckedCreateInput,
