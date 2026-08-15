@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Phone, Navigation, Check, Play } from "lucide-react";
 import { Empty, Skeleton, spineFor, textToneFor, buttonClass } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
+import JobEvidence from "@/components/JobEvidence";
 
 interface FieldJob {
   id: string;
@@ -142,6 +143,10 @@ export default function TodayPage() {
                 {job.description}
               </p>
             )}
+
+            <div className="mt-4 border-t border-line pt-4">
+              <JobEvidence projectId={job.id} />
+            </div>
 
             {/* One tap each. Targets are 48px tall on purpose. */}
             <div className="mt-4 grid grid-cols-3 gap-2">
