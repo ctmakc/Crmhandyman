@@ -7,6 +7,8 @@ const PUBLIC_PATHS = [
   "/expired",
   "/api/auth",
   "/api/webhooks",
+  "/api/intake",
+  "/api/health",
   "/api/tenant/resolve",
   "/api/register",
   "/_next",
@@ -37,7 +39,8 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const { pathname } = url;
 
-  // Skip static files and public API paths
+  // Skip static files and deliberately public API paths. Public mutation endpoints
+  // must enforce their own signature/provider verification before touching data.
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
