@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "./prisma";
 
 export interface InboundLeadInput {
   tenantId: string;
@@ -39,26 +39,14 @@ export async function createInboundLead(input: InboundLeadInput) {
   const externalId = input.externalId.trim().slice(0, 200);
   if (!channel || !externalId) throw new Error("Inbound channel and externalId are required");
 
-  // Preserve idempotency for leads created before the receipt table existed.
   const legacy = await prisma.lead.findFirst({
     where: { tenantId: input.tenantId, sourceLeadId: externalId },
   });
   if (legacy) {
     await prisma.inboundReceipt.upsert({
-      where: {
-        tenantId_channel_externalId: {
-          tenantId: input.tenantId,
-          channel,
-          externalId,
-        },
-      },
+      where: { tenantId_channel_externalId: { tenantId: input.tenantId, channel, externalId } },
       update: { leadId: legacy.id },
-      create: {
-        tenantId: input.tenantId,
-        channel,
-        externalId,
-        leadId: legacy.id,
-      },
+      create: { tenantId: input.tenantId, channel, externalId, leadId: legacy.id },
     });
     return { lead: legacy, duplicate: true };
   }
@@ -66,13 +54,8 @@ export async function createInboundLead(input: InboundLeadInput) {
   try {
     const lead = await prisma.$transaction(async (tx) => {
       const receipt = await tx.inboundReceipt.create({
-        data: {
-          tenantId: input.tenantId,
-          channel,
-          externalId,
-        },
+        data: { tenantId: input.tenantId, channel, externalId },
       });
-
       const created = await tx.lead.create({
         data: {
           tenantId: input.tenantId,
@@ -88,14 +71,9 @@ export async function createInboundLead(input: InboundLeadInput) {
           status: "NEW",
         },
       });
-
-      await tx.inboundReceipt.update({
-        where: { id: receipt.id },
-        data: { leadId: created.id },
-      });
+      await tx.inboundReceipt.update({ where: { id: receipt.id }, data: { leadId: created.id } });
       return created;
     });
-
     return { lead, duplicate: false };
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
