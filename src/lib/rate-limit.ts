@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { prisma } from "./prisma";
 
 export interface RateLimitResult {
