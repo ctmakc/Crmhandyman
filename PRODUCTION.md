@@ -4,21 +4,25 @@ This file describes the minimum production operating contract for the standalone
 
 ## 1. Required configuration
 
-Never use the defaults from `docker-compose.yml` for real production secrets.
+Never use development defaults for production secrets.
 
 ```dotenv
 DATABASE_URL=file:/app/data/crm.db
 NEXTAUTH_URL=https://crm.example.com
 NEXTAUTH_SECRET=<long random secret>
+RATE_LIMIT_PEPPER=<separate long random pepper>
 APP_VERSION=<git sha or release>
 LEAD_INTAKE_SIGNING_SECRET=<separate long random secret>
 BACKUP_DIR=/app/data/backups
 BACKUP_RETENTION_DAYS=14
 EVIDENCE_DIR=/app/data/evidence
 EVIDENCE_MAX_BYTES=10485760
+META_APP_SECRET=<Meta app secret>
+META_WEBHOOK_VERIFY_TOKEN=<Meta verify token>
+MAILGUN_WEBHOOK_SIGNING_KEY=<Mailgun signing key>
 ```
 
-SMTP, Meta, Google and Mailgun credentials remain integration-specific and are documented in `.env.example`.
+Keep `RATE_LIMIT_PEPPER`, `NEXTAUTH_SECRET` and `LEAD_INTAKE_SIGNING_SECRET` separate so they can be rotated independently.
 
 ## 2. Database migrations
 
@@ -28,62 +32,63 @@ Before starting a new application image:
 npx prisma migrate deploy
 ```
 
-Do not replace this with `prisma db push` in production. The migration chain is exercised from an empty SQLite database in CI.
+Do not replace this with `prisma db push` in production. CI applies the complete migration chain to an empty SQLite database before testing the application.
 
 ## 3. Health
 
-`GET /api/health` is deliberately public and contains no tenant/customer data. A healthy response means the application can execute a query against its configured database.
-
-Expected status:
-
-```json
-{
-  "status": "ok",
-  "database": "ok"
-}
-```
-
-Docker Compose checks this endpoint every 30 seconds. External monitoring should check it as well.
+`GET /api/health` is public and contains no tenant/customer data. HTTP 200 means the process can query its configured database; database failure returns 503. Docker Compose checks the endpoint every 30 seconds and external monitoring should do the same.
 
 ## 4. SQLite backups
 
-Create a transactionally consistent backup with SQLite's backup API:
+Create a transactionally consistent backup with:
 
 ```bash
 npm run backup
 ```
 
-The command writes timestamped copies into `BACKUP_DIR` and prunes files older than `BACKUP_RETENTION_DAYS`.
-
-A local backup in the same Docker volume protects against application/database mistakes but does **not** protect against host or volume loss. Production must replicate the newest backup off-host (object storage, another server, or another backup system).
-
-Recommended schedule: at least daily; hourly for an actively used operation desk.
-
-A restore drill should be performed before launch and periodically thereafter:
-
-1. stop writes;
-2. copy the selected backup to a separate test location;
-3. start the application against the restored copy;
-4. verify clients, jobs, invoices, payments and evidence metadata;
-5. verify the corresponding evidence directory is present from the same backup generation.
+Backups are written to `BACKUP_DIR` and pruned after `BACKUP_RETENTION_DAYS`. A backup in the same Docker volume is not disaster recovery: replicate the newest database backup and `EVIDENCE_DIR` off-host. Run a restore drill before launch and periodically thereafter.
 
 ## 5. Job evidence
 
-Before/after photos are private operational/customer evidence.
+Before/after photos are private customer/operational evidence.
 
-- Metadata is tenant- and project-scoped in `WorkEvidence`.
-- Files live under `EVIDENCE_DIR`, never under Next.js `/public`.
-- Reads and deletes pass through authenticated API routes.
-- Stored files are mode `0600`; directories are mode `0700` where supported.
-- Supported upload types: JPEG, PNG, WebP, HEIC and HEIF.
-- Default maximum file size: 10 MiB.
-- SHA-256 is stored with each record for integrity/audit use.
+- metadata is tenant/project scoped in `WorkEvidence`;
+- files live under `EVIDENCE_DIR`, never Next.js `/public`;
+- reads/deletes pass through authenticated tenant-scoped API routes;
+- stored files are mode `0600`, directories `0700` where supported;
+- JPEG, PNG, WebP, HEIC and HEIF are accepted;
+- default maximum is 10 MiB;
+- SHA-256 is retained for integrity/audit use.
 
-The default Docker deployment places evidence under `/app/data/evidence`, the same persistent volume as SQLite. Off-host backups must therefore include both the SQLite backup and evidence files.
+## 6. Public ingress controls
 
-## 6. Signed lead intake
+All public lead-ingress paths fail closed when their verification dependency is unavailable. Rate-limit identifiers are SHA-256 hashed before persistence in `RateLimitBucket`.
 
-Owned landing pages should create leads through:
+Current limits:
+
+- public tenant registration: 5/hour/IP;
+- signed owned-site intake: 60/minute per tenant+IP;
+- Facebook webhook: 300/minute/IP;
+- Instagram webhook: 300/minute/IP;
+- Mailgun webhook: 120/minute/IP.
+
+If the durable rate-limit store fails, public mutation endpoints return 503 rather than accepting uncontrolled writes.
+
+### Facebook / Instagram
+
+Both Meta POST webhooks require a valid `X-Hub-Signature-256` HMAC. Missing `META_APP_SECRET` returns 503. Facebook events route only through the active integration whose configured `pageId` matches the event `page_id`. Instagram events route only through the configured account matching `entry.id`. There is no fallback to an arbitrary tenant.
+
+### Mailgun
+
+Mailgun requests require a valid, fresh signing tuple. Missing `MAILGUN_WEBHOOK_SIGNING_KEY` returns 503. The inbound recipient must match exactly one active EMAIL integration configuration; zero or ambiguous matches are not ingested.
+
+### Exactly-once lead ingestion
+
+Provider and owned-site retries are claimed through `InboundReceipt` with a database unique key `(tenantId, channel, externalId)`. The claim and Lead insert happen in one transaction. Concurrent duplicate deliveries resolve to the single committed Lead instead of creating duplicates.
+
+## 7. Signed owned-site intake
+
+Owned landing backends create leads through:
 
 ```text
 POST /api/intake/<tenant-slug>/lead
@@ -97,60 +102,37 @@ x-handyman-timestamp: <Unix time in milliseconds>
 x-handyman-signature: sha256=<hex hmac>
 ```
 
-Signature input is exactly:
+The signature is HMAC-SHA256 over `<timestamp>.<raw request body>` using `LEAD_INTAKE_SIGNING_SECRET`. Requests outside a five-minute clock window are rejected. Every source submission must send a stable `externalId`; retries must reuse it. Never expose the signing secret in browser JavaScript.
 
-```text
-<timestamp>.<raw request body>
-```
+## 8. Registration and billing state
 
-HMAC algorithm: SHA-256 using `LEAD_INTAKE_SIGNING_SECRET`.
+Public signup always creates a seven-day `DEMO` tenant. A caller cannot self-select `PAID` in JSON. Paid activation belongs only to a verified billing/admin path. Reserved infrastructure slugs are not assigned to tenants.
 
-Example Node signer:
+## 9. Audit journal
 
-```js
-import crypto from "node:crypto";
+Admins can query `/api/audit`. Audit coverage includes leads, lead conversion, project status/crew changes, estimates, tasks, invoices and invoice payments, expenses/payments, service-contract creation/booking, team administration, integrations, job evidence and tenant registration. Secrets are never written to audit metadata.
 
-const body = JSON.stringify({
-  externalId: "dream-hvac-form-123456",
-  name: "Jamie Example",
-  phone: "+16135550123",
-  source: "OTHER",
-  jobType: "Furnace repair"
-});
-const timestamp = String(Date.now());
-const signature = crypto
-  .createHmac("sha256", process.env.LEAD_INTAKE_SIGNING_SECRET)
-  .update(`${timestamp}.${body}`)
-  .digest("hex");
-```
+## 10. Invoice/payment invariants
 
-The server rejects signatures outside a five-minute clock window. Each landing submission must send a stable `externalId`; retry the same request with the same `externalId` rather than inventing a new ID.
+- invoice numbers are allocated from the highest tenant/year sequence and retry unique-key races;
+- service-contract auto-invoices use the same allocator;
+- manual invoice state can only move `DRAFT → SENT`;
+- `PARTIAL`/`PAID` derive from real Payment rows;
+- payment insertion and invoice settlement happen in one transaction;
+- overpayment, payment on VOID, and voiding PAID invoices are rejected.
 
-Do not put `LEAD_INTAKE_SIGNING_SECRET` in browser JavaScript. The landing backend/serverless function signs the request server-side.
+## 11. Service visit idempotency
 
-## 7. Audit journal
+`ServiceVisitReceipt` claims `(tenantId, contractId, cycle)` before materializing a recurring visit. Concurrent `Book all due` requests cannot create the same seasonal visit twice. Auto-invoice recovery reuses the existing visit if a retry occurs after the project was already materialized.
 
-Core operational changes now emit `AuditEvent` records. Admins can query `/api/audit`.
+## 12. Release gate
 
-The first production wave journals:
+CI performs:
 
-- lead create/update/delete;
-- payment create/delete;
-- expense create/delete;
-- job status and crew changes;
-- before/after evidence add/delete;
-- externally ingested leads.
+1. `npm ci`;
+2. Prisma client generation;
+3. the complete migration chain on clean SQLite;
+4. database regression (`npm run test:db`) covering ingress idempotency, rate limits, lead-to-cash, tenant isolation, service-visit uniqueness and concurrent invoice numbering;
+5. core regression, TypeScript typecheck and production Next.js build (`npm run verify`).
 
-Audit coverage should continue to estimates, invoices, tasks, service contracts and settings before those areas are treated as fully forensically auditable.
-
-## 8. Release gate
-
-A release candidate must pass:
-
-```bash
-npm run verify
-```
-
-CI additionally applies the full migration chain to a clean database before running verification.
-
-Do not merge a production-hardening PR while the final head is red.
+Do not merge a production-hardening PR while its final head is red.
