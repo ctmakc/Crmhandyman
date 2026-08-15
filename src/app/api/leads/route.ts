@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAuditEvent } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -30,7 +31,6 @@ export async function GET(req: NextRequest) {
     },
     include: {
       assignedTo: { select: { id: true, name: true } },
-      // The call sheet's closed lane links CONVERTED leads straight to their job.
       project: { select: { id: true, title: true, status: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -46,10 +46,13 @@ export async function POST(req: NextRequest) {
   const tenantId = (session.user as any).tenantId as string;
 
   const body = await req.json();
+  const name = String(body.name ?? "").trim();
+  if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+
   const lead = await prisma.lead.create({
     data: {
       tenantId,
-      name: body.name,
+      name,
       phone: body.phone,
       email: body.email,
       address: body.address,
@@ -59,6 +62,16 @@ export async function POST(req: NextRequest) {
       notes: body.notes,
       assignedToId: body.assignedToId,
     },
+  });
+
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: "lead.created",
+    entityType: "lead",
+    entityId: lead.id,
+    summary: `Lead created: ${lead.name}`,
+    metadata: { source: lead.source, assignedToId: lead.assignedToId },
   });
 
   return NextResponse.json(lead, { status: 201 });

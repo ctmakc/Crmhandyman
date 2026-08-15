@@ -25,6 +25,8 @@ model Tenant {
   payments     Payment[]
   expenses     Expense[]
   integrations ChannelIntegration[]
+  auditEvents  AuditEvent[]
+  workEvidence WorkEvidence[]
 }
 
 enum TenantPlan {
@@ -54,8 +56,6 @@ enum Role {
   WORKER
 }
 
-/// The customer, not the string on a work order. One roof, one furnace history,
-/// one balance owing — jobs and leads point at this, they no longer re-type it.
 model Client {
   id        String      @id @default(cuid())
   tenantId  String
@@ -76,8 +76,6 @@ model Client {
   @@index([tenantId, name])
 }
 
-/// What is actually installed at the address. HVAC lives on iron, not on tickets:
-/// the serial number and the warranty date are what a tech needs before the visit.
 model Equipment {
   id            String        @id @default(cuid())
   tenantId      String
@@ -101,9 +99,6 @@ model Equipment {
   @@index([tenantId, clientId])
 }
 
-/// Recurring maintenance — the recurring revenue an HVAC shop actually lives on.
-/// `visitMonths` is a JSON array of 1-12 (e.g. [4,10] = spring and fall), which keeps
-/// the schedule readable in the database and avoids a cron owning the truth.
 model ServiceContract {
   id            String     @id @default(cuid())
   tenantId      String
@@ -189,8 +184,6 @@ model Project {
   clientId      String?
   contract      ServiceContract? @relation(fields: [contractId], references: [id])
   contractId    String?
-  /// Which month of the contract year this visit covers — stops the scheduler
-  /// booking the same seasonal visit twice.
   contractCycle String?
   clientName    String
   phone         String?
@@ -210,6 +203,7 @@ model Project {
   invoices      Invoice[]
   payments      Payment[]
   expenses      Expense[]
+  evidence      WorkEvidence[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -219,6 +213,32 @@ enum ProjectStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+model WorkEvidence {
+  id           String       @id @default(cuid())
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id])
+  kind         EvidenceKind @default(OTHER)
+  storageKey   String       @unique
+  originalName String
+  mimeType     String
+  byteSize     Int
+  sha256       String
+  caption      String?
+  capturedAt   DateTime?
+  createdBy    String?
+  createdAt    DateTime     @default(now())
+
+  @@index([tenantId, projectId, createdAt])
+}
+
+enum EvidenceKind {
+  BEFORE
+  AFTER
+  OTHER
 }
 
 model Estimate {
@@ -268,8 +288,6 @@ enum TaskStatus {
 
 model Invoice {
   id         String        @id @default(cuid())
-  /// A deposit and its balance are two invoices cut from one estimate — that is how
-  /// a shop bills an install, and it keeps each half independently payable.
   kind       InvoiceKind   @default(FULL)
   remindedAt DateTime?
   reminderCount Int        @default(0)
@@ -368,4 +386,20 @@ model ChannelIntegration {
   lastSyncAt    DateTime?
 
   @@unique([tenantId, channel])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  summary    String?
+  metadata   String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
 }
