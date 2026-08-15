@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAuditEvent } from "@/lib/audit";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -42,6 +43,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
+  if (body.assignedToId) {
+    const worker = await prisma.user.findFirst({
+      where: { id: String(body.assignedToId), tenantId },
+      select: { id: true },
+    });
+    if (!worker) return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
+  }
+
   const project = await prisma.project.update({
     where: { id: params.id },
     data: {
@@ -55,7 +64,28 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       status: body.status,
       scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : undefined,
       completedDate: body.completedDate ? new Date(body.completedDate) : undefined,
-      assignedToId: body.assignedToId,
+      assignedToId: body.assignedToId || null,
+    },
+  });
+
+  const statusChanged = existing.status !== project.status;
+  const assigneeChanged = existing.assignedToId !== project.assignedToId;
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: statusChanged ? "project.status_changed" : assigneeChanged ? "project.assigned" : "project.updated",
+    entityType: "project",
+    entityId: project.id,
+    summary: statusChanged
+      ? `Job status ${existing.status} → ${project.status}`
+      : assigneeChanged
+        ? "Job crew assignment changed"
+        : `Job updated: ${project.title}`,
+    metadata: {
+      fromStatus: existing.status,
+      toStatus: project.status,
+      fromAssignedToId: existing.assignedToId,
+      toAssignedToId: project.assignedToId,
     },
   });
 
