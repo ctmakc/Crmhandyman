@@ -10,7 +10,7 @@ import { throttle, throttleVerify, tokenMatches } from "../guard";
 const MAX_BODY_BYTES = 256 * 1024;
 
 export async function GET(req: NextRequest) {
-  const limited = throttleVerify(req, "facebook");
+  const limited = await throttleVerify(req, "facebook");
   if (limited) return limited;
 
   const { searchParams } = new URL(req.url);
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const limited = throttle(req, "facebook");
+  const limited = await throttle(req, "facebook");
   if (limited) return limited;
 
   /**

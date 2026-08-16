@@ -45,21 +45,21 @@ function tooMany(retryAfter: number) {
 }
 
 /** Non-null means "answer this and stop" — call it before reading the body. */
-export function throttle(req: Request, hook: string): NextResponse | null {
+export async function throttle(req: Request, hook: string): Promise<NextResponse | null> {
   const ip = clientIp(req);
 
-  const burst = rateLimit(`webhook:${hook}:min:${ip}`, BURST_LIMIT, BURST_WINDOW_MS);
+  const burst = await rateLimit(`webhook:${hook}:min:${ip}`, BURST_LIMIT, BURST_WINDOW_MS);
   if (!burst.ok) return tooMany(burst.retryAfter);
 
-  const sustained = rateLimit(`webhook:${hook}:hr:${ip}`, HOURLY_LIMIT, HOURLY_WINDOW_MS);
+  const sustained = await rateLimit(`webhook:${hook}:hr:${ip}`, HOURLY_LIMIT, HOURLY_WINDOW_MS);
   if (!sustained.ok) return tooMany(sustained.retryAfter);
 
   return null;
 }
 
 /** The same door for the verify handshake, on a far tighter budget. */
-export function throttleVerify(req: Request, hook: string): NextResponse | null {
-  const limited = rateLimit(`webhook:${hook}:verify:${clientIp(req)}`, VERIFY_LIMIT, VERIFY_WINDOW_MS);
+export async function throttleVerify(req: Request, hook: string): Promise<NextResponse | null> {
+  const limited = await rateLimit(`webhook:${hook}:verify:${clientIp(req)}`, VERIFY_LIMIT, VERIFY_WINDOW_MS);
   return limited.ok ? null : tooMany(limited.retryAfter);
 }
 

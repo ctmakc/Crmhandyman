@@ -521,3 +521,12 @@ model ChannelIntegration {
 
   @@unique([tenantId, channel])
 }
+
+/// Fixed-window rate-limit buckets — salted key hashes only, see src/lib/rate-limit.ts.
+model RateLimitBucket {
+  key     String @id
+  count   Int
+  resetAt BigInt
+
+  @@index([resetAt])
+}

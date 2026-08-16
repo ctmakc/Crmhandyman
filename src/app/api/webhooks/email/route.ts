@@ -68,7 +68,7 @@ const MAX_BODY_BYTES = 30 * 1024 * 1024;
 export async function POST(req: NextRequest) {
   // Before the multipart parse and before the signature: a refusal here costs a map
   // lookup, while everything below it buffers a message and then queries the tenant.
-  const limited = throttle(req, "email");
+  const limited = await throttle(req, "email");
   if (limited) return limited;
 
   if (declaredTooLarge(req, MAX_BODY_BYTES)) {

@@ -49,8 +49,24 @@ type RequestOptions = {
   raw?: BodyInit;
 };
 
+/** A stable private address for a seed string — one visitor per identity. */
+function ipFromSeed(seed: string): string {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `10.77.${(h >> 8) & 0xff}.${h & 0xff}`;
+}
+
 export class Client {
   private jar = new Map<string, string>();
+
+  /**
+   * Each identity gets its own stable address, sent as `x-forwarded-for`. The rate
+   * limiter keeps its counters in the database now, so one shared address would spend
+   * the whole suite's login budget on the first two files. The dev server passes a
+   * client-supplied forwarded-for chain through untouched, and with one trusted hop the
+   * throttle reads its last entry — this address.
+   */
+  realIp: string;
 
   constructor(
     readonly baseUrl: string,
@@ -58,7 +74,9 @@ export class Client {
     readonly slug: string | null = null,
     /** Filled in after sign-in — handy for asserting on ids the server minted. */
     public user: Record<string, unknown> | null = null,
-  ) {}
+  ) {
+    this.realIp = ipFromSeed(slug ?? "anonymous");
+  }
 
   private cookieHeader() {
     return Array.from(this.jar.entries())
@@ -79,7 +97,7 @@ export class Client {
     const tenant = options.tenant === undefined ? this.slug : options.tenant;
     if (tenant) url.searchParams.set("tenant", tenant);
 
-    const headers: Record<string, string> = { ...(options.headers ?? {}) };
+    const headers: Record<string, string> = { "x-forwarded-for": this.realIp, ...(options.headers ?? {}) };
     if (this.jar.size) headers.cookie = this.cookieHeader();
 
     let payload: BodyInit | undefined;
@@ -129,9 +147,16 @@ export class Client {
   }
 }
 
-/** An unauthenticated visitor. */
+/**
+ * An unauthenticated visitor — a fresh one every time. Two anonymous callers sharing
+ * one address would also share an intake budget, and the suite files more enquiries
+ * than any single visitor is allowed.
+ */
+let anonSeq = 0;
 export function anonymous(baseUrl: string) {
-  return new Client(baseUrl, null);
+  const client = new Client(baseUrl, null);
+  client.realIp = ipFromSeed(`anon-${++anonSeq}-${Date.now()}`);
+  return client;
 }
 
 /**
@@ -163,6 +188,8 @@ export async function eventually<T>(
  */
 export async function signIn(baseUrl: string, creds: Credentials): Promise<Client> {
   const client = new Client(baseUrl, creds.slug);
+  // Admin and worker of one workspace are different people at different desks.
+  client.realIp = ipFromSeed(`${creds.slug}\u0000${creds.email}`);
 
   const csrf = await client.get<{ csrfToken: string }>("/api/auth/csrf", { tenant: null });
   const form = new URLSearchParams({
@@ -191,9 +218,9 @@ export async function signIn(baseUrl: string, creds: Credentials): Promise<Clien
 }
 
 /**
- * Sign-in is rate limited to ten attempts per address per quarter hour, and every
- * request in this suite comes from the same address. Identities are therefore reused
- * inside a test file instead of signing in again per describe block.
+ * Sign-in is rate limited to ten attempts per address per quarter hour. Every client
+ * carries its own `x-real-ip`, but identities are still reused inside a test file
+ * instead of signing in again per describe block — the budget is real, just per-workspace.
  */
 const sessions = new Map<string, Promise<Client>>();
 

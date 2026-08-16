@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       { status: 403 }
     );
 
-  const limited = rateLimit(`register:${clientIp(req)}`, 5, 60 * 60 * 1000);
+  const limited = await rateLimit(`register:${clientIp(req)}`, 5, 60 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many signups from this address — try again later" },

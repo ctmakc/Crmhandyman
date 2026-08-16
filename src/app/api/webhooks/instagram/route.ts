@@ -11,7 +11,7 @@ const MAX_BODY_BYTES = 256 * 1024;
 
 // Instagram webhook verification (same Meta platform)
 export async function GET(req: NextRequest) {
-  const limited = throttleVerify(req, "instagram");
+  const limited = await throttleVerify(req, "instagram");
   if (limited) return limited;
 
   const { searchParams } = new URL(req.url);
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
 // Instagram message webhook
 export async function POST(req: NextRequest) {
-  const limited = throttle(req, "instagram");
+  const limited = await throttle(req, "instagram");
   if (limited) return limited;
 
   // Instagram rides the same Meta app as the Facebook hook, and was the one of the two

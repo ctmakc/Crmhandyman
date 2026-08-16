@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest) {
   const { id: userId, tenantId } = guard.identity;
 
   // The current password is a password prompt like any other: throttle the guessing.
-  const limited = rateLimit(`password:${userId}:${clientIp(req)}`, 10, 15 * 60 * 1000);
+  const limited = await rateLimit(`password:${userId}:${clientIp(req)}`, 10, 15 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many attempts — try again later" },

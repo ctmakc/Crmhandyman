@@ -4,6 +4,16 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { clientIpFromHeaders, rateLimit } from "@/lib/rate-limit";
 
+/** One header, whichever shape the runtime delivered it in. */
+function headerValue(headers: unknown, name: string): string | undefined {
+  if (!headers) return undefined;
+  if (typeof (headers as Headers).get === "function") {
+    return (headers as Headers).get(name) ?? undefined;
+  }
+  const value = (headers as Record<string, string | string[] | undefined>)[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -23,12 +33,13 @@ export const authOptions: NextAuthOptions = {
 
         // Ten tries per address per quarter hour. Passwords are the only thing standing
         // between a stranger and a contractor's whole customer list, so the address is
-        // read the one trustworthy way — see clientIpFromHeaders.
+        // read the one trustworthy way — see clientIpFromHeaders. `headerValue` copes
+        // with either shape NextAuth may hand over (plain object or WHATWG Headers).
         const ip = clientIpFromHeaders(
-          req?.headers?.["x-forwarded-for"] as string | undefined,
-          req?.headers?.["x-real-ip"] as string | undefined
+          headerValue(req?.headers, "x-forwarded-for"),
+          headerValue(req?.headers, "x-real-ip")
         );
-        if (!rateLimit(`login:${ip}`, 10, 15 * 60 * 1000).ok) return null;
+        if (!(await rateLimit(`login:${ip}`, 10, 15 * 60 * 1000)).ok) return null;
 
         const tenant = await prisma.tenant.findUnique({
           where: { slug: credentials.slug },

@@ -1,35 +1,55 @@
-/**
- * Fixed-window counter held in process memory. The product runs as a single container
- * against one SQLite file, so there is nowhere else for this to live yet; move it to a
- * shared store on the day a second instance appears.
- */
-const hits = new Map<string, { count: number; resetAt: number }>();
+import { createHash } from "node:crypto";
+import { prisma } from "./prisma";
 
+/**
+ * Fixed-window counter in the product's own SQLite file. It lived in process memory
+ * first, but this app restarts on every deploy and every `systemctl restart` — and each
+ * restart handed a fresh set of login attempts to whoever was counting. One database,
+ * one instance: the bucket table costs one indexed upsert per guarded request.
+ *
+ * Keys are salted hashes, so the table never stores a raw address or account name.
+ */
 export type RateLimitResult = { ok: true } | { ok: false; retryAfter: number };
 
-export function rateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
-  const now = Date.now();
-  const entry = hits.get(key);
-
-  if (!entry || entry.resetAt <= now) {
-    hits.set(key, { count: 1, resetAt: now + windowMs });
-    if (hits.size > 10_000) sweep(now);
-    return { ok: true };
-  }
-
-  if (entry.count >= limit) {
-    return { ok: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
-  }
-
-  entry.count += 1;
-  return { ok: true };
+function bucketKey(key: string): string {
+  const salt = process.env.NEXTAUTH_SECRET || "";
+  return createHash("sha256").update(`${key}\0${salt}`).digest("hex");
 }
 
-/** Best-effort trim so a long-running process cannot grow this map without bound. */
-function sweep(now: number) {
-  hits.forEach((entry, key) => {
-    if (entry.resetAt <= now) hits.delete(key);
-  });
+export async function rateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+  const now = Date.now();
+  const freshReset = now + windowMs;
+
+  /**
+   * One statement so two racing requests cannot both read "empty" and write "1":
+   * an expired bucket restarts at 1, a live one increments, and the row comes back.
+   */
+  const rows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint; resetAt: number | bigint }>>(
+    `INSERT INTO "RateLimitBucket" ("key", "count", "resetAt")
+     VALUES (?, 1, ?)
+     ON CONFLICT("key") DO UPDATE SET
+       "count" = CASE WHEN "resetAt" <= ? THEN 1 ELSE "count" + 1 END,
+       "resetAt" = CASE WHEN "resetAt" <= ? THEN ? ELSE "resetAt" END
+     RETURNING "count", "resetAt"`,
+    bucketKey(key),
+    freshReset,
+    now,
+    now,
+    freshReset
+  );
+
+  const count = Number(rows[0]?.count ?? limit + 1);
+  const resetAt = Number(rows[0]?.resetAt ?? freshReset);
+
+  /** A fresh window is a cheap moment to drop everyone's dead buckets. */
+  if (count === 1) {
+    prisma.rateLimitBucket.deleteMany({ where: { resetAt: { lte: now } } }).catch(() => {});
+  }
+
+  if (count > limit) {
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((resetAt - now) / 1000)) };
+  }
+  return { ok: true };
 }
 
 /**

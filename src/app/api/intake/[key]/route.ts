@@ -55,7 +55,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest, { params }: { params: { key: string } }) {
-  const throttleIp = rateLimit(`intake:ip:${clientIp(req)}`, IP_LIMIT, IP_WINDOW_MS);
+  const throttleIp = await rateLimit(`intake:ip:${clientIp(req)}`, IP_LIMIT, IP_WINDOW_MS);
   if (!throttleIp.ok) {
     return json({ ok: false, error: "Too many submissions" }, 429, {
       "Retry-After": String(throttleIp.retryAfter),
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
     const key = await prisma.intakeKey.findUnique({ where: { keyHash: digest } });
     if (!key || !key.isActive || !digestsMatch(key.keyHash, digest)) return unknownKey();
 
-    const throttleKey = rateLimit(`intake:key:${key.id}`, KEY_LIMIT, KEY_WINDOW_MS);
+    const throttleKey = await rateLimit(`intake:key:${key.id}`, KEY_LIMIT, KEY_WINDOW_MS);
     if (!throttleKey.ok) {
       return json({ ok: false, error: "Too many submissions" }, 429, {
         "Retry-After": String(throttleKey.retryAfter),
