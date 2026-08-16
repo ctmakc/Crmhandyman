@@ -9,13 +9,67 @@ export async function GET() {
   if (!guard.ok) return guard.response;
   const { tenantId } = guard.identity;
 
+  // `approved` rides along so the Crew screen can split the list: the crew who can work
+  // today, and the "waiting to join" members who came in through an open link and need the
+  // owner's yes. A hand-added member and every member already on the desk are approved.
   const users = await prisma.user.findMany({
     where: { tenantId },
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, approved: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
   return NextResponse.json(users);
+}
+
+/**
+ * Approve a member who joined through an open link. Admin-only and tenant-scoped: the row
+ * is found by id AND tenant first, so this can never reach across the workspace line to
+ * approve a stranger's pending member. Idempotent — approving an already-approved member is
+ * a no-op, not an error — and the approval takes effect on that member's next request,
+ * because the jwt callback re-reads the flag every time (src/lib/auth.ts).
+ *
+ * Rejecting a pending member is just removing them: DELETE below already does it, scoped
+ * the same way, so there is one delete door rather than two.
+ */
+export async function PATCH(req: NextRequest) {
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
+
+  const body = await req.json().catch(() => null);
+  const id = body?.id;
+  if (!id || typeof id !== "string") {
+    return NextResponse.json({ error: "Nothing was picked to approve" }, { status: 400 });
+  }
+
+  const target = await prisma.user.findFirst({
+    where: { id, tenantId },
+    select: { id: true, name: true, email: true, role: true, approved: true },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
+  }
+  if (target.approved) {
+    return NextResponse.json({ ...target, approved: true });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: target.id },
+    data: { approved: true },
+    select: { id: true, name: true, email: true, role: true, approved: true, createdAt: true },
+  });
+
+  await record({
+    tenantId,
+    actor: { id: guard.identity.id },
+    action: "user.approve",
+    entity: "User",
+    entityId: updated.id,
+    summary: `Approved ${updated.name} (${updated.email}) into the crew as ${updated.role}`,
+    meta: { role: updated.role, email: updated.email },
+  });
+
+  return NextResponse.json(updated);
 }
 
 export async function POST(req: NextRequest) {

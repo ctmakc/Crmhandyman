@@ -437,6 +437,137 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
     });
   });
 
+  /**
+   * The team vertical adds two new objects to a workspace — an invite (and its token) and a
+   * member who joined through an open link and is still awaiting approval. Both are the
+   * owner's to see and act on, and both must be invisible and untouchable from the other
+   * workspace on the same box. A → owns; B → reaches for them and is refused.
+   */
+  describe("the team vertical stays inside one workspace", () => {
+    let aInviteId = "";
+    let aInviteToken = "";
+    let aPendingId = "";
+
+    beforeAll(async () => {
+      const invite = await a.admin.post("/api/invites", { role: "WORKER" });
+      expect(invite.status).toBe(201);
+      aInviteId = invite.body.id;
+      aInviteToken = invite.body.token;
+
+      const joined = await anonymous(baseUrl).post(
+        `/api/join/${aInviteToken}`,
+        { name: "Iso Pending", email: `pending.${Date.now().toString(36)}@iso.test`, password: "a-long-enough-password" },
+        { tenant: null },
+      );
+      expect(joined.status).toBe(201);
+      expect(joined.body.approved).toBe(false);
+
+      const roster = await a.admin.get("/api/settings/users");
+      aPendingId = (roster.body as Array<{ id: string; approved: boolean }>).find((u) => !u.approved)!.id;
+    });
+
+    it("A's invites are invisible and untouchable from B", async () => {
+      const list = await b.admin.get("/api/invites");
+      expect(list.status).toBe(200);
+      expect((list.body as Array<{ id: string }>).map((i) => i.id)).not.toContain(aInviteId);
+
+      const revoked = await b.admin.del(`/api/invites/${aInviteId}`);
+      expect(revoked.status).toBe(404);
+
+      // Still live — "not found from B" must mean B's reach was refused, not that the link
+      // was quietly killed.
+      expect((await anonymous(baseUrl).get(`/api/join/${aInviteToken}`, { tenant: null })).status).toBe(200);
+    });
+
+    it("A's pending member cannot be seen, approved or rejected from B", async () => {
+      const roster = await b.admin.get("/api/settings/users");
+      expect((roster.body as Array<{ id: string }>).map((u) => u.id)).not.toContain(aPendingId);
+
+      const approved = await b.admin.request("/api/settings/users", { method: "PATCH", body: { id: aPendingId } });
+      expect(approved.status).toBe(404);
+
+      const rejected = await b.admin.del(`/api/settings/users?id=${aPendingId}`);
+      expect(rejected.status).toBe(404);
+
+      // B changed nothing: the member is still pending on A's side.
+      const still = await a.admin.get("/api/settings/users");
+      expect(
+        (still.body as Array<{ id: string; approved: boolean }>).find((u) => u.id === aPendingId)?.approved,
+      ).toBe(false);
+    });
+  });
+
+  /**
+   * An invite is a grant, and the grant is the owner's to write — never the joiner's to
+   * widen. The role comes off the invite row and the approval comes off its shape (named =
+   * vouched, open = waiting); the accept handler reads both from the server side and the
+   * body cannot move either. So a joiner who posts `role: ADMIN` or `approved: true` gets
+   * exactly what the link granted, and an open-link joiner — who lands at the door with a
+   * real, signable account — has no way to let themselves in.
+   */
+  describe("an invite grants exactly what it says — no more", () => {
+    const LONG = "a-long-enough-password";
+
+    it("a WORKER invite cannot be talked into ADMIN by the joiner", async () => {
+      const email = `escalate.${Date.now().toString(36)}@iso.test`;
+      const invite = await a.admin.post("/api/invites", { email, role: "WORKER" });
+      expect(invite.status).toBe(201);
+
+      // The body asks for the owner's desk. Role and approval are the server's to decide
+      // off the invite, so both are ignored: this joiner becomes a WORKER, approved only
+      // because the owner named the address (a named invite), and never an ADMIN.
+      const joined = await anonymous(baseUrl).post(
+        `/api/join/${invite.body.token}`,
+        { name: "Would-Be Admin", role: "ADMIN", approved: true, password: LONG },
+        { tenant: null },
+      );
+      expect(joined.status).toBe(201);
+      expect(joined.body.role).toBe("WORKER");
+
+      const roster = await a.admin.get("/api/settings/users");
+      const row = (roster.body as Array<{ email: string; role: string }>).find((u) => u.email === email);
+      expect(row?.role).toBe("WORKER");
+    });
+
+    it("an open-link joiner cannot self-approve — not at the door, not from a session", async () => {
+      const open = await a.admin.post("/api/invites", { role: "WORKER" });
+      expect(open.status).toBe(201);
+      expect(open.body.email).toBeNull();
+
+      const email = `selfapprove.${Date.now().toString(36)}@iso.test`;
+      // `approved: true` and `role: ADMIN` at the door change neither: an open link lands
+      // approved=false and WORKER regardless of what the body asks for.
+      const joined = await anonymous(baseUrl).post(
+        `/api/join/${open.body.token}`,
+        { name: "Self Approver", email, role: "ADMIN", approved: true, password: LONG },
+        { tenant: null },
+      );
+      expect(joined.status).toBe(201);
+      expect(joined.body.approved).toBe(false);
+      expect(joined.body.role).toBe("WORKER");
+
+      // Their real id, the way the owner sees it in the roster.
+      const roster = await a.admin.get("/api/settings/users");
+      const ownId = (roster.body as Array<{ id: string; email: string }>).find((u) => u.email === email)!.id;
+
+      // The account is real and can sign in, but the desk is shut and so is every door that
+      // would open it. Approving their own id is refused, and so is cutting themselves a
+      // fresh, auto-approving named invite — both are the owner's alone.
+      const joiner = await signIn(baseUrl, { slug: a.workspace.slug, email, password: LONG });
+      const selfApprove = await joiner.request("/api/settings/users", { method: "PATCH", body: { id: ownId } });
+      expect(selfApprove.status).toBe(403);
+      const selfInvite = await joiner.post("/api/invites", { email, role: "ADMIN" });
+      expect(selfInvite.status).toBe(403);
+
+      // Nothing moved: the owner still sees them waiting, and the desk still refuses them.
+      const after = await a.admin.get("/api/settings/users");
+      expect(
+        (after.body as Array<{ id: string; approved: boolean }>).find((u) => u.id === ownId)?.approved,
+      ).toBe(false);
+      expect((await joiner.get("/api/leads")).status).toBe(403);
+    });
+  });
+
   describe("roles inside one workspace", () => {
     it("the books, the paper and the export are the owner's alone", async () => {
       const closed = [

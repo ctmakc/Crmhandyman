@@ -351,15 +351,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         {/* ------------------------------------------------------ LEFT: the ledgers */}
         <div className="min-w-0 space-y-10 lg:pr-8">
           <section>
-            <LaneHead
-              title="History"
-              right={
-                <span className="eyebrow">
-                  <Num className="t-meta">{client.projects.length}</Num>{" "}
-                  {client.projects.length === 1 ? "JOB" : "JOBS"}
-                </span>
-              }
-            />
+            {/* The lane's tally rides LaneHead's own `count`/`unit`, the one counter
+                shape the whole product prints — not a hand-rolled span that drifts a
+                pixel and a word from the next screen's. */}
+            <LaneHead title="History" count={client.projects.length} unit="job" />
             {history.length === 0 ? (
               /* The action for this lane is already on the file plate above —
                  two NEW JOB HERE buttons on one screen is the screen stuttering. */
@@ -419,15 +414,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           </section>
 
           <section>
-            <LaneHead
-              title="Paper"
-              right={
-                <span className="eyebrow">
-                  <Num className="t-meta">{paper.length}</Num>{" "}
-                  {paper.length === 1 ? "INVOICE" : "INVOICES"}
-                </span>
-              }
-            />
+            <LaneHead title="Paper" count={paper.length} unit="invoice" />
             {paper.length === 0 ? (
               <Empty hint="An invoice comes off an accepted estimate on the job, with the same lines on it.">
                 Nothing has been billed to this client
@@ -741,11 +728,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
             <section>
               <LaneHead
                 title="Service contracts"
-                right={
-                  client.contracts?.length > 0 ? (
-                    <Num className="eyebrow">{client.contracts.length}</Num>
-                  ) : undefined
-                }
+                count={client.contracts?.length ? client.contracts.length : undefined}
+                unit="contract"
               />
               {!client.contracts || client.contracts.length === 0 ? (
                 <Empty

@@ -87,6 +87,10 @@ export const authOptions: NextAuthOptions = {
           role: user.role as any,
           tenantId: user.tenantId,
           tenantSlug: tenant.slug,
+          // An open-link joiner sets a password and can sign in — but stays out of the
+          // desk until the owner approves. Carry the flag so the token knows from the
+          // very first request, not just the second (jwt re-check below).
+          approved: user.approved,
         };
       },
     }),
@@ -102,6 +106,12 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = (user as any).tenantId;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         token.tenantSlug = (user as any).tenantSlug;
+        // A member who joined through an open link is out of the desk until approved.
+        // The flag rides the token so the middleware can park them on /awaiting from the
+        // first request; the re-check below clears it the moment the owner approves.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((user as any).approved === false) token.unapproved = true;
+        else delete token.unapproved;
         return token;
       }
 
@@ -153,6 +163,10 @@ export const authOptions: NextAuthOptions = {
           token.email = email;
           delete token.needsWorkspace;
           delete token.pending;
+          // A joiner who came in through an open link, then signs in with Google on the
+          // matching email, is auto-linked to that same unapproved row — carry the gate.
+          if (row.approved === false) token.unapproved = true;
+          else delete token.unapproved;
           return token;
         }
 
@@ -225,12 +239,17 @@ export const authOptions: NextAuthOptions = {
       if (token.id && token.tenantId) {
         const row = await prisma.user.findFirst({
           where: { id: token.id as string, tenantId: token.tenantId as string },
-          select: { role: true },
+          select: { role: true, approved: true },
         });
         if (!row) {
           token.dead = true;
         } else {
           token.role = row.role;
+          // Approval is re-read here, not cached from login, so the owner letting a member
+          // in takes effect on that member's NEXT request rather than their next sign-in —
+          // and de-approving one shuts the desk just as fast.
+          if (row.approved) delete token.unapproved;
+          else token.unapproved = true;
         }
       }
       return token;
@@ -247,6 +266,18 @@ export const authOptions: NextAuthOptions = {
           u.tenantId = "";
           u.tenantSlug = "";
           u.dead = true;
+          return session;
+        }
+        // A member who joined through an open link and is not approved yet: same shape as
+        // a revoked session — no identity, so `requireUser` reads it as signed out and every
+        // desk route answers 401. The `unapproved` marker lets the guard and the /awaiting
+        // page name the state instead of pretending the password was wrong.
+        if (token.unapproved) {
+          u.role = "";
+          u.id = "";
+          u.tenantId = "";
+          u.tenantSlug = "";
+          u.unapproved = true;
           return session;
         }
         // A finished Google sign-up in waiting: no desk, just the two facts the finish

@@ -592,11 +592,8 @@ export default function LeadsPage() {
         <section className="lg:border-l lg:border-line lg:pl-10">
           <LaneHead
             title="Worked"
-            right={
-              <span className="eyebrow">
-                {loading ? "" : `${verified.length + closed.length} leads`}
-              </span>
-            }
+            count={loading ? undefined : verified.length + closed.length}
+            unit="lead"
           />
           {loading ? (
             <Skeleton lines={3} />

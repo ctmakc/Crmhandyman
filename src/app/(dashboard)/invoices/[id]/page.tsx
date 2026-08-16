@@ -176,9 +176,17 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
 
   return (
     <div className="page-doc space-y-6 pb-24 md:pb-0">
+      {/* Back on its own line on the phone, the desk buttons under it. Sharing one
+          flex row, the two of them got calc(50%) of whatever the back link left over
+          — a strip ~95px wide — and «Print sheet» folded onto two lines inside it.
+          Full width below `sm`, the buttons share the whole line two-up at 44px. */}
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/invoices" label="All invoices" />
-        <div className="actions">
+        {/* `shrink-0` so the 100% width actually holds: a plain `w-full` flex item
+            still shrinks to share the line with the back link, which is how the two
+            buttons ended up ~95px wide. Held at full width they wrap to their own
+            line under the link and split it two-up. */}
+        <div className="actions w-full shrink-0 sm:w-auto sm:shrink">
           {invoice.status === "DRAFT" && (
             <Button disabled={busy} onClick={() => patch({ status: "SENT" })}>
               Mark sent
@@ -188,7 +196,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
             href={`/api/invoices/${params.id}/pdf`}
             target="_blank"
             rel="noopener"
-            className={buttonClass("ghost")}
+            className={`${buttonClass("ghost")} whitespace-nowrap`}
           >
             <Printer className="h-4 w-4" aria-hidden /> Print sheet
           </a>

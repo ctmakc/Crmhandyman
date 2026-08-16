@@ -373,10 +373,17 @@ export default function InvoicesPage() {
           <Skeleton lines={3} />
         ) : bands.length === 0 ? (
           <Empty
+            /* Two ways to empty the book, two answers. A typed search echoes the
+               words back and says where it looked; a state filter that caught
+               nothing is about the state, not a search nobody ran — the hint that
+               named «the invoice number and the client name» read as a lie under
+               a PAID filter with an empty search box. */
             hint={
-              search || statusFilter
-                ? "The search runs over the invoice number and the client name."
-                : "An accepted estimate turns into an invoice on the job it came from."
+              search
+                ? `Nothing matches “${search}”. The search runs over the invoice number and the client name.`
+                : statusFilter
+                  ? "No invoice is in that state right now."
+                  : "An accepted estimate turns into an invoice on the job it came from."
             }
             action={
               search || statusFilter ? (
@@ -387,7 +394,7 @@ export default function InvoicesPage() {
                     setStatusFilter("");
                   }}
                 >
-                  Clear search
+                  {search ? "Clear search" : "Clear filter"}
                 </Button>
               ) : undefined
             }

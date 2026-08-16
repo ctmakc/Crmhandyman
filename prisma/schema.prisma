@@ -43,6 +43,7 @@ model Tenant {
   auditLogs           AuditLog[]
   photos              JobPhoto[]
   intakeKeys          IntakeKey[]
+  invites             Invite[]
 }
 
 enum TenantPlan {
@@ -72,6 +73,14 @@ model User {
   /// login on the shared front door resolve straight to the right desk. Null until linked.
   googleSub        String?   @unique
   role             Role      @default(WORKER)
+  /// The gate on the open join link. Every member the owner made by hand — and every one
+  /// already in the table — is approved and works straight away; the column defaults to
+  /// true so no existing login is locked out by this migration. Someone who walks in
+  /// through an OPEN invite link starts approved=false: they have a real account and can
+  /// sign in, but the guard and the middleware treat them exactly like a revoked session
+  /// (no desk, parked on /awaiting) until the owner approves them. A NAMED invite, whose
+  /// email the owner typed, joins approved=true — the owner already vouched for them.
+  approved         Boolean   @default(true)
   assignedLeads    Lead[]
   assignedProjects Project[] @relation("assignedProjects")
   assignedTasks    Task[]    @relation("assignedTasks")
@@ -86,6 +95,47 @@ model User {
 enum Role {
   ADMIN
   WORKER
+}
+
+/// A way onto the crew that needs no email server. The owner makes one of these on the
+/// Crew screen and shares the link however he likes — text, WhatsApp, a printed QR in the
+/// shop — and whoever opens it joins THIS workspace. Two shapes from one row:
+///
+///   · `email` set  → a NAMED invite for one person. They join approved and work at once,
+///                    because the owner typed their address and already vouched for them.
+///   · `email` null → an OPEN link anyone may follow. They land approved=false and wait
+///                    for the owner to let them in from the same screen.
+///
+/// The whole capability is the `token`: it is random, url-safe and unguessable, so the
+/// join page is public and validates the token rather than a session. `maxUses` null is
+/// unlimited; `uses` counts the joiners; `expiresAt` and `revokedAt` close a link early.
+model Invite {
+  id          String    @id @default(cuid())
+  /// Scoped like every other model. A token, and the pending member it creates, belong to
+  /// exactly one workspace and are invisible from any other (see isolation.e2e.test.ts).
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  token       String    @unique
+  /// What the joiner becomes. WORKER by default; an owner can hand out ADMIN as well.
+  role        Role      @default(WORKER)
+  /// Set = a named invite locked to one address. Null = an open link with no address.
+  email       String?
+  /// Null = unlimited. Otherwise the link stops the moment `uses` reaches it.
+  maxUses     Int?
+  uses        Int       @default(0)
+  expiresAt   DateTime?
+  /// Who cut the invite — a plain id like the journal's actor, carrying no relation on
+  /// purpose: the owner who made it may later be removed, and the link (with its use
+  /// count) has to outlive him.
+  createdById String
+  createdAt   DateTime  @default(now())
+  /// Stamped the moment the owner revokes it. A revoked invite is dead but kept, so the
+  /// list can still show that a link existed and how many people it let in.
+  revokedAt   DateTime?
+
+  /// The Crew screen lists a workspace's own live invites, and the join route looks one
+  /// up by token; both start from the tenant.
+  @@index([tenantId])
 }
 
 /// The customer, not the string on a work order. One roof, one furnace history,

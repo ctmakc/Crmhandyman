@@ -9,6 +9,14 @@ const PUBLIC_PATHS = [
   // The Google sign-up waiting room: a workspace that exists but is not approved yet, or
   // an account that has not named one. Reachable with a half-formed session.
   "/pending",
+  // A member who joined through an open link waits here for the owner to let them in. Like
+  // /pending it is reachable with a session that carries no desk, so it must be public or
+  // the redirect below would loop.
+  "/awaiting",
+  // The public join page and its validate/accept API. Whoever holds the token opens these
+  // with no session at all — that is the whole point of a shareable link.
+  "/join",
+  "/api/join",
   "/api/auth",
   "/api/webhooks",
   "/api/intake",
@@ -132,6 +140,20 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ error: "This workspace is awaiting approval" }, { status: 403 });
     }
     url.pathname = "/pending";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // A member who joined through an open link and is not approved yet. The workspace is fine
+  // — it is this one person who is still at the door — so they go to /awaiting, not
+  // /pending, and their API calls are refused. The guard refuses them too (empty identity),
+  // and the jwt callback re-reads approval each request, so the desk opens the moment the
+  // owner approves without a fresh sign-in.
+  if (token.unapproved) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Your account is waiting for the owner to let you in" }, { status: 403 });
+    }
+    url.pathname = "/awaiting";
     url.search = "";
     return NextResponse.redirect(url);
   }

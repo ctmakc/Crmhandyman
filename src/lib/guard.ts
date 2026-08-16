@@ -13,9 +13,17 @@ export async function requireUser(): Promise<Guard> {
   const signedOut = NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   if (!session) return { ok: false, response: signedOut };
 
+  // Two kinds of session carry no desk, and both are refused before the identity is even
+  // read: a REVOKED user (row gone) and an UNAPPROVED member (joined through an open link,
+  // still waiting for the owner). The session callback zeroes the identity for each, so the
+  // `!identity.id` line below already catches them — this names the refusal explicitly so
+  // it cannot be skipped by a future change that ever carried a partial identity alongside
+  // the flag. The jwt callback re-reads approval every request, so an approval opens the
+  // desk on the next request, not the next login.
+  const flags = session.user as unknown as { dead?: boolean; unapproved?: boolean } | undefined;
+  if (flags?.dead || flags?.unapproved) return { ok: false, response: signedOut };
+
   const identity = sessionTenant(session);
-  // An empty identity is a revoked session — the user row is gone (or its tenant moved),
-  // and the jwt callback stripped the token. Treat it exactly as signed out.
   if (!identity.id || !identity.tenantId) return { ok: false, response: signedOut };
 
   return { ok: true, identity };
