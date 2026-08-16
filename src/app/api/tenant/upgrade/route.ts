@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { sessionTenant } from "@/lib/session";
+import { requireAdmin } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -10,11 +8,9 @@ import { prisma } from "@/lib/prisma";
  * which is the whole paywall. Upgrades belong to the operator panel or a payment webhook.
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-
-  const { tenantId, role } = sessionTenant(session);
-  if (role !== "ADMIN") return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json();
   const businessName = typeof body.businessName === "string" ? body.businessName.trim() : "";

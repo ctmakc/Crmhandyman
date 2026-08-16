@@ -536,3 +536,119 @@ describe.sequential("Scenario A — money that must survive the round trip", () 
     expect(cents(subtotal + tax)).toBe(cents(total));
   });
 });
+
+describe.sequential("Scenario A — money guardrails", () => {
+  let admin: Client;
+  let projectId = "";
+
+  beforeAll(async () => {
+    admin = await signedIn(inject("baseUrl"), inject("alpha").admin);
+    const lead = await admin.post("/api/leads", {
+      name: "Guardrail Client",
+      phone: "613-555-0210",
+      jobType: "Roof repair",
+    });
+    const project = await admin.post(`/api/leads/${lead.body.id}/convert`, {
+      title: "Roof repair — money guardrails",
+    });
+    projectId = project.body.id;
+  });
+
+  /**
+   * A payment past the remaining balance used to book straight in: owing went negative,
+   * the month's revenue inflated by the overage, and the printed invoice clamped OWING
+   * back to $0.00 — so the API said the books were short and the paper the client held
+   * said settled. The pay branch now refuses the overage, and no negative-owing state is
+   * ever written for any surface to disagree over.
+   */
+  it("refuses a payment larger than the whole balance and books nothing", async () => {
+    const estimate = await admin.post(`/api/projects/${projectId}/estimate`, {
+      lineItems: [{ description: "Shingles and labour", qty: 1, unit: "lot", unitPrice: 100 }],
+      taxRate: TAX_RATE,
+    });
+    const invoice = await admin.post("/api/invoices", { projectId, estimateId: estimate.body.id });
+    expect(cents(invoice.body.total)).toBe(cents(113));
+    await admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" });
+
+    const over = await admin.put(`/api/invoices/${invoice.body.id}`, {
+      action: "pay",
+      amount: 200,
+      method: "E_TRANSFER",
+    });
+    expect(over.status).toBe(400);
+    expect(over.body.error).toContain("owing");
+
+    // The refusal wrote no Payment: the invoice is still SENT with nothing collected.
+    const after = await admin.get(`/api/invoices/${invoice.body.id}`);
+    expect(after.body.status).toBe("SENT");
+    expect(cents(after.body.amountPaid)).toBe(0);
+    expect(after.body.payments).toHaveLength(0);
+  });
+
+  /**
+   * The overage that hides best is the one just past a part payment: $50 down on a $113
+   * bill leaves $63, and a $100 second payment reads as generous until owing turns −$37.
+   * The remainder, not the whole total, is the ceiling — and settling it to the cent
+   * still closes the invoice.
+   */
+  it("caps the second payment at what is left, then settles on the exact remainder", async () => {
+    const estimate = await admin.post(`/api/projects/${projectId}/estimate`, {
+      lineItems: [{ description: "Flashing", qty: 1, unit: "lot", unitPrice: 100 }],
+      taxRate: TAX_RATE,
+    });
+    const invoice = await admin.post("/api/invoices", { projectId, estimateId: estimate.body.id });
+    const totalCents = cents(invoice.body.total);
+    await admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" });
+
+    const partial = await admin.put(`/api/invoices/${invoice.body.id}`, {
+      action: "pay",
+      amount: 50,
+      method: "CASH",
+    });
+    expect(partial.body.status).toBe("PARTIAL");
+
+    const remainingCents = totalCents - cents(50);
+    const over = await admin.put(`/api/invoices/${invoice.body.id}`, {
+      action: "pay",
+      amount: toDollars(remainingCents + 1),
+      method: "CASH",
+    });
+    expect(over.status).toBe(400);
+
+    // Owing stayed positive throughout — nothing negative reached the ledger.
+    const held = await admin.get(`/api/invoices/${invoice.body.id}`);
+    expect(cents(held.body.total) - cents(held.body.amountPaid)).toBe(remainingCents);
+
+    const settle = await admin.put(`/api/invoices/${invoice.body.id}`, {
+      action: "pay",
+      amount: toDollars(remainingCents),
+      method: "CASH",
+    });
+    expect(settle.body.status).toBe("PAID");
+    expect(cents(settle.body.total)).toBe(totalCents);
+  });
+
+  /**
+   * An invoice totals to what the client owes, so a sub-zero total is not a bill. It used
+   * to save as an ordinary DRAFT and pull the revenue rollup down by its own amount; the
+   * create route now refuses it, since a refund or credit is a separate document.
+   */
+  it("refuses an invoice whose total comes out below zero", async () => {
+    const res = await admin.post("/api/invoices", {
+      projectId,
+      lineItems: [{ description: "Manual credit", qty: 1, unit: "ea", unitPrice: -500 }],
+      taxRate: TAX_RATE,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("below zero");
+
+    // A positive bill on the same route still issues, so the guard only bites sub-zero.
+    const ok = await admin.post("/api/invoices", {
+      projectId,
+      lineItems: [{ description: "Repair", qty: 1, unit: "lot", unitPrice: 300 }],
+      taxRate: TAX_RATE,
+    });
+    expect(ok.status).toBe(201);
+    expect(cents(ok.body.total)).toBeGreaterThan(0);
+  });
+});

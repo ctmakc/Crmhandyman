@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionTenant } from "@/lib/session";
+import { requireUser } from "@/lib/guard";
 import { scopedUserId } from "@/lib/scope";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const lead = await prisma.lead.findFirst({
     where: { id: params.id, tenantId },
@@ -23,9 +21,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json();
   const existing = await prisma.lead.findFirst({ where: { id: params.id, tenantId } });
@@ -54,9 +52,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const existing = await prisma.lead.findFirst({ where: { id: params.id, tenantId } });
   if (!existing) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });

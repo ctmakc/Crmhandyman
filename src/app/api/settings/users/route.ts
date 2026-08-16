@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { record, actorFromSession } from "@/lib/audit";
-import { isAdmin, sessionTenant } from "@/lib/session";
-
-const isNotAdmin = (session: Parameters<typeof isAdmin>[0]) => !isAdmin(session);
+import { record } from "@/lib/audit";
+import { requireAdmin } from "@/lib/guard";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const users = await prisma.user.findMany({
     where: { tenantId },
@@ -23,9 +19,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json();
   const password = await bcrypt.hash(body.password, 12);
@@ -43,7 +39,7 @@ export async function POST(req: NextRequest) {
 
   await record({
     tenantId,
-    actor: actorFromSession(session),
+    actor: { id: guard.identity.id },
     action: "user.add",
     entity: "User",
     entityId: user.id,
@@ -55,10 +51,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session || isNotAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
 
-  const { tenantId, id: selfId } = sessionTenant(session);
+  const { tenantId, id: selfId } = guard.identity;
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -88,7 +84,7 @@ export async function DELETE(req: NextRequest) {
 
   await record({
     tenantId,
-    actor: actorFromSession(session),
+    actor: { id: guard.identity.id },
     action: "user.remove",
     entity: "User",
     entityId: id,

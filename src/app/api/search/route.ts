@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionTenant } from "@/lib/session";
+import { requireUser } from "@/lib/guard";
 
 export interface SearchHit {
   kind: "lead" | "job" | "invoice" | "client";
@@ -15,9 +13,9 @@ export interface SearchHit {
 
 /** One query across the three things a dispatcher jumps to. */
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const q = (new URL(req.url).searchParams.get("q") || "").trim();
   if (q.length < 2) return NextResponse.json([]);

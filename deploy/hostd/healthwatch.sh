@@ -19,6 +19,47 @@ LOG=/var/log/handyman-healthwatch.log
 
 note() { echo "$(date '+%Y-%m-%d %H:%M:%S') healthwatch: $*" >>"$LOG"; }
 
+# cron runs with a bare environment, so the alert credentials (and anything else
+# the deploy put in .env) are absent unless we read them. Same file the compose
+# stack and backup-cron.sh source, right next to this script.
+ENV_FILE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/.env"
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  set -a; . "$ENV_FILE"; set +a
+fi
+
+# Escalate past the log. The growing log is the alarm ONLY if someone reads it,
+# and nobody watches a five-minute cron; a box that stays down through a paying
+# week needs to reach a phone. Best-effort by design — this fires precisely when
+# the box is already sick, so a failed send (no creds, no network, Telegram down)
+# must never take the watchdog itself down with it: every path returns 0.
+#
+# Silent no-op unless BOTH creds are present, so a box that never set them keeps
+# the old log-only behaviour. Throttled to one message per key per
+# ALERT_MIN_INTERVAL_MIN (default 60): this cron re-fires every 5 min and a box
+# that stays down would otherwise turn the operator's phone into the log it is
+# meant to replace. The token rides curl's --config on stdin, never argv, so it
+# cannot leak through `ps` or a process listing.
+alert() {
+  _key=$1; shift
+  [ -n "${ALERT_TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${ALERT_TELEGRAM_CHAT_ID:-}" ] || return 0
+  _win=${ALERT_MIN_INTERVAL_MIN:-60}
+  _stamp="/var/log/handyman-alert-$_key.stamp"
+  if [ -e "$_stamp" ] && [ -n "$(find "$_stamp" -mmin -"$_win" 2>/dev/null)" ]; then
+    return 0
+  fi
+  if curl -sS -f -m 10 -o /dev/null \
+       --data-urlencode "chat_id=$ALERT_TELEGRAM_CHAT_ID" \
+       --data-urlencode "text=$*" \
+       --config - <<EOF 2>/dev/null
+url = "https://api.telegram.org/bot${ALERT_TELEGRAM_BOT_TOKEN}/sendMessage"
+EOF
+  then
+    touch "$_stamp" 2>/dev/null || true
+  fi
+  return 0
+}
+
 # Healthy: say nothing, touch nothing.
 if curl -fsS -m 10 "http://127.0.0.1:$APP_PORT/api/health" >/dev/null 2>&1; then
   exit 0
@@ -40,9 +81,16 @@ if [ -n "$STARTED" ]; then
   fi
 fi
 
+# Reaching here means the probe failed AND the container is past its 3-minute boot
+# window — so this is either a long-lived container that just went bad or one our
+# previous cycle already restarted 5+ minutes ago without curing it. That is the
+# "one restart attempt, still unhealthy" line the operator must hear about, beyond
+# the restart we still attempt as the remedy.
 note "restarting $CONTAINER"
 if docker restart "$CONTAINER" >/dev/null 2>&1; then
   note "restart issued — next probe in 5 min will tell"
+  alert healthwatch "🔴 HandymanPro CRM DOWN on hostd — /api/health not answering, container restarted. Watching; check /var/log/handyman-healthwatch.log"
 else
   note "RESTART FAILED — docker itself is unwell, operator needed"
+  alert healthwatch "🔴 HandymanPro CRM DOWN on hostd — /api/health not answering AND docker restart FAILED. Operator needed now. See /var/log/handyman-healthwatch.log"
 fi

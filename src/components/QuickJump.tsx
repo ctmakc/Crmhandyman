@@ -21,6 +21,12 @@ const KIND_LABEL: Record<Hit["kind"], string> = {
   invoice: "INV",
 };
 
+/* The combobox wiring points at these by id: the field's aria-controls names the list,
+   its aria-activedescendant names the lit row. Only one QuickJump mounts at a time, so a
+   fixed id per row is enough and keeps the two attributes readable. */
+const LISTBOX_ID = "quickjump-listbox";
+const optionId = (i: number) => `quickjump-option-${i}`;
+
 /**
  * Cmd/Ctrl+K jump. A dispatcher on the phone needs the record in two seconds, and
  * clicking Leads → filter → scroll is not two seconds.
@@ -102,11 +108,23 @@ export default function QuickJump() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-ink-3" strokeWidth={2} />
+          <Search className="h-4 w-4 shrink-0 text-ink-3" strokeWidth={2} aria-hidden />
+          {/* The field IS the combobox: it keeps focus while the arrows walk the hits, so
+              the reader is told what it is (aria-label — the magnifier beside it is mute),
+              that a list hangs off it (role + aria-controls), whether that list is showing
+              (aria-expanded), and which row the arrow keys have landed on
+              (aria-activedescendant). Focus never leaves the input; the highlighted option
+              is named by id, the pattern a screen reader expects from ⌘K search. */}
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            role="combobox"
+            aria-label="Search leads, jobs, clients and invoices"
+            aria-autocomplete="list"
+            aria-expanded={hits.length > 0}
+            aria-controls={LISTBOX_ID}
+            aria-activedescendant={hits.length > 0 ? optionId(active) : undefined}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -143,40 +161,51 @@ export default function QuickJump() {
           <span aria-live="polite" className="sr-only">
             {q.trim().length >= 2 ? `${hits.length} found` : ""}
           </span>
-          {hits.map((hit, i) => (
-            <button
-              key={`${hit.kind}-${hit.id}`}
-              onMouseEnter={() => setActive(i)}
-              onClick={() => go(hit)}
-              className="flex w-full items-center gap-3 border-b border-line px-4 py-2.5 text-left last:border-b-0"
-              style={{ background: i === active ? "var(--sunk)" : undefined }}
-            >
-              {/*
-                A CLIENT HAS NO STATUS. The search API answers every kind with the same
-                field, so every person in the book was stamped COMPLETED and given the
-                emerald spine that means «paid, done» everywhere else on the desk. A
-                colour that means something in nine places cannot mean nothing in the
-                tenth: the client rows carry the neutral spine and no state word.
-              */}
-              <span
-                className="h-7 w-[3px] shrink-0"
-                style={{
-                  background: hit.kind === "client" ? "var(--slate)" : spineFor(hit.status),
-                }}
-                aria-hidden
-              />
-              <span className="mono t-micro w-[52px] shrink-0 tracking-[0.08em] text-ink-3">
-                {KIND_LABEL[hit.kind]}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="t-row block truncate font-bold text-ink">{hit.title}</span>
-                <span className="t-meta block truncate text-ink-2">{hit.sub}</span>
-              </span>
-              {hit.kind !== "client" && (
-                <span className="eyebrow shrink-0">{hit.status.replace("_", " ")}</span>
-              )}
-            </button>
-          ))}
+          {/* The rows are the listbox the field controls; each is an option a reader can
+              hear as "N of M" with the lit one announced selected. The wrapper holds only
+              options — the empty lines and the live count stay outside it, so nothing but a
+              record answers to the arrow keys. */}
+          {hits.length > 0 && (
+            <div role="listbox" id={LISTBOX_ID} aria-label="Search results">
+              {hits.map((hit, i) => (
+                <button
+                  key={`${hit.kind}-${hit.id}`}
+                  role="option"
+                  id={optionId(i)}
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => go(hit)}
+                  className="flex w-full items-center gap-3 border-b border-line px-4 py-2.5 text-left last:border-b-0"
+                  style={{ background: i === active ? "var(--sunk)" : undefined }}
+                >
+                  {/*
+                    A CLIENT HAS NO STATUS. The search API answers every kind with the same
+                    field, so every person in the book was stamped COMPLETED and given the
+                    emerald spine that means «paid, done» everywhere else on the desk. A
+                    colour that means something in nine places cannot mean nothing in the
+                    tenth: the client rows carry the neutral spine and no state word.
+                  */}
+                  <span
+                    className="h-7 w-[3px] shrink-0"
+                    style={{
+                      background: hit.kind === "client" ? "var(--slate)" : spineFor(hit.status),
+                    }}
+                    aria-hidden
+                  />
+                  <span className="mono t-micro w-[52px] shrink-0 tracking-[0.08em] text-ink-3">
+                    {KIND_LABEL[hit.kind]}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="t-row block truncate font-bold text-ink">{hit.title}</span>
+                    <span className="t-meta block truncate text-ink-2">{hit.sub}</span>
+                  </span>
+                  {hit.kind !== "client" && (
+                    <span className="eyebrow shrink-0">{hit.status.replace("_", " ")}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

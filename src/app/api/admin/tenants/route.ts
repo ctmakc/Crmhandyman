@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 import { sessionTenant } from "@/lib/session";
+import { requireUser } from "@/lib/guard";
 import { removeStoredFile } from "@/lib/uploads";
 import type { Session } from "next-auth";
 
@@ -28,9 +29,26 @@ function isSuperAdmin(session: Session | null) {
   return tenantSlug === PLATFORM_TENANT_SLUG && role === "ADMIN";
 }
 
-export async function GET() {
+/**
+ * The platform operator's door — stricter than requireAdmin, which asks only for the
+ * ADMIN role. requireUser runs first so a signed-out or revoked session (a revoked user
+ * carries an empty identity) gets the guard's clean 401 through the sanctioned path;
+ * isSuperAdmin then holds the extra platform conditions above. Every failure still
+ * answers 401 exactly as before, so no ordinary admin learns this panel is even here.
+ */
+async function requireSuperAdmin(): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
+  const guard = await requireUser();
+  if (!guard.ok) return guard;
   const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  if (!isSuperAdmin(session)) {
+    return { ok: false, response: NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 }) };
+  }
+  return { ok: true };
+}
+
+export async function GET() {
+  const gate = await requireSuperAdmin();
+  if (!gate.ok) return gate.response;
 
   const tenants = await prisma.tenant.findMany({
     include: { _count: { select: { users: true, leads: true, projects: true } } },
@@ -41,8 +59,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  const gate = await requireSuperAdmin();
+  if (!gate.ok) return gate.response;
 
   const body = await req.json();
   const { id, plan, expiresAt, businessName } = body;
@@ -60,8 +78,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  const gate = await requireSuperAdmin();
+  if (!gate.ok) return gate.response;
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");

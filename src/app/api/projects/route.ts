@@ -104,7 +104,35 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
   const { tenantId } = sessionTenant(session);
 
-  const body = await req.json();
+  // A body that is not JSON is a bad request, never a crash. `req.json()` throws on a
+  // truncated or non-JSON payload, and an unguarded throw here answered 500 with an empty
+  // body — the caller could not tell a malformed request from a dead server.
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "That job could not be read — the request body was not valid JSON" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "That job could not be read — the request body was empty" }, { status: 400 });
+  }
+
+  // A job needs a customer to bill, a name to find it by, and an address to drive to —
+  // three columns the table stores NOT NULL. A partial payload used to reach `project.create`
+  // and let the database throw, which answered 500 AFTER `resolveClient` had already minted
+  // the customer: an orphan Client the crew has no button to delete. Refused up front on
+  // the same three fields the form marks required, and nothing is created at all.
+  const text = (raw: unknown) => (typeof raw === "string" ? raw.trim() : "");
+  const clientName = text(body.clientName);
+  const title = text(body.title);
+  const address = text(body.address);
+  const missing = [
+    !clientName && "a client name",
+    !title && "a job title",
+    !address && "an address",
+  ].filter(Boolean);
+  if (missing.length)
+    return NextResponse.json({ error: `A job needs ${missing.join(", ")}.` }, { status: 400 });
 
   // A job cannot be dispatched to another contractor's employee.
   const assignee = await scopedUserId(tenantId, body.assignedToId);
@@ -117,30 +145,35 @@ export async function POST(req: NextRequest) {
   const picked = await scopedClientId(tenantId, body.clientId);
   if (!picked.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-  const clientId =
-    picked.value ||
-    (await resolveClient(tenantId, {
-      name: body.clientName,
-      phone: body.phone,
-      email: body.email,
-      address: body.address,
-    }));
+  // Resolving the client can CREATE one, and the job it hangs off can still fail — a
+  // scheduledDate the driver rejects, a write that races a delete. Both live in one
+  // `$transaction` so a failed job never leaves a customer behind: the resolver reads and
+  // writes through the same `tx`, and if `create` throws the mint rolls back with it.
+  const project = await prisma.$transaction(async (tx) => {
+    const clientId =
+      picked.value ||
+      (await resolveClient(
+        tenantId,
+        { name: clientName, phone: body.phone as string | null, email: body.email as string | null, address },
+        tx
+      ));
 
-  const project = await prisma.project.create({
-    data: {
-      tenantId,
-      clientId,
-      clientName: body.clientName,
-      phone: body.phone,
-      email: body.email,
-      address: body.address,
-      title: body.title,
-      description: body.description,
-      jobType: body.jobType,
-      scheduledDate: parseDayInput(body.scheduledDate),
-      durationMinutes: parseDuration(body.durationMinutes),
-      assignedToId: assignee.value,
-    },
+    return tx.project.create({
+      data: {
+        tenantId,
+        clientId,
+        clientName,
+        phone: body.phone as string | null | undefined,
+        email: body.email as string | null | undefined,
+        address,
+        title,
+        description: body.description as string | null | undefined,
+        jobType: body.jobType as string | null | undefined,
+        scheduledDate: parseDayInput(body.scheduledDate),
+        durationMinutes: parseDuration(body.durationMinutes),
+        assignedToId: assignee.value,
+      },
+    });
   });
 
   return NextResponse.json(

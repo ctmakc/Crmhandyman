@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveClient } from "@/lib/client-resolver";
-import { record, actorFromSession } from "@/lib/audit";
-import { sessionTenant } from "@/lib/session";
+import { record } from "@/lib/audit";
+import { requireUser } from "@/lib/guard";
 import { scopedUserId } from "@/lib/scope";
 import { parseDayInput } from "@/lib/dates";
 import { docRef } from "@/lib/document";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { id: actorId, tenantId } = guard.identity;
 
   const body = await req.json();
 
@@ -65,7 +63,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   await record({
     tenantId,
-    actor: actorFromSession(session),
+    // The guard identity carries the actor's id; the journal resolves the name itself.
+    actor: { id: actorId },
     action: "lead.convert",
     entity: "Project",
     entityId: project.id,

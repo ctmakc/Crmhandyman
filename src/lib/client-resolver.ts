@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -15,15 +16,25 @@ export interface ClientDetails {
   city?: string | null;
 }
 
+/**
+ * The resolver reads and may CREATE, so a caller that also creates the record hanging off
+ * the client — a job, most of all — must be able to hand in its own transaction handle.
+ * Off the shared `prisma`, a customer minted here survives a caller that then throws, and
+ * the crew has no button to delete a client. Inside the caller's `$transaction`, the mint
+ * rolls back with everything else. `Prisma.TransactionClient` and the base client share
+ * the model methods this file touches, so one signature serves both.
+ */
+type Db = typeof prisma | Prisma.TransactionClient;
+
 const digits = (s?: string | null) => (s || "").replace(/\D/g, "");
 const norm = (s?: string | null) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const street = (s?: string | null) => norm(s).split(",")[0];
 
-export async function resolveClient(tenantId: string, details: ClientDetails) {
+export async function resolveClient(tenantId: string, details: ClientDetails, db: Db = prisma) {
   const phone = digits(details.phone);
   if (phone.length >= 7) {
     // SQLite cannot strip punctuation in SQL, so the digit comparison happens here.
-    const candidates = await prisma.client.findMany({
+    const candidates = await db.client.findMany({
       where: { tenantId, phone: { not: null } },
       select: { id: true, phone: true },
       orderBy: { createdAt: "asc" },
@@ -34,12 +45,12 @@ export async function resolveClient(tenantId: string, details: ClientDetails) {
 
   const email = norm(details.email);
   if (email) {
-    const byEmail = await prisma.client.findFirst({ where: { tenantId, email: details.email } });
+    const byEmail = await db.client.findFirst({ where: { tenantId, email: details.email } });
     if (byEmail) return byEmail.id;
   }
 
   if (norm(details.name)) {
-    const sameName = await prisma.client.findMany({
+    const sameName = await db.client.findMany({
       where: { tenantId, name: details.name },
       select: { id: true, address: true },
     });
@@ -47,7 +58,7 @@ export async function resolveClient(tenantId: string, details: ClientDetails) {
     if (hit) return hit.id;
   }
 
-  const created = await prisma.client.create({
+  const created = await db.client.create({
     data: {
       tenantId,
       name: details.name || "Unnamed client",

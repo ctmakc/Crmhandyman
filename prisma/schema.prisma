@@ -516,6 +516,14 @@ model ChannelIntegration {
   pageId        String?
   webhookSecret String?
   config        String?
+  /// The inbound address this channel answers to, reduced to exactly what the email
+  /// webhook routes on (normalizeChannelAddress / configuredAddress: lowercased, trimmed).
+  /// Held in its own column with a global unique index so two workspaces cannot both
+  /// claim one inbox — the guessable leads-<slug>@ address made that a real lead-theft
+  /// path, and a database constraint refuses the second claim even under a race the
+  /// API's pre-check would lose. Null for channels that route by page id, not address
+  /// (Facebook), and SQLite counts every null as distinct so they never collide here.
+  normalizedAddress String? @unique
   isActive      Boolean   @default(false)
   lastSyncAt    DateTime?
 

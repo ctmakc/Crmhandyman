@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionTenant } from "@/lib/session";
+import { requireUser } from "@/lib/guard";
 
 /**
  * "This address has been here before."
@@ -12,9 +10,9 @@ import { sessionTenant } from "@/lib/session";
  * and falls back to the street line for jobs created before Wave 2.
  */
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const project = await prisma.project.findFirst({
     where: { id: params.id, tenantId },

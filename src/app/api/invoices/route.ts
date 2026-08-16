@@ -105,6 +105,18 @@ export async function POST(req: NextRequest) {
     );
   const { subtotalCents, taxCents, totalCents } = quoteTotals(lineItems, taxRate);
 
+  // An invoice totals to what the client owes, so it comes out at zero or above. A
+  // sub-zero total booked as an ordinary DRAFT and quietly dragged the revenue rollup
+  // down by its own amount — negative money on the street that nobody had issued. A
+  // refund or customer credit is a separate document this product does not write, so the
+  // negative invoice is refused here rather than left to skew the books. Guarded on the
+  // combined total before the deposit split, since both halves are cut from this figure.
+  if (totalCents < 0)
+    return NextResponse.json(
+      { error: "An invoice cannot total below zero — a refund or credit is a separate document. Check the line amounts." },
+      { status: 400 }
+    );
+
   const dueDate =
     parseDayInput(body.dueDate) ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 

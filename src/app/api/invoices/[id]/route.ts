@@ -66,6 +66,24 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!amountCents || amountCents <= 0)
       return NextResponse.json({ error: "Amount must be positive" }, { status: 400 });
 
+    // A bill is only as open as what it still owes. A payment past that remainder used
+    // to book straight in — owing went negative, the month's revenue inflated by the
+    // overage, and the paper the client holds clamped OWING back to $0.00, so the books
+    // and the printed invoice disagreed on the one figure both have to speak. The desk
+    // records what settles the bill and puts any surplus on its own invoice; a customer
+    // credit balance is a separate ledger this product does not carry yet.
+    const alreadyPaidCents = invoice.payments.reduce((s, p) => s + p.amountCents, 0);
+    const remainingCents = invoice.totalCents - alreadyPaidCents;
+    if (amountCents > remainingCents)
+      return NextResponse.json(
+        {
+          error:
+            `That is more than the ${money(Math.max(remainingCents, 0))} still owing on ${invoice.number}. ` +
+            `Record what settles the bill, and put any surplus on its own invoice.`,
+        },
+        { status: 400 }
+      );
+
     await prisma.payment.create({
       data: {
         tenantId,
@@ -77,8 +95,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       },
     });
 
-    const paidCents = invoice.payments.reduce((s, p) => s + p.amountCents, 0) + amountCents;
-    // Whole cents on both sides: float sums used to leave $0.001 owing forever.
+    const paidCents = alreadyPaidCents + amountCents;
+    // Whole cents on both sides: float sums used to leave $0.001 owing forever. The
+    // overpayment guard above holds this at totalCents exactly, never past it.
     const settled = paidCents >= invoice.totalCents;
 
     const updated = await prisma.invoice.update({

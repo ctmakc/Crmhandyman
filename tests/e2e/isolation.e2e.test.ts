@@ -161,6 +161,41 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
     });
   });
 
+  describe("a revoked session is signed out, not handed an empty workspace", () => {
+    /**
+     * A fired worker's cookie stays syntactically valid until it expires, and the routes
+     * converted to requireUser() used to read its empty identity as tenantId="" and answer
+     * an empty 200 instead of a clean 401. The jwt callback re-checks the row on every
+     * request, so one delete is enough to turn the next call this worker makes into a
+     * revoked session — the exact case the guard now rejects.
+     */
+    it("a deleted user gets 401 on a converted route, not an empty 200", async () => {
+      const stamp = Date.now().toString(36);
+      const email = `revoked.${stamp}@e2e.local`;
+      const password = `revoked-${stamp}-password`;
+
+      const created = await a.admin.post("/api/settings/users", {
+        name: "Revoked Ray",
+        email,
+        password,
+        role: "WORKER",
+      });
+      expect(created.status).toBe(201);
+
+      // While still on the crew the worker reads their own workspace normally.
+      const doomed = await signIn(baseUrl, { slug: a.workspace.slug, email, password });
+      expect((await doomed.get("/api/leads")).status).toBe(200);
+
+      const fired = await a.admin.del(`/api/settings/users?id=${created.body.id}`);
+      expect(fired.status).toBe(200);
+
+      // The stale cookie is now a revoked session: a clean 401, and never a list.
+      const after = await doomed.get("/api/leads");
+      expect(after.status).toBe(401);
+      expect(Array.isArray(after.body)).toBe(false);
+    });
+  });
+
   describe("the audit matrix, re-run", () => {
     it("lists show only the caller's own rows", async () => {
       const cases: Array<[string, string]> = [
