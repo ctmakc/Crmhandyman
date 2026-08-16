@@ -4,18 +4,20 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { writeAuditEvent } from "@/lib/audit";
 import { InvoicePaymentError, recordInvoicePayment } from "@/lib/invoice-payment";
+import { buildPublicPaymentUrl } from "@/lib/payment-links";
 
 async function tenantOf(session: unknown) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (session as any)?.user?.tenantId as string;
 }
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const tenantId = await tenantOf(session);
 
   const invoice = await prisma.invoice.findFirst({
-    where: { id: params.id, tenantId: await tenantOf(session) },
+    where: { id: params.id, tenantId },
     include: {
       payments: { orderBy: { date: "desc" } },
       project: { select: { id: true, title: true, jobType: true } },
@@ -26,6 +28,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   return NextResponse.json({
     ...invoice,
     amountPaid: invoice.payments.reduce((sum, payment) => sum + payment.amount, 0),
+    paymentUrl: buildPublicPaymentUrl({ origin: req.nextUrl.origin, tenantId, invoiceId: invoice.id }),
   });
 }
 
