@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Phone, MapPin, ChevronRight, X, Check, Ban } from "lucide-react";
-import { PageHeader, Skeleton, Empty, buttonClass, textToneFor } from "@/components/ui/primitives";
+import { PageHead, Skeleton, Empty, buttonClass, textToneFor } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 
 interface Lead {
@@ -150,10 +150,10 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHead
         eyebrow="Sales intake"
         title="Leads"
-        actions={
+        action={
           <button type="button" onClick={() => setShowAddForm(true)} className={buttonClass("primary")}>
             <Plus className="h-4 w-4" /> Add lead
           </button>
