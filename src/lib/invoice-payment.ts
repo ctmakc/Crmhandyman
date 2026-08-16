@@ -5,6 +5,8 @@ const PAYMENT_METHODS = new Set(["CASH", "E_TRANSFER", "CHEQUE", "CARD"]);
 export class InvoicePaymentError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
+    this.name = "InvoicePaymentError";
+    Object.setPrototypeOf(this, InvoicePaymentError.prototype);
   }
 }
 
