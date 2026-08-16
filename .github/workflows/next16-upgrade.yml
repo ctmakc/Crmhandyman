@@ -1,0 +1,65 @@
+name: One-shot Next 16 migration
+
+on:
+  push:
+    branches:
+      - agent/next16-migration
+    paths:
+      - .github/workflows/next16-upgrade.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/next16-migration
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - run: npm ci
+
+      - name: Migrate async request APIs
+        run: npx --yes @next/codemod@latest next-async-request-api .
+      - name: Checkpoint async API migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then git commit -m "refactor: migrate Next async request APIs"; fi
+
+      - name: Migrate middleware convention to proxy
+        run: npx --yes @next/codemod@latest middleware-to-proxy .
+      - name: Checkpoint proxy migration
+        run: |
+          git add -A
+          if ! git diff --cached --quiet; then git commit -m "refactor: migrate Next middleware to proxy"; fi
+
+      - name: Migrate next lint to ESLint CLI
+        run: npx --yes @next/codemod@canary next-lint-to-eslint-cli .
+      - name: Checkpoint ESLint migration
+        run: |
+          git add -A
+          if ! git diff --cached --quiet; then git commit -m "build: migrate next lint to ESLint CLI"; fi
+
+      - name: Upgrade Next and React stable lines
+        run: npm install next@^16.3.0 react@^19.2.0 react-dom@^19.2.0
+      - name: Upgrade framework dev dependencies
+        run: npm install --save-dev eslint@^9 eslint-config-next@^16.3.0 @types/react@^19 @types/react-dom@^19
+
+      - name: Confirm no critical production advisory
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Commit and push migration
+        run: |
+          git add -A
+          git commit -m "build: upgrade Handyman CRM to Next 16 and React 19" || true
+          git push origin HEAD:agent/next16-migration
