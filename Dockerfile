@@ -1,5 +1,5 @@
 # --- Stage 1: Dependencies ---
-FROM node:18-alpine AS deps
+FROM node:20.19-alpine AS deps
 RUN apk add --no-cache libc6-compat openssl python3 make g++
 WORKDIR /app
 
@@ -7,7 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # --- Stage 2: Build ---
-FROM node:18-alpine AS builder
+FROM node:20.19-alpine AS builder
 RUN apk add --no-cache libc6-compat openssl python3 make g++
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # --- Stage 3: Production ---
-FROM node:18-alpine AS runner
+FROM node:20.19-alpine AS runner
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -43,8 +43,8 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
+# Create data directory for SQLite and private job evidence
+RUN mkdir -p /app/data/evidence /app/data/backups && chown -R nextjs:nodejs /app/data
 
 # Entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
