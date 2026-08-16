@@ -164,8 +164,55 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      // A signup that has not finished naming its workspace: nothing to re-check yet.
-      if (token.needsWorkspace) return token;
+      // A signup in the finish room. The moment /register/finish creates the workspace,
+      // the googleSub gains a user row — pick it up so the very next request leaves the
+      // room: PENDING → the waiting screen, ACTIVE (an operator was quick) → the desk.
+      if (token.needsWorkspace) {
+        if (token.googleSub) {
+          const row = await prisma.user.findUnique({
+            where: { googleSub: token.googleSub as string },
+            include: { tenant: { select: { slug: true, status: true } } },
+          });
+          if (row) {
+            delete token.needsWorkspace;
+            if (row.tenant.status !== "ACTIVE") {
+              token.pending = true;
+              token.pendingSlug = row.tenant.slug;
+            } else {
+              token.id = row.id;
+              token.role = row.role;
+              token.tenantId = row.tenantId;
+              token.tenantSlug = row.tenant.slug;
+            }
+          }
+        }
+        return token;
+      }
+
+      // A pending workspace, re-checked so approval takes effect on the next request
+      // rather than the next login.
+      if (token.pending && token.pendingSlug) {
+        const t = await prisma.tenant.findUnique({
+          where: { slug: token.pendingSlug as string },
+          select: { status: true },
+        });
+        if (t?.status === "ACTIVE" && token.email) {
+          const row = await prisma.user.findFirst({
+            where: { email: token.email as string, tenant: { slug: token.pendingSlug as string } },
+            select: { id: true, role: true, tenantId: true },
+          });
+          if (row) {
+            const slug = token.pendingSlug as string;
+            delete token.pending;
+            delete token.pendingSlug;
+            token.id = row.id;
+            token.role = row.role;
+            token.tenantId = row.tenantId;
+            token.tenantSlug = slug;
+          }
+        }
+        return token;
+      }
 
       /**
        * On every later request the token is stateless — nothing has asked the database
