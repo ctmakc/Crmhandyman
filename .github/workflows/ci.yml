@@ -52,6 +52,13 @@ jobs:
           path: eslint-report.json
           if-no-files-found: ignore
       - name: Run TypeScript typecheck
-        run: npm run typecheck
+        run: npm run typecheck > typecheck-report.txt 2>&1
+      - name: Upload TypeScript report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-report
+          path: typecheck-report.txt
+          if-no-files-found: ignore
       - name: Build production application
         run: npm run build
