@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyPaymentLinkToken } from "@/lib/payment-links";
 import { stripePaymentsConfigured } from "@/lib/stripe-payments";
 import { formatCurrency } from "@/lib/utils";
+import { buttonClass } from "@/components/ui/primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,7 @@ export default async function PublicPaymentPage({
             <form action="/api/payments/stripe/checkout" method="post" className="mt-6 border-t border-line pt-5">
               <input type="hidden" name="invoiceId" value={invoice.id} />
               <input type="hidden" name="token" value={token} />
-              <button type="submit" className="btn-primary w-full justify-center py-3 text-[14px]">
+              <button type="submit" className={`${buttonClass("primary")} w-full justify-center py-3 text-[14px]`}>
                 Pay {formatCurrency(owing)} securely by card
               </button>
               <p className="mt-3 text-center text-[11px] text-ink-3">
