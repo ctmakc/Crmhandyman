@@ -22,16 +22,22 @@ export interface ReminderTarget {
   dueDate: Date | string | null;
   daysOverdue: number;
   businessName: string;
+  paymentUrl?: string | null;
 }
 
 export function smtpConfigured() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
+function paymentLine(t: ReminderTarget) {
+  return t.paymentUrl ? `Pay securely by card: ${t.paymentUrl}` : null;
+}
+
 export function reminderCopy(t: ReminderTarget) {
   const owing = t.total - t.amountPaid;
   const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-CA") : "on receipt";
   const money = formatCurrency(owing);
+  const pay = paymentLine(t);
 
   if (t.daysOverdue >= 30) {
     return {
@@ -41,8 +47,9 @@ export function reminderCopy(t: ReminderTarget) {
         `Hi ${t.clientName},`,
         `Invoice ${t.number} for ${money} was due ${due} and is now ${t.daysOverdue} days overdue.`,
         `We have paused further work on this account until it is settled. Please arrange payment this week, or reply to this email if there is a problem with the invoice we should know about.`,
+        pay,
         `— ${t.businessName}`,
-      ],
+      ].filter(Boolean) as string[],
     };
   }
   if (t.daysOverdue >= 14) {
@@ -53,8 +60,9 @@ export function reminderCopy(t: ReminderTarget) {
         `Hi ${t.clientName},`,
         `Invoice ${t.number} for ${money} was due ${due} and is now two weeks past due.`,
         `Could you let us know when we can expect payment? If it is easier, reply here and we will call you.`,
+        pay,
         `— ${t.businessName}`,
-      ],
+      ].filter(Boolean) as string[],
     };
   }
   return {
@@ -64,9 +72,20 @@ export function reminderCopy(t: ReminderTarget) {
       `Hi ${t.clientName},`,
       `A quick reminder that invoice ${t.number} for ${money} was due ${due}.`,
       `If it has already been sent, thank you and please ignore this note.`,
+      pay,
       `— ${t.businessName}`,
-    ],
+    ].filter(Boolean) as string[],
   };
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char] || char);
 }
 
 export async function sendReminder(t: ReminderTarget) {
@@ -92,7 +111,7 @@ export async function sendReminder(t: ReminderTarget) {
       to: t.email,
       subject: copy.subject,
       text: copy.body.join("\n\n"),
-      html: copy.body.map((p) => `<p>${p}</p>`).join(""),
+      html: copy.body.map((p) => `<p>${escapeHtml(p)}</p>`).join(""),
     });
     return { sent: true, ...copy };
   } catch (e) {

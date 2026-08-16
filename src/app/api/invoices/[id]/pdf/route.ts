@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { renderDocument, DocLineItem } from "@/lib/document";
+import { buildPublicPaymentUrl } from "@/lib/payment-links";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -20,6 +21,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const paymentUrl = buildPublicPaymentUrl({ origin: req.nextUrl.origin, tenantId, invoiceId: invoice.id });
+  const paymentNote = paymentUrl ? `Pay securely by card: ${paymentUrl}` : null;
+  const notes = [invoice.notes, paymentNote].filter(Boolean).join(" · ") || null;
+
   const html = renderDocument({
     kind: "INVOICE",
     number: invoice.number,
@@ -35,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     tax: invoice.tax,
     total: invoice.total,
     amountPaid: invoice.payments.reduce((s, p) => s + p.amount, 0),
-    notes: invoice.notes,
+    notes,
     issuedAt: invoice.issuedAt,
     dueDate: invoice.dueDate,
     autoPrint: new URL(req.url).searchParams.get("print") === "1",

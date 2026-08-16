@@ -5,15 +5,21 @@ const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/expired",
+  "/pay",
   "/api/auth",
   "/api/webhooks",
   "/api/intake",
+  "/api/payments/stripe",
   "/api/health",
   "/api/tenant/resolve",
   "/api/register",
   "/_next",
   "/favicon.ico",
 ];
+
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATHS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
 
 // Simple in-memory cache for tenant resolution (resets on cold start)
 const tenantCache = new Map<string, { tenantId: string; plan: string; expiresAt: string | null; ts: number }>();
@@ -41,7 +47,9 @@ export async function middleware(req: NextRequest) {
 
   // Skip static files and deliberately public API paths. Public mutation endpoints
   // must enforce their own signature/provider verification before touching data.
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  // /pay and /api/payments/stripe are safe to expose because every invoice request
+  // is bound to a HMAC token and Stripe webhook writes are separately provider-signed.
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 

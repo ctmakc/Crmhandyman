@@ -4,6 +4,7 @@ import { createInboundLead } from "../src/lib/inbound-leads";
 import { consumeRateLimit } from "../src/lib/rate-limit";
 import { createNumberedInvoice } from "../src/lib/invoice-create";
 import { InvoicePaymentError, recordInvoicePayment } from "../src/lib/invoice-payment";
+import { applyStripeCheckoutEvent } from "../src/lib/stripe-payments";
 
 process.env.RATE_LIMIT_PEPPER ||= "ci-rate-limit-pepper";
 
@@ -147,6 +148,41 @@ async function main() {
     (error: unknown) => error instanceof InvoicePaymentError && error.status === 409
   );
 
+  const stripeInvoice = await createNumberedInvoice(tenant.id, {
+    projectId: project.id,
+    clientName: project.clientName,
+    address: project.address,
+    lineItems: JSON.stringify([{ description: "Stripe settlement probe", qty: 1, unit: "ea", unitPrice: 200 }]),
+    subtotal: 200,
+    tax: 26,
+    total: 226,
+    status: "SENT",
+  });
+  const stripeEvent = {
+    id: `evt-${suffix}`,
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: `cs-${suffix}`,
+        payment_status: "paid",
+        amount_total: 22600,
+        currency: "cad",
+        payment_intent: `pi-${suffix}`,
+        metadata: { tenantId: tenant.id, invoiceId: stripeInvoice.id, owingCents: "22600" },
+      },
+    },
+  };
+  const stripeFirst = await applyStripeCheckoutEvent(stripeEvent);
+  const stripeDuplicate = await applyStripeCheckoutEvent(stripeEvent);
+  assert.equal(stripeFirst.kind, "paid");
+  assert.equal(stripeDuplicate.kind, "duplicate");
+  assert.equal(await prisma.payment.count({ where: { tenantId: tenant.id, invoiceId: stripeInvoice.id } }), 1);
+  assert.equal((await prisma.invoice.findUniqueOrThrow({ where: { id: stripeInvoice.id } })).status, "PAID");
+  assert.equal(
+    await prisma.inboundReceipt.count({ where: { tenantId: tenant.id, channel: "STRIPE_CHECKOUT", externalId: stripeEvent.id } }),
+    1
+  );
+
   const contract = await prisma.serviceContract.create({
     data: {
       tenantId: tenant.id,
@@ -183,8 +219,9 @@ async function main() {
     leadId: lead.id,
     projectId: project.id,
     invoiceId: invoice.id,
-    collected: 1130,
-    ingressReceipts: 1,
+    stripeInvoiceId: stripeInvoice.id,
+    collected: 1356,
+    ingressReceipts: 2,
   });
 }
 
