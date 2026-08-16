@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "./prisma";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_CHANNEL = "STRIPE_CHECKOUT";
