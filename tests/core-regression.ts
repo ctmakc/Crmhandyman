@@ -3,6 +3,8 @@ import { createHmac } from "node:crypto";
 import { chaseStage, daysOverdue, displayStatus, owingOf } from "../src/lib/invoice-state";
 import { signIntakePayload, verifyIntakeSignature } from "../src/lib/intake-signature";
 import { verifyFbWebhookSignature } from "../src/lib/integrations/facebook";
+import { signPaymentLink, verifyPaymentLinkToken } from "../src/lib/payment-links";
+import { verifyStripeSignature } from "../src/lib/stripe-payments";
 
 function invoiceRegression() {
   const now = new Date(2026, 2, 15, 12, 0, 0);
@@ -49,7 +51,39 @@ function metaSignatureRegression() {
   assert.equal(verifyFbWebhookSignature(body, signature, ""), false);
 }
 
+function paymentLinkRegression() {
+  const secret = "payment-link-test-secret";
+  const tenantId = "tenant_ottawa";
+  const invoiceId = "invoice_2026_0042";
+  const token = signPaymentLink(tenantId, invoiceId, secret);
+
+  assert.equal(verifyPaymentLinkToken({ tenantId, invoiceId, token, secret }), true);
+  assert.equal(verifyPaymentLinkToken({ tenantId: `${tenantId}x`, invoiceId, token, secret }), false);
+  assert.equal(verifyPaymentLinkToken({ tenantId, invoiceId: `${invoiceId}x`, token, secret }), false);
+  assert.equal(verifyPaymentLinkToken({ tenantId, invoiceId, token: `${token}x`, secret }), false);
+  assert.equal(verifyPaymentLinkToken({ tenantId, invoiceId, token: "", secret }), false);
+}
+
+function stripeSignatureRegression() {
+  const secret = "whsec_test_only";
+  const timestampSeconds = 1_786_839_600;
+  const nowMs = timestampSeconds * 1000;
+  const rawBody = JSON.stringify({ id: "evt_test", type: "checkout.session.completed" });
+  const signature = createHmac("sha256", secret).update(`${timestampSeconds}.${rawBody}`).digest("hex");
+  const header = `t=${timestampSeconds},v1=${signature}`;
+
+  assert.equal(verifyStripeSignature({ rawBody, signatureHeader: header, secret, nowMs }), true);
+  assert.equal(verifyStripeSignature({ rawBody: `${rawBody}x`, signatureHeader: header, secret, nowMs }), false);
+  assert.equal(
+    verifyStripeSignature({ rawBody, signatureHeader: header, secret, nowMs: nowMs + 6 * 60 * 1000 }),
+    false
+  );
+  assert.equal(verifyStripeSignature({ rawBody, signatureHeader: "t=bad,v1=bad", secret, nowMs }), false);
+}
+
 invoiceRegression();
 intakeSignatureRegression();
 metaSignatureRegression();
+paymentLinkRegression();
+stripeSignatureRegression();
 console.log("core regression checks passed");
