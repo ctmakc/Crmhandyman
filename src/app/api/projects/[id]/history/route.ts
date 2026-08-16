@@ -10,7 +10,8 @@ import { prisma } from "@/lib/prisma";
  * time and what iron is in the basement. Matching is by client when the job is linked,
  * and falls back to the street line for jobs created before Wave 2.
  */
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

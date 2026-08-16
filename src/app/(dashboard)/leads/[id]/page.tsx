@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Mail, Phone, X } from "lucide-react";
@@ -112,7 +112,8 @@ function StatusLadder({ status }: { status: string }) {
   );
 }
 
-export default function LeadDetailPage({ params }: { params: { id: string } }) {
+export default function LeadDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [lead, setLead] = useState<Lead | null>(null);

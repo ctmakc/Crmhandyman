@@ -17,7 +17,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: file:./ci.db
       NEXTAUTH_SECRET: ci-only-secret
@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20.19.0
           cache: npm
 
       - run: npm ci
@@ -40,5 +40,25 @@ jobs:
         run: npx prisma migrate deploy
       - name: Run database business regression
         run: npm run test:db
-      - name: Verify application
-        run: npm run verify
+      - name: Run core regression
+        run: npm run test:core
+      - name: Run ESLint
+        run: npx eslint . --format json --output-file eslint-report.json
+      - name: Upload ESLint report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-report
+          path: eslint-report.json
+          if-no-files-found: ignore
+      - name: Run TypeScript typecheck
+        run: npm run typecheck > typecheck-report.txt 2>&1
+      - name: Upload TypeScript report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-report
+          path: typecheck-report.txt
+          if-no-files-found: ignore
+      - name: Build production application
+        run: npm run build

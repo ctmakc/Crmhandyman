@@ -11,7 +11,8 @@ async function tenantIdOf(session: unknown) {
   return (session as any)?.user?.tenantId as string;
 }
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const tenantId = await tenantIdOf(session);
@@ -26,7 +27,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   return NextResponse.json(estimates);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const tenantId = await tenantIdOf(session);
@@ -79,7 +81,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(estimate, { status: 201 });
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const tenantId = await tenantIdOf(session);

@@ -26,7 +26,8 @@ const day = (d: Date | null | undefined) =>
 const KINDS = ["invoices", "payments", "expenses", "jobs"] as const;
 type Kind = (typeof KINDS)[number];
 
-export async function GET(req: NextRequest, { params }: { params: { kind: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ kind: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

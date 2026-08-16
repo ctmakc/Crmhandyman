@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -48,7 +48,8 @@ interface Invoice {
 
 const METHODS = ["E_TRANSFER", "CASH", "CHEQUE", "CARD"];
 
-export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
+export default function InvoiceDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);

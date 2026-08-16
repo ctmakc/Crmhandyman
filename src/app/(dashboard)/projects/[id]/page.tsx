@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, FileText, Scissors } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
@@ -86,7 +86,8 @@ interface Expense {
 const TABS = ["overview", "invoices", "crew", "money"] as const;
 type Tab = (typeof TABS)[number];
 
-export default function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default function ProjectDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const [project, setProject] = useState<Project | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [paymentForm, setPaymentForm] = useState({ amount: "", method: "CASH", notes: "", date: "" });

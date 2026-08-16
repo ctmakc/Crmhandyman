@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, use } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, X } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
@@ -129,7 +129,8 @@ function jobMoney(p: ClientProject): { value: number; est: boolean } | null {
   return est ? { value: est.total, est: true } : null;
 }
 
-export default function ClientDetailPage({ params }: { params: { id: string } }) {
+export default function ClientDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [showEquip, setShowEquip] = useState(false);
