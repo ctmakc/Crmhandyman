@@ -1,0 +1,13 @@
+# No routes and no triggers on purpose: Email Routing binds this worker to
+# addresses itself (dashboard → Email → Email Routing → routing rules).
+name = "handyman-email-intake"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[vars]
+# Where the CRM listens; override per environment with `wrangler deploy --var`.
+CRM_WEBHOOK_URL = "https://crm.agintent.com/api/webhooks/email"
+
+# SIGNING_KEY is a secret, never a var — set it with:
+#   wrangler secret put SIGNING_KEY
+# It must equal MAILGUN_WEBHOOK_SIGNING_KEY in the CRM's environment.

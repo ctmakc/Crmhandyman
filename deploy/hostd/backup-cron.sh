@@ -1,0 +1,41 @@
+#!/bin/sh
+# HandymanPro CRM — nightly backup driver for the host cron on hostd.Canada.
+#
+# The real work is scripts/backup.sh INSIDE the container: SQLite's online .backup,
+# integrity_check on the snapshot, rotation to BACKUP_KEEP (14) inside the volume.
+# This wrapper adds the one thing the container cannot: a copy of the newest snapshot
+# OUTSIDE the volume. A volume that is deleted, corrupted or migrated away takes its
+# own backups with it — the host-side directory is what survives that.
+#
+# Cron (root), see README.md:
+#   15 3 * * * /opt/handyman-crm/deploy/hostd/backup-cron.sh >> /var/log/handyman-backup.log 2>&1
+#
+# Exit is non-zero on any failure so cron mails the operator instead of staying quiet.
+set -eu
+
+CONTAINER=handyman-crm
+HOST_DIR=/var/backups/handyman-crm
+KEEP=14
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: start"
+
+# The snapshot itself. -T? Plain `docker exec` (no tty allocation) is cron-safe.
+docker exec "$CONTAINER" /app/scripts/backup.sh
+
+# Pull the newest snapshot out of the volume onto the host disk.
+mkdir -p "$HOST_DIR"
+LATEST=$(docker exec "$CONTAINER" sh -c 'ls -1t /app/var/backups/crm-*.db.gz | head -n 1')
+[ -n "$LATEST" ] || { echo "backup-cron: FAILED — no snapshot found after backup.sh"; exit 1; }
+docker cp "$CONTAINER:$LATEST" "$HOST_DIR/"
+chmod 600 "$HOST_DIR/$(basename "$LATEST")"
+echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: copied $(basename "$LATEST") to $HOST_DIR"
+
+# Same 14-day window on the host side; timestamped names sort correctly by mtime.
+COUNT=$(ls -1 "$HOST_DIR"/crm-*.db.gz 2>/dev/null | wc -l | tr -d ' ')
+if [ "$COUNT" -gt "$KEEP" ]; then
+  ls -1t "$HOST_DIR"/crm-*.db.gz | tail -n +$((KEEP + 1)) | while read -r old; do
+    rm -f "$old" && echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: rotated out $(basename "$old")"
+  done
+fi
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: done, $(ls -1 "$HOST_DIR"/crm-*.db.gz | wc -l | tr -d ' ') host-side snapshots (keep $KEEP)"

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { seedDemoData } from "@/lib/demo-seed";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { RESERVED_LABELS } from "@/lib/tenant-slug";
 
 const TRIAL_DAYS = Number(process.env.TRIAL_DAYS || 7);
 
@@ -22,7 +23,9 @@ function slugify(str: string) {
 async function uniqueSlug(base: string) {
   let slug = slugify(base);
   let i = 0;
-  while (await prisma.tenant.findUnique({ where: { slug } })) {
+  // Reserved labels are infrastructure hostnames (crm, www, api…): a workspace minted
+  // under one would be unreachable by subdomain and would shadow the front door.
+  while (RESERVED_LABELS.has(slug) || (await prisma.tenant.findUnique({ where: { slug } }))) {
     slug = `${slugify(base)}-${++i}`;
   }
   return slug;

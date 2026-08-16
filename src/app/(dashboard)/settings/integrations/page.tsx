@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { BackLink, Button, Field, LaneHead, PageHead } from "@/components/ui/primitives";
+import { useCallback, useEffect, useState } from "react";
+import { BackLink, Button, Field, LaneHead, PageHead, Status } from "@/components/ui/primitives";
 import { Check, ExternalLink } from "lucide-react";
 
 /**
@@ -10,7 +10,100 @@ import { Check, ExternalLink } from "lucide-react";
  * One ruled section per channel: what it does in a sentence a contractor reads once,
  * the two or three values his ad account hands him, and one button. The icons that
  * used to head each section were emoji, which the interface does not carry.
+ *
+ * Each section opens with a readiness stub. "Saved" used to be the only word this
+ * screen knew, and a saved token on a server with no META_APP_SECRET receives exactly
+ * nothing — the webhook fails closed. The stub reads GET /api/settings/integrations,
+ * which reports both halves of readiness (the tenant's row AND the server env, as
+ * booleans), and a channel that cannot receive says the one thing to do next.
  */
+
+type ChannelFacts = { isActive: boolean; hasAccessToken: boolean; hasPageId: boolean };
+
+interface IntakeStatus {
+  server: {
+    metaAppSecret: boolean;
+    metaVerifyToken: boolean;
+    mailgunSigningKey: boolean;
+    smtpOutbound: boolean;
+  };
+  channels: {
+    FACEBOOK: ChannelFacts;
+    INSTAGRAM: ChannelFacts;
+    GOOGLE: ChannelFacts;
+    EMAIL: { isActive: boolean; inboundAddress: string | null };
+  };
+}
+
+/** Ready, or the one next move — never both. The doc path is printed, not linked. */
+type Readiness = { ready: boolean; next?: string; doc?: string };
+
+function metaReadiness(status: IntakeStatus, channel: "FACEBOOK" | "INSTAGRAM"): Readiness {
+  const facts = status.channels[channel];
+  if (!status.server.metaAppSecret || !status.server.metaVerifyToken) {
+    return {
+      ready: false,
+      next: "The server has no META_APP_SECRET / META_WEBHOOK_VERIFY_TOKEN, so every delivery is refused. Ask whoever runs the server to set them —",
+      doc: "docs/META-SETUP.md",
+    };
+  }
+  if (!facts.hasAccessToken || !facts.hasPageId) {
+    return {
+      ready: false,
+      next: "Paste the access token and the id below, then save.",
+      doc: "docs/META-SETUP.md",
+    };
+  }
+  if (!facts.isActive) {
+    return { ready: false, next: "Credentials are on file with the channel switched off. Saving switches it back on." };
+  }
+  return { ready: true };
+}
+
+function emailReadiness(status: IntakeStatus): Readiness {
+  if (!status.server.mailgunSigningKey) {
+    return {
+      ready: false,
+      next: "The server has no MAILGUN_WEBHOOK_SIGNING_KEY, so inbound mail is refused. Ask whoever runs the server to set it —",
+      doc: "docs/EMAIL-CHANNEL.md",
+    };
+  }
+  const email = status.channels.EMAIL;
+  if (!email.inboundAddress) {
+    return {
+      ready: false,
+      next: "Set the forwarding address below and save.",
+      doc: "docs/EMAIL-CHANNEL.md",
+    };
+  }
+  if (!email.isActive) {
+    return { ready: false, next: "An address is on file with the channel switched off. Saving switches it back on." };
+  }
+  return { ready: true };
+}
+
+/**
+ * The stub itself: a dot, a word, and — when something is missing — the move.
+ * Emerald marks a channel that can receive right now; slate marks one that cannot.
+ * The amber lamp stays out of this: setup work is not a live job.
+ */
+function ReadyStub({ readiness, detail }: { readiness: Readiness; detail?: string | null }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line pb-3">
+      <Status
+        value={readiness.ready ? "READY" : "NOT READY"}
+        tone={readiness.ready ? "var(--emerald)" : "var(--slate)"}
+      />
+      {detail && <span className="mono t-meta text-ink-2">{detail}</span>}
+      {!readiness.ready && (
+        <span className="t-meta text-ink-2">
+          {readiness.next}
+          {readiness.doc && <> {" "}<span className="mono text-ink">{readiness.doc}</span></>}
+        </span>
+      )}
+    </div>
+  );
+}
 
 interface IntegrationConfig {
   channel: string;
@@ -79,6 +172,29 @@ export default function IntegrationsPage() {
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [forms, setForms] = useState<Record<string, Record<string, string>>>({});
 
+  /**
+   * null while loading; a failed read stays null and the stubs simply don't render —
+   * a guessed READY would be worse than no stub at all.
+   */
+  const [status, setStatus] = useState<IntakeStatus | null>(null);
+  const [statusRefused, setStatusRefused] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/integrations");
+      if (!res.ok) throw new Error(String(res.status));
+      setStatus(await res.json());
+      setStatusRefused(false);
+    } catch {
+      setStatus(null);
+      setStatusRefused(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
+
   async function handleSave(channel: string) {
     const data = forms[channel] || {};
     await fetch(`/api/settings/integrations/${channel.toLowerCase()}`, {
@@ -88,6 +204,8 @@ export default function IntegrationsPage() {
     });
     setSaved((prev) => ({ ...prev, [channel]: true }));
     setTimeout(() => setSaved((prev) => ({ ...prev, [channel]: false })), 2000);
+    // The stub must state what the save actually changed, so it re-reads the server.
+    loadStatus();
   }
 
   function updateField(channel: string, key: string, value: string) {
@@ -129,7 +247,28 @@ export default function IntegrationsPage() {
         </dl>
       </section>
 
-      {integrations.map((integration) => (
+      {statusRefused && (
+        <p className="t-meta border-b border-line pb-3 text-ink-2">
+          Channel status could not be read — the readiness marks below are hidden rather
+          than guessed. Reload to try again.
+        </p>
+      )}
+
+      {integrations.map((integration) => {
+        /**
+         * GOOGLE carries no stub: there is no Google webhook in this codebase to be
+         * ready FOR, so any READY word there would be the exact lie this stub exists
+         * to end.
+         */
+        const readiness = status
+          ? integration.channel === "FACEBOOK" || integration.channel === "INSTAGRAM"
+            ? metaReadiness(status, integration.channel)
+            : integration.channel === "EMAIL"
+              ? emailReadiness(status)
+              : null
+          : null;
+
+        return (
         <section key={integration.channel} className="lane mt-10 pt-4">
           <LaneHead
             title={integration.label}
@@ -147,6 +286,34 @@ export default function IntegrationsPage() {
               )
             }
           />
+          {readiness && (
+            <ReadyStub
+              readiness={readiness}
+              detail={
+                /* The address is shown in both states: an admin mid-setup needs to see
+                   what is on file exactly when the channel is still refusing mail. */
+                integration.channel === "EMAIL" && status?.channels.EMAIL.inboundAddress
+                  ? `${readiness.ready ? "receiving at" : "address on file ·"} ${status.channels.EMAIL.inboundAddress}`
+                  : undefined
+              }
+            />
+          )}
+          {integration.channel === "EMAIL" && status && (
+            /* Outbound is the other half of the mail story — estimates and reminders
+               leave through SMTP, and its presence is a server fact the admin cannot
+               see from here otherwise. Presence only; never the credentials. */
+            <p className="t-meta mt-3 text-ink-2">
+              Outbound mail (estimates, reminders):{" "}
+              {status.server.smtpOutbound ? (
+                "SMTP is configured on the server."
+              ) : (
+                <>
+                  the server has no SMTP account, so the desk cannot send.{" "}
+                  <span className="mono text-ink">docs/EMAIL-CHANNEL.md</span>
+                </>
+              )}
+            </p>
+          )}
           <p className="measure t-body mt-4 text-ink-2">{integration.description}</p>
 
           <div className="mt-4 space-y-4">
@@ -183,7 +350,8 @@ export default function IntegrationsPage() {
             </Button>
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

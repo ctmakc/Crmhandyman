@@ -15,6 +15,7 @@ import {
   textToneFor,
 } from "@/components/ui/primitives";
 import DayRail from "@/components/DayRail";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 import { LeadWait } from "@/components/LeadClock";
 import ChaseLane from "@/components/ChaseLane";
 import ServiceDueLane from "@/components/ServiceDueLane";
@@ -52,6 +53,11 @@ export default async function DashboardPage() {
     weekJobs,
     crewSize,
     contracts,
+    tenantBorn,
+    intakeKeyCount,
+    usedKeyCount,
+    integrationCount,
+    realCrewCount,
   ] = await Promise.all([
     /**
      * «New leads» counts leads that are NEW. It counted CONTACTED as well, so the deck
@@ -119,7 +125,49 @@ export default async function DashboardPage() {
       },
         })
       : [],
+    /**
+     * The commissioning card's gauges, owner only. Each step of «start receiving
+     * leads» is measured against the books rather than ticked by hand: a key on
+     * file, a key that has actually carried a lead, a connected channel, a crew
+     * member. All four are cheap counts on indexed columns.
+     */
+    isAdmin
+      ? prisma.tenant.findUnique({ where: { id: tenantId }, select: { createdAt: true } })
+      : null,
+    isAdmin ? prisma.intakeKey.count({ where: { tenantId, isActive: true } }) : 0,
+    isAdmin
+      ? prisma.intakeKey.count({ where: { tenantId, isActive: true, lastUsedAt: { not: null } } })
+      : 0,
+    isAdmin ? prisma.channelIntegration.count({ where: { tenantId, isActive: true } }) : 0,
+    /**
+     * Crew the owner actually invited. Trial workspaces are seeded with a sample
+     * tech at `worker.<tenant>@demo.local`, and counting him would tick «invite
+     * your crew» on a desk nobody has touched.
+     */
+    isAdmin
+      ? prisma.user.count({
+          where: { tenantId, role: "WORKER", NOT: { email: { endsWith: "@demo.local" } } },
+        })
+      : 0,
   ]);
+
+  /**
+   * A lead the workspace earned, as opposed to the demo seed. The seed carries no
+   * marker column, but it is written in the same request that creates the trial
+   * workspace — so anything older than the workspace's first minute is the seed,
+   * and anything after it is a person. Counted only when a key exists: without
+   * one the card shows regardless, and the count would decide nothing.
+   */
+  const realLeadCount =
+    isAdmin && intakeKeyCount > 0 && tenantBorn
+      ? await prisma.lead.count({
+          where: { tenantId, createdAt: { gt: new Date(tenantBorn.createdAt.getTime() + 60_000) } },
+        })
+      : 0;
+
+  // The card retires itself: once the door is open and a real lead has walked
+  // through it, the desk needs no setup instructions.
+  const showOnboarding = isAdmin && (intakeKeyCount === 0 || realLeadCount === 0);
 
   const serviceDue = contracts
     .map((c) => {
@@ -278,6 +326,22 @@ export default async function DashboardPage() {
             : "Everything booked and out on the trucks — on one deck."
         }
       />
+
+      {/* Before the desk, the commissioning card: a fresh workspace cannot
+          receive a lead until the intake plumbing exists, so the checklist
+          precedes the (empty) instruments it feeds. Dismiss is the owner's,
+          handled inside — see the component for the persistence choice. */}
+      {showOnboarding && (
+        <OnboardingChecklist
+          userId={userId}
+          steps={{
+            hasIntakeKey: intakeKeyCount > 0,
+            landingWired: usedKeyCount > 0,
+            channelsConnected: integrationCount > 0,
+            crewInvited: realCrewCount > 0,
+          }}
+        />
+      )}
 
       {/*
         An asymmetric desk: a stack of equal panels says everything weighs the same.
