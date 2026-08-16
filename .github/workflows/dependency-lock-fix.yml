@@ -26,7 +26,7 @@ jobs:
 
       - run: npm ci
       - name: Apply non-breaking npm security fixes to lockfile
-        run: npm audit fix --package-lock-only
+        run: npm audit fix --package-lock-only || true
       - name: Confirm no critical production advisory remains
         run: npm audit --omit=dev --audit-level=critical
 
