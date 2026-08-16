@@ -17,6 +17,14 @@ CONTAINER=handyman-crm
 HOST_DIR=/var/backups/handyman-crm
 KEEP=14
 
+# cron runs with a bare environment, so the off-box remote (and anything else the deploy
+# put in .env) is not here unless we read it. Same file the compose stack uses.
+ENV_FILE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/.env"
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  set -a; . "$ENV_FILE"; set +a
+fi
+
 echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: start"
 
 # The snapshot itself. -T? Plain `docker exec` (no tty allocation) is cron-safe.

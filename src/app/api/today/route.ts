@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
-import { sessionTenant } from "@/lib/session";
 
 /**
  * Today's stops for field mode.
@@ -13,9 +10,9 @@ import { sessionTenant } from "@/lib/session";
  * stop today, and hiding it is how jobs get lost.
  */
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId, id: userId, role } = sessionTenant(session);
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, id: userId, role } = guard.identity;
 
   return NextResponse.json(await board(tenantId, userId, role));
 }
