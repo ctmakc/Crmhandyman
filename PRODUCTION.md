@@ -13,6 +13,9 @@ NEXTAUTH_SECRET=<long random secret>
 RATE_LIMIT_PEPPER=<separate long random pepper>
 APP_VERSION=<git sha or release>
 LEAD_INTAKE_SIGNING_SECRET=<separate long random secret>
+PAYMENT_LINK_SIGNING_SECRET=<separate long random secret>
+STRIPE_SECRET_KEY=<Stripe secret key>
+STRIPE_WEBHOOK_SECRET=<Stripe endpoint signing secret>
 BACKUP_DIR=/app/data/backups
 BACKUP_RETENTION_DAYS=14
 EVIDENCE_DIR=/app/data/evidence
@@ -22,7 +25,7 @@ META_WEBHOOK_VERIFY_TOKEN=<Meta verify token>
 MAILGUN_WEBHOOK_SIGNING_KEY=<Mailgun signing key>
 ```
 
-Keep `RATE_LIMIT_PEPPER`, `NEXTAUTH_SECRET` and `LEAD_INTAKE_SIGNING_SECRET` separate so they can be rotated independently.
+Keep `RATE_LIMIT_PEPPER`, `NEXTAUTH_SECRET`, `LEAD_INTAKE_SIGNING_SECRET` and `PAYMENT_LINK_SIGNING_SECRET` separate so they can be rotated independently. Rotating `PAYMENT_LINK_SIGNING_SECRET` intentionally invalidates every previously issued public invoice payment link.
 
 ## 2. Database migrations
 
@@ -110,7 +113,7 @@ Public signup always creates a seven-day `DEMO` tenant. A caller cannot self-sel
 
 ## 9. Audit journal
 
-Admins can query `/api/audit`. Audit coverage includes leads, lead conversion, project status/crew changes, estimates, tasks, invoices and invoice payments, expenses/payments, service-contract creation/booking, team administration, integrations, job evidence and tenant registration. Secrets are never written to audit metadata.
+Admins can query `/api/audit`. Audit coverage includes leads, lead conversion, project status/crew changes, estimates, tasks, invoices and invoice payments, expenses/payments, service-contract creation/booking, team administration, integrations, job evidence and tenant registration. Stripe Checkout creation, successful settlement and amount/state mismatches are also journaled. Secrets are never written to audit metadata.
 
 ## 10. Invoice/payment invariants
 
@@ -121,6 +124,31 @@ Admins can query `/api/audit`. Audit coverage includes leads, lead conversion, p
 - payment insertion and invoice settlement happen in one transaction;
 - overpayment, payment on VOID, and voiding PAID invoices are rejected.
 
+### Online card payment
+
+Customer-facing invoice links are HMAC-bound to `(tenantId, invoiceId)` and look like `/pay/<invoice>?token=...`. The token authorizes access only to that invoice payment surface; it is not a user session.
+
+Stripe Checkout is created server-side for the exact current amount owing in CAD. Repeated clicks for the same invoice balance reuse a deterministic Stripe idempotency key. Card details are entered on Stripe Checkout and are not stored by HandymanPro.
+
+Configure the Stripe webhook endpoint:
+
+```text
+POST https://<crm-host>/api/webhooks/stripe
+```
+
+Subscribe to:
+
+```text
+checkout.session.completed
+checkout.session.async_payment_succeeded
+```
+
+The webhook validates Stripe's signature and timestamp, then verifies tenant ID, invoice ID, CAD currency and exact outstanding cents before recording anything. Successful settlement writes a normal `Payment(method=CARD)`, marks the invoice paid and claims the Stripe event in `InboundReceipt` in one database transaction. Duplicate event delivery is therefore exactly-once at the CRM ledger.
+
+If Stripe reports a paid amount that no longer equals the CRM balance (for example, an operator manually recorded payment while an old Checkout Session was still open), HandymanPro does not force the payment into the ledger. It records an audit mismatch for manual reconciliation/refund review instead.
+
+Before enabling live mode, execute at least one Stripe test-mode card payment through the real hosted Checkout page and confirm the webhook turns the corresponding CRM invoice `PAID` exactly once.
+
 ## 11. Service visit idempotency
 
 `ServiceVisitReceipt` claims `(tenantId, contractId, cycle)` before materializing a recurring visit. Concurrent `Book all due` requests cannot create the same seasonal visit twice. Auto-invoice recovery reuses the existing visit if a retry occurs after the project was already materialized.
@@ -130,9 +158,10 @@ Admins can query `/api/audit`. Audit coverage includes leads, lead conversion, p
 CI performs:
 
 1. `npm ci`;
-2. Prisma client generation;
-3. the complete migration chain on clean SQLite;
-4. database regression (`npm run test:db`) covering ingress idempotency, rate limits, lead-to-cash, tenant isolation, service-visit uniqueness and concurrent invoice numbering;
-5. core regression, TypeScript typecheck and production Next.js build (`npm run verify`).
+2. a production-dependency critical-advisory gate;
+3. Prisma client generation;
+4. the complete migration chain on clean SQLite;
+5. database regression (`npm run test:db`) covering ingress idempotency, rate limits, lead-to-cash, tenant isolation, service-visit uniqueness, concurrent invoice numbering and exactly-once Stripe settlement;
+6. core regression covering signature/tamper cases, TypeScript typecheck and production Next.js build (`npm run verify`).
 
 Do not merge a production-hardening PR while its final head is red.
