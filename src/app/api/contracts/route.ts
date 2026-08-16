@@ -74,7 +74,13 @@ export async function POST(req: NextRequest) {
   }
 
   const months: number[] = Array.isArray(body.visitMonths)
-    ? [...new Set(body.visitMonths.map(Number).filter((month: number) => Number.isInteger(month) && month >= 1 && month <= 12))]
+    ? Array.from(
+        new Set<number>(
+          body.visitMonths
+            .map(Number)
+            .filter((month: number) => Number.isInteger(month) && month >= 1 && month <= 12)
+        )
+      )
     : [];
   if (!months.length) return NextResponse.json({ error: "A contract needs at least one visit month" }, { status: 400 });
 
