@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "agent/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: file:./ci.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Block critical production dependency advisories
+        run: npm audit --omit=dev --audit-level=critical
+
+      - run: npx prisma generate
+
+      - name: Apply complete migration chain to a fresh database
+        run: npx prisma migrate deploy
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Unit suite plus e2e — the e2e project boots its own server on a throwaway
+      # database (tests/e2e/harness/global-setup.ts), nothing external to provide.
+      - name: Tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
