@@ -5,9 +5,11 @@ const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/expired",
+  "/pay",
   "/api/auth",
   "/api/webhooks",
   "/api/intake",
+  "/api/payments/stripe",
   "/api/health",
   "/api/tenant/resolve",
   "/api/register",
@@ -41,6 +43,8 @@ export async function middleware(req: NextRequest) {
 
   // Skip static files and deliberately public API paths. Public mutation endpoints
   // must enforce their own signature/provider verification before touching data.
+  // /pay and /api/payments/stripe are safe to expose because every invoice request
+  // is bound to a HMAC token and Stripe webhook writes are separately provider-signed.
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
