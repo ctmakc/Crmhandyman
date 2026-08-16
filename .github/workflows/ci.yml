@@ -33,6 +33,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Block critical production dependency advisories
+        run: npm audit --omit=dev --audit-level=critical
       - run: npx prisma generate
       - name: Apply complete migration chain
         run: npx prisma migrate deploy
