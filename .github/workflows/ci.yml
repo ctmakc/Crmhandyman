@@ -40,5 +40,11 @@ jobs:
         run: npx prisma migrate deploy
       - name: Run database business regression
         run: npm run test:db
-      - name: Verify application
-        run: npm run verify
+      - name: Run core regression
+        run: npm run test:core
+      - name: Run ESLint
+        run: npm run lint
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+      - name: Build production application
+        run: npm run build
