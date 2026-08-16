@@ -17,6 +17,10 @@ const PUBLIC_PATHS = [
   "/favicon.ico",
 ];
 
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATHS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 // Simple in-memory cache for tenant resolution (resets on cold start)
 const tenantCache = new Map<string, { tenantId: string; plan: string; expiresAt: string | null; ts: number }>();
 const CACHE_TTL = 60_000; // 1 minute
@@ -45,7 +49,7 @@ export async function middleware(req: NextRequest) {
   // must enforce their own signature/provider verification before touching data.
   // /pay and /api/payments/stripe are safe to expose because every invoice request
   // is bound to a HMAC token and Stripe webhook writes are separately provider-signed.
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
