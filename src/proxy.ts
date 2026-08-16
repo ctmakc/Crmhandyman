@@ -35,7 +35,7 @@ async function resolveTenant(slug: string, baseUrl: string) {
   }
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const url = req.nextUrl.clone();
   const { pathname } = url;
 
