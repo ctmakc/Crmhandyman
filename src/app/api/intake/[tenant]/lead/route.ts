@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 
 const SOURCES = new Set(["FACEBOOK", "INSTAGRAM", "GOOGLE", "HOMESTARS", "KIJIJI", "EMAIL", "MANUAL", "OTHER"]);
 
-export async function POST(req: NextRequest, { params }: { params: { tenant: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ tenant: string }> }) {
+  const params = await props.params;
   const secret = process.env.LEAD_INTAKE_SIGNING_SECRET ?? "";
   if (!secret) return NextResponse.json({ error: "Lead intake is not configured" }, { status: 503 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Printer, Send, Scissors, Calculator } from "lucide-react";
@@ -43,7 +43,8 @@ interface Project {
   email?: string;
 }
 
-export default function EstimatePage({ params }: { params: { id: string } }) {
+export default function EstimatePage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
