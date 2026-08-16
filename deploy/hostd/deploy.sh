@@ -44,6 +44,7 @@ rsync -az --delete \
   --exclude ".next" \
   --exclude "var" \
   --exclude ".env" \
+  --exclude "cloudflared" \
   --exclude "dev.db*" \
   --exclude "cookies.txt" \
   --exclude "*.tsbuildinfo" \
