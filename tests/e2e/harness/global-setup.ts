@@ -98,6 +98,11 @@ export default async function setup(project: TestProject) {
       // Trials must not expire mid-run, and the intake dedup window has to be known.
       TRIAL_DAYS: "7",
       LEAD_DEDUP_DAYS: "30",
+      // The suite computes its calendar-day expectations in America/Toronto (see
+      // vitest.config.mts) — the server has to count days on the same wall clock, or a
+      // CI runner sitting in UTC crosses midnight hours early and every overdue rung
+      // slips by one.
+      TZ: "America/Toronto",
       NODE_ENV: "development" as const,
       /**
        * The suite never edits a file while it runs, so hot reload is pure cost — and on
