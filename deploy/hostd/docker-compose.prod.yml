@@ -20,6 +20,9 @@ services:
       args:
         # Baked into the client bundle at build time, so a change here needs a rebuild.
         NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@handymanpro.ca}
+        # The front door where Google OAuth starts; inlined so the button knows where to
+        # send a subdomain visitor. Empty hides the Google button.
+        NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-}
     image: handyman-crm:latest
     container_name: handyman-crm
     restart: unless-stopped
@@ -70,6 +73,9 @@ services:
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Session cookie domain — ".<root>" so a Google login through the front door hands
+      # the session to the visitor's own workspace subdomain. Empty → host-only cookie.
+      NEXTAUTH_COOKIE_DOMAIN: ${NEXTAUTH_COOKIE_DOMAIN:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}

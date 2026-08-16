@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ErrorNote, Field } from "@/components/ui/primitives";
 import { PublicShell } from "@/components/layout/PublicShell";
+import { GoogleButton } from "@/components/GoogleButton";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -61,7 +62,16 @@ export default function RegisterPage() {
 
       {error && <ErrorNote className="mt-5">{error}</ErrorNote>}
 
-      <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+      <div className="mt-6">
+        <GoogleButton label="Sign up with Google" />
+      </div>
+      <div className="mt-5 flex items-center gap-3 text-ink-2">
+        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+        <span className="mono text-[11px] uppercase tracking-wide">or with email</span>
+        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+      </div>
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <Field id="reg-business" label="Business name" required>
           {(f) => (
             <input

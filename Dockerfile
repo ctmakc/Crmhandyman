@@ -47,6 +47,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # NEXT_PUBLIC_* is inlined into the client bundle, so it has to be known here.
 ARG NEXT_PUBLIC_SUPPORT_EMAIL="support@handymanpro.ca"
 ENV NEXT_PUBLIC_SUPPORT_EMAIL=$NEXT_PUBLIC_SUPPORT_EMAIL
+# The front door origin where Google OAuth begins. Empty → the "Continue with Google"
+# button does not render (dev/test); set to https://crm.<root> to turn Google on.
+ARG NEXT_PUBLIC_AUTH_ORIGIN=""
+ENV NEXT_PUBLIC_AUTH_ORIGIN=$NEXT_PUBLIC_AUTH_ORIGIN
 RUN npx prisma generate && npm run build
 
 # --- Stage 3: runtime ---------------------------------------------------------------

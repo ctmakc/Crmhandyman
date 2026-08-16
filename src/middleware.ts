@@ -6,6 +6,9 @@ const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/expired",
+  // The Google sign-up waiting room: a workspace that exists but is not approved yet, or
+  // an account that has not named one. Reachable with a half-formed session.
+  "/pending",
   "/api/auth",
   "/api/webhooks",
   "/api/intake",
@@ -32,7 +35,7 @@ const PUBLIC_PATHS = [
 ];
 
 // Simple in-memory cache for tenant resolution (resets on cold start)
-const tenantCache = new Map<string, { plan: string; expiresAt: string | null; ts: number }>();
+const tenantCache = new Map<string, { plan: string; expiresAt: string | null; status: string; ts: number }>();
 const CACHE_TTL = 60_000; // 1 minute
 
 /**
@@ -69,7 +72,7 @@ async function resolveTenant(slug: string) {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const entry = { plan: data.plan, expiresAt: data.expiresAt, ts: Date.now() };
+    const entry = { plan: data.plan, expiresAt: data.expiresAt, status: data.status ?? "ACTIVE", ts: Date.now() };
     tenantCache.set(slug, entry);
     return entry;
   } catch {
@@ -110,6 +113,29 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // A Google sign-up that has not named a workspace has a session but no desk. Keep it in
+  // the finish room until it does; the finish page and /api/register/google are public,
+  // so this only catches attempts to wander into an actual workspace.
+  if (token.needsWorkspace) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Finish creating your workspace first" }, { status: 403 });
+    }
+    url.pathname = "/register/finish";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // A Google account whose workspace exists but is not approved yet: the waiting room and
+  // nothing else. /pending is public, so this catches only attempts to go past it.
+  if (token.pending) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "This workspace is awaiting approval" }, { status: 403 });
+    }
+    url.pathname = "/pending";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   // The workspace in the address must be the one this session belongs to. Without this
   // an expired trial could simply append «?tenant=<some live slug>» and keep working,
   // because the handlers below read the tenant from the session, not from the URL.
@@ -121,6 +147,17 @@ export async function middleware(req: NextRequest) {
 
   if (!tenant) {
     url.pathname = "/register";
+    return NextResponse.redirect(url);
+  }
+
+  // A workspace that is not open for business — awaiting approval or suspended — shows the
+  // waiting room, never the desk. Catches a credentials session too, not just Google.
+  if (tenant.status !== "ACTIVE") {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "This workspace is not active" }, { status: 403 });
+    }
+    url.pathname = "/pending";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

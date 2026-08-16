@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Field } from "@/components/ui/primitives";
 import { PublicShell } from "@/components/layout/PublicShell";
+import { GoogleButton } from "@/components/GoogleButton";
 import { slugFromHost } from "@/lib/tenant-slug";
 
 function LoginForm() {
@@ -19,6 +20,14 @@ function LoginForm() {
 
   useEffect(() => {
     if (params.get("registered")) setRegistered(true);
+
+    // The front door is where Google's OAuth begins. A subdomain button bounced here with
+    // ?google=1 and where to return to — start the handshake straight away so the visitor
+    // sees Google, not a second sign-in screen.
+    if (params.get("google") === "1") {
+      signIn("google", { callbackUrl: params.get("cb") || "/" });
+      return;
+    }
 
     // Same rule the middleware uses: the address names the workspace. The tenant id
     // stays on the server — the form signs in with the slug.
@@ -134,6 +143,15 @@ function LoginForm() {
           {loading ? "Signing in…" : "Sign in"}
         </Button>
       </form>
+
+      <div className="mt-5 flex items-center gap-3 text-ink-2">
+        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+        <span className="mono text-[11px] uppercase tracking-wide">or</span>
+        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+      </div>
+      <div className="mt-5">
+        <GoogleButton label="Sign in with Google" />
+      </div>
 
       <p className="t-body mt-6 text-ink-2">
         No account yet?{" "}

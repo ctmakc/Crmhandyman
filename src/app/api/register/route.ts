@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { seedDemoData } from "@/lib/demo-seed";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
-import { RESERVED_LABELS } from "@/lib/tenant-slug";
+import { uniqueSlug } from "@/lib/workspace-slug";
 
 const TRIAL_DAYS = Number(process.env.TRIAL_DAYS || 7);
 
@@ -11,25 +11,6 @@ const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS || "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
-
-function slugify(str: string) {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40);
-}
-
-async function uniqueSlug(base: string) {
-  let slug = slugify(base);
-  let i = 0;
-  // Reserved labels are infrastructure hostnames (crm, www, api…): a workspace minted
-  // under one would be unreachable by subdomain and would shadow the front door.
-  while (RESERVED_LABELS.has(slug) || (await prisma.tenant.findUnique({ where: { slug } }))) {
-    slug = `${slugify(base)}-${++i}`;
-  }
-  return slug;
-}
 
 /**
  * Self-serve signup, with a switch.

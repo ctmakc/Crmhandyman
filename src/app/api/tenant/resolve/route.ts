@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const tenant = await prisma.tenant.findUnique({
     where: { slug },
-    select: { slug: true, businessName: true, plan: true, expiresAt: true },
+    select: { slug: true, businessName: true, plan: true, expiresAt: true, status: true },
   });
 
   if (!tenant) return NextResponse.json({ error: "not found" }, { status: 404 });

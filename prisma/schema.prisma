@@ -22,6 +22,11 @@ model Tenant {
   paymentInstructions String?
   plan                TenantPlan           @default(DEMO)
   expiresAt           DateTime?
+  /// Moderation gate for self-serve Google sign-up. A workspace we provision by hand is
+  /// ACTIVE from birth; one a stranger opens through "Continue with Google" starts
+  /// PENDING and cannot be used until an operator approves it (scripts/approve-tenant.ts).
+  /// The column defaults to ACTIVE so every workspace that already exists stays open.
+  status              TenantStatus         @default(ACTIVE)
   createdAt           DateTime             @default(now())
   users               User[]
   clients             Client[]
@@ -45,6 +50,16 @@ enum TenantPlan {
   PAID
 }
 
+enum TenantStatus {
+  /// Opened via self-serve Google sign-up, awaiting an operator's approval. No one can
+  /// sign in and the workspace holds no data yet.
+  PENDING
+  /// Approved (or provisioned by hand) — the workspace is open for business.
+  ACTIVE
+  /// Turned off by an operator without deleting the data.
+  SUSPENDED
+}
+
 model User {
   id               String    @id @default(cuid())
   tenantId         String
@@ -52,6 +67,10 @@ model User {
   name             String
   email            String
   password         String
+  /// Google's stable subject id, once this person has linked Google. Globally unique:
+  /// one Google account maps to exactly one user in one workspace, which is what lets a
+  /// login on the shared front door resolve straight to the right desk. Null until linked.
+  googleSub        String?   @unique
   role             Role      @default(WORKER)
   assignedLeads    Lead[]
   assignedProjects Project[] @relation("assignedProjects")
