@@ -84,13 +84,14 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       // A plan price is the money book, which the crew does not read — the same line
       // that keeps them off /contracts and off the estimates.
       contracts: role === "ADMIN" ? client.contracts : [],
-      invoices,
-      totals: {
-        owingCents,
-        collectedCents,
-        costsCents,
-        lifetimeCents: collectedCents,
-      },
+      // A tech opens this dossier for the address, phone and equipment on a job; the
+      // money — what this customer has paid, still owes and cost — is the owner's book.
+      // The list of invoices is emptied too, so a balance cannot be re-summed on screen.
+      invoices: role === "ADMIN" ? invoices : [],
+      totals:
+        role === "ADMIN"
+          ? { owingCents, collectedCents, costsCents, lifetimeCents: collectedCents }
+          : { owingCents: 0, collectedCents: 0, costsCents: 0, lifetimeCents: 0 },
     })
   );
 }

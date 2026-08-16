@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionTenant } from "@/lib/session";
+import { requireAdmin, requireUser } from "@/lib/guard";
 import { inDollars } from "@/lib/money";
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  // The crew reads this to find an address and a repeat customer in the field, so it
+  // stays open to a worker — but the balance owed is the owner's book, not the tech's,
+  // and it used to ride along on every row. Money is dropped for anyone but the owner.
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+  const { tenantId, role } = guard.identity;
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q");
@@ -136,7 +137,9 @@ export async function GET(req: NextRequest) {
           e.brand ? `${e.kind.replace(/_/g, " ")} · ${e.brand}` : e.kind.replace(/_/g, " ")
         ),
         openJobs: openJobsByClient.get(c.id) ?? 0,
-        owingCents: owingByClient.get(c.id) ?? 0,
+        // The one money column, owner-only: a tech's card index shows who and where, the
+        // owner's also shows who owes.
+        owingCents: role === "ADMIN" ? owingByClient.get(c.id) ?? 0 : 0,
         lastSeen: lastSeenByClient.get(c.id) ?? null,
       }))
     )
@@ -144,9 +147,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
-  const { tenantId } = sessionTenant(session);
+  // Hand-adding a client is the office's act; the crew captures clients through a job.
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const { tenantId } = guard.identity;
 
   const body = await req.json();
   if (!body.name?.trim())

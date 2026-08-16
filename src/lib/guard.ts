@@ -10,10 +10,15 @@ export type Guard =
 /** Any signed-in member of a workspace. */
 export async function requireUser(): Promise<Guard> {
   const session = await getServerSession(authOptions);
-  if (!session) {
-    return { ok: false, response: NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 }) };
-  }
-  return { ok: true, identity: sessionTenant(session) };
+  const signedOut = NextResponse.json({ error: "You are signed out — sign in again" }, { status: 401 });
+  if (!session) return { ok: false, response: signedOut };
+
+  const identity = sessionTenant(session);
+  // An empty identity is a revoked session — the user row is gone (or its tenant moved),
+  // and the jwt callback stripped the token. Treat it exactly as signed out.
+  if (!identity.id || !identity.tenantId) return { ok: false, response: signedOut };
+
+  return { ok: true, identity };
 }
 
 /**

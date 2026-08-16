@@ -12,6 +12,8 @@ export async function requireAdminPage() {
   if (!session) redirect("/login");
 
   const identity = sessionTenant(session);
+  // A revoked session carries no identity (the user row is gone) — back to the door.
+  if (!identity.id) redirect("/login");
   if (identity.role !== "ADMIN") redirect("/today");
 
   return identity;

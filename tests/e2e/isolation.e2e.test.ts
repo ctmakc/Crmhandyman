@@ -419,6 +419,63 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       }
     });
 
+    it("the customer roster carries contacts to the crew but the balance to the owner", async () => {
+      // The list stays open — a tech needs an address and a repeat name in the field —
+      // but the balance owed used to ride on every row. Money is the owner's alone; the
+      // payload speaks dollars (inDollars), so the field is `owing`, not `owingCents`.
+      const crew = await a.worker.get("/api/clients");
+      expect(crew.status).toBe(200);
+      for (const row of crew.body as Array<Record<string, unknown>>) {
+        expect(row.owing, "worker sees no balance").toBe(0);
+        expect(row.name).toBeTruthy(); // contacts still there
+      }
+      const owner = await a.admin.get("/api/clients");
+      expect((owner.body as Array<Record<string, unknown>>).some((r) => typeof r.owing === "number")).toBe(true);
+      // Hand-adding a client is the office's act.
+      expect((await a.worker.post("/api/clients", { name: "Walk-in" })).status).toBe(403);
+    });
+
+    it("a tech's client dossier carries the address but none of the money", async () => {
+      const dossier = await a.worker.get(`/api/clients/${a.clientId}`);
+      expect(dossier.status).toBe(200);
+      // The address and phone are why a tech opens it; the ledger is not. Dollars out,
+      // so totals read `owing`/`collected`/`costs`/`lifetime`.
+      expect(dossier.body.invoices).toEqual([]);
+      expect(dossier.body.contracts).toEqual([]);
+      for (const field of ["owing", "collected", "costs", "lifetime"]) {
+        expect(dossier.body.totals?.[field], field).toBe(0);
+      }
+      const owner = await a.admin.get(`/api/clients/${a.clientId}`);
+      expect(owner.body.invoices.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("a crew member can move his own task but not another's", async () => {
+      // Mine: the assignee is the worker himself, so the edit lands.
+      const mine = await a.admin.post("/api/tasks", {
+        title: "worker's own",
+        assignedToId: a.worker.user?.id,
+        projectId: a.projectId,
+      });
+      expect(mine.status).toBe(201);
+      const ownEdit = await a.worker.put(`/api/tasks/${mine.body.id}`, { status: "DONE" });
+      expect(ownEdit.status).toBe(200);
+
+      // Someone else's: assigned to the admin. A worker who reads its id off the shared
+      // job card must not retitle, reassign, complete or delete it.
+      const theirs = await a.admin.post("/api/tasks", {
+        title: "not the worker's",
+        assignedToId: a.admin.user?.id,
+        projectId: a.projectId,
+      });
+      expect(theirs.status).toBe(201);
+      expect((await a.worker.put(`/api/tasks/${theirs.body.id}`, { title: "HIJACK", status: "DONE" })).status).toBe(404);
+      expect((await a.worker.del(`/api/tasks/${theirs.body.id}`)).status).toBe(404);
+      // The admin's task is untouched.
+      const check = await a.admin.get("/api/tasks");
+      const row = (check.body as Array<Record<string, unknown>>).find((t) => t.id === theirs.body.id);
+      expect(row?.title).toBe("not the worker's");
+    });
+
     it("the crew's job card carries the work and none of the money", async () => {
       // The rail hides /finance and /invoices, and the job card handed the same numbers
       // over anyway: a tech opening his own work order read the quoted price, every

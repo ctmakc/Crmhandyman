@@ -77,6 +77,27 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = (user as any).tenantId;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         token.tenantSlug = (user as any).tenantSlug;
+        return token;
+      }
+
+      /**
+       * On every later request the token is stateless — nothing has asked the database
+       * whether this person still works here. A fired worker's cookie stayed a valid
+       * session for the ~30 days until it expired, and that session could still read and
+       * tamper with the desk. So re-check the row each pass: gone → the session is dead,
+       * role changed → the token follows it (a demoted admin loses the owner's desk on
+       * the next request, not on the next login).
+       */
+      if (token.id && token.tenantId) {
+        const row = await prisma.user.findFirst({
+          where: { id: token.id as string, tenantId: token.tenantId as string },
+          select: { role: true },
+        });
+        if (!row) {
+          token.dead = true;
+        } else {
+          token.role = row.role;
+        }
       }
       return token;
     },
@@ -84,6 +105,16 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const u = session.user as any;
+        // A revoked user carries no identity: guards and the page guard read the empty
+        // id as "signed out" and answer 401 / bounce to login.
+        if (token.dead) {
+          u.role = "";
+          u.id = "";
+          u.tenantId = "";
+          u.tenantSlug = "";
+          u.dead = true;
+          return session;
+        }
         u.role = token.role as string;
         u.id = token.id as string;
         u.tenantId = token.tenantId as string;

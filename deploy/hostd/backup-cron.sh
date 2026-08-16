@@ -39,3 +39,18 @@ if [ "$COUNT" -gt "$KEEP" ]; then
 fi
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: done, $(ls -1 "$HOST_DIR"/crm-*.db.gz | wc -l | tr -d ' ') host-side snapshots (keep $KEEP)"
+
+# Off-box copy. A snapshot that lives only on this disk dies with this disk — the host
+# directory survives a deleted volume, not a lost box. When an rclone remote is set in
+# the env (OFFSITE_RCLONE_REMOTE, e.g. "mega:backups/handyman-crm"), push the newest
+# snapshot there and confirm it landed. Absent remote → skip quietly; this is opt-in so
+# a box without rclone still backs up locally.
+if [ -n "${OFFSITE_RCLONE_REMOTE:-}" ] && command -v rclone >/dev/null 2>&1; then
+  NEWEST="$HOST_DIR/$(basename "$LATEST")"
+  if rclone copy "$NEWEST" "$OFFSITE_RCLONE_REMOTE/" >/dev/null 2>&1 &&
+     rclone lsf "$OFFSITE_RCLONE_REMOTE/" 2>/dev/null | grep -qF "$(basename "$NEWEST")"; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: off-box copy verified at $OFFSITE_RCLONE_REMOTE"
+  else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') backup-cron: WARNING off-box copy to $OFFSITE_RCLONE_REMOTE failed"
+  fi
+fi
