@@ -4,8 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendReminder } from "@/lib/reminders";
 import { isOverdue, daysOverdue } from "@/lib/invoice-state";
+import { buildPublicPaymentUrl } from "@/lib/payment-links";
 
-export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +25,12 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     return NextResponse.json({ error: "This invoice is not overdue" }, { status: 400 });
   }
 
+  const paymentUrl = buildPublicPaymentUrl({
+    origin: req.nextUrl.origin,
+    tenantId,
+    invoiceId: invoice.id,
+  });
+
   const result = await sendReminder({
     number: invoice.number,
     clientName: invoice.clientName,
@@ -33,6 +40,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     dueDate: invoice.dueDate,
     daysOverdue: daysOverdue(state),
     businessName: invoice.tenant.businessName,
+    paymentUrl,
   });
 
   // The attempt is recorded either way — a reminder the desk thinks it sent but did
