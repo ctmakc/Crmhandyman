@@ -1,0 +1,29 @@
+name: One-shot production dependency audit
+
+on:
+  push:
+    branches:
+      - agent/dependency-security-wave
+    paths:
+      - .github/workflows/dependency-audit-wave.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+      - run: npm ci
+      - name: Produce production audit report
+        run: npm audit --omit=dev --json > production-audit.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-audit
+          path: production-audit.json
