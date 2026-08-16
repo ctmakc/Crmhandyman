@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveClient } from "@/lib/client-resolver";
+import { writeAuditEvent } from "@/lib/audit";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -18,15 +19,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   if (lead.project) return NextResponse.json({ error: "Already converted" }, { status: 400 });
 
-  // Carry the lead's client through, or resolve one now, so the new job lands on the
-  // same record as any previous work at this address.
+  let assignedToId: string | undefined;
+  if (body.assignedToId) {
+    const worker = await prisma.user.findFirst({
+      where: { id: String(body.assignedToId), tenantId },
+      select: { id: true },
+    });
+    if (!worker) return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
+    assignedToId = worker.id;
+  }
+
+  const address = String(body.address || lead.address || "").trim();
   const clientId =
     lead.clientId ||
     (await resolveClient(tenantId, {
       name: lead.name,
       phone: lead.phone,
       email: lead.email,
-      address: body.address || lead.address,
+      address,
       city: lead.city,
     }));
 
@@ -39,12 +49,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         clientName: lead.name,
         phone: lead.phone,
         email: lead.email,
-        address: body.address || lead.address || "",
-        title: body.title || `${lead.jobType || "Job"} for ${lead.name}`,
-        description: body.description,
+        address,
+        title: String(body.title || `${lead.jobType || "Job"} for ${lead.name}`).slice(0, 300),
+        description: body.description ? String(body.description).slice(0, 5000) : undefined,
         jobType: lead.jobType,
         scheduledDate: body.scheduledDate ? new Date(body.scheduledDate) : undefined,
-        assignedToId: body.assignedToId,
+        assignedToId,
       },
     }),
     prisma.lead.update({
@@ -53,5 +63,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }),
   ]);
 
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: "lead.converted",
+    entityType: "lead",
+    entityId: lead.id,
+    summary: `Lead converted to job: ${project.title}`,
+    metadata: { projectId: project.id, clientId, assignedToId: project.assignedToId },
+  });
   return NextResponse.json(project, { status: 201 });
 }

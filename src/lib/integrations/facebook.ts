@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 export interface FbLeadField {
   name: string;
   values: string[];
@@ -22,9 +24,11 @@ export function extractLeadField(fieldData: FbLeadField[], fieldName: string): s
 }
 
 export function verifyFbWebhookSignature(body: string, signature: string, secret: string): boolean {
-  // Node.js crypto is available server-side
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createHmac } = require("crypto") as typeof import("crypto");
-  const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
-  return expected === signature;
+  if (!secret || !signature.startsWith("sha256=")) return false;
+  const providedHex = signature.slice("sha256=".length);
+  if (!/^[a-f0-9]{64}$/i.test(providedHex)) return false;
+
+  const expected = createHmac("sha256", secret).update(body).digest();
+  const provided = Buffer.from(providedHex, "hex");
+  return expected.length === provided.length && timingSafeEqual(expected, provided);
 }

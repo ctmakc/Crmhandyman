@@ -1,23 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyFbWebhookSignature } from "@/lib/integrations/facebook";
+import { consumeRateLimit, rateLimitHeaders, requestIp } from "@/lib/rate-limit";
+import { createInboundLead } from "@/lib/inbound-leads";
+import { writeAuditEvent } from "@/lib/audit";
 
-// Instagram webhook verification (same Meta platform)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
   const token = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
 
-  if (mode === "subscribe" && token === process.env.META_WEBHOOK_VERIFY_TOKEN) {
+  if (verifyToken && mode === "subscribe" && token === verifyToken) {
     return new NextResponse(challenge, { status: 200 });
   }
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
-// Instagram message webhook
 export async function POST(req: NextRequest) {
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) return NextResponse.json({ error: "Meta webhook verification is not configured" }, { status: 503 });
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-hub-signature-256") || "";
+  if (!verifyFbWebhookSignature(rawBody, signature, secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  let limit;
+  try {
+    limit = await consumeRateLimit({
+      scope: "webhook:instagram",
+      identifier: requestIp(req),
+      limit: 300,
+      windowMs: 60_000,
+    });
+  } catch (error) {
+    console.error("INSTAGRAM_RATE_LIMIT_FAILED", error);
+    return NextResponse.json({ error: "Ingress controls unavailable" }, { status: 503 });
+  }
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(limit) });
+  }
+
   let body: {
     entry?: Array<{
+      id?: string;
       messaging?: Array<{
         sender?: { id?: string };
         message?: { text?: string };
@@ -25,22 +54,25 @@ export async function POST(req: NextRequest) {
       }>;
     }>;
   };
-
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400, headers: rateLimitHeaders(limit) });
   }
 
   for (const entry of body.entry || []) {
+    if (!entry.id) continue;
+    const integration = await prisma.channelIntegration.findFirst({
+      where: { channel: "INSTAGRAM", pageId: entry.id, isActive: true },
+    });
+    if (!integration) continue;
+
     for (const event of entry.messaging || []) {
-      if (!event.message?.text) continue;
-
-      const text = event.message.text.toLowerCase();
+      const originalText = event.message?.text?.trim();
       const senderId = event.sender?.id;
-      if (!senderId) continue;
+      if (!originalText || !senderId) continue;
 
-      // Simple keyword detection for service interest
+      const text = originalText.toLowerCase();
       const isServiceInquiry =
         text.includes("repair") ||
         text.includes("fix") ||
@@ -52,33 +84,31 @@ export async function POST(req: NextRequest) {
         text.includes("estimate") ||
         text.includes("help") ||
         text.includes("service");
-
       if (!isServiceInquiry) continue;
 
-      // Resolve tenant from Instagram integration
-      const integration = await prisma.channelIntegration.findFirst({
-        where: { channel: "INSTAGRAM", isActive: true },
+      const externalId = `ig_${senderId}`;
+      const result = await createInboundLead({
+        tenantId: integration.tenantId,
+        channel: "INSTAGRAM",
+        externalId,
+        name: `Instagram User ${senderId.slice(-6)}`,
+        source: "INSTAGRAM",
+        notes: `Instagram message: "${originalText.slice(0, 1500)}"`,
       });
-      if (!integration) continue;
 
-      // Check for duplicate
-      const existing = await prisma.lead.findFirst({
-        where: { sourceLeadId: `ig_${senderId}`, tenantId: integration.tenantId },
-      });
-      if (existing) continue;
-
-      await prisma.lead.create({
-        data: {
+      if (!result.duplicate) {
+        await writeAuditEvent({
           tenantId: integration.tenantId,
-          name: `Instagram User ${senderId.slice(-6)}`,
-          source: "INSTAGRAM",
-          sourceLeadId: `ig_${senderId}`,
-          notes: `Instagram message: "${event.message.text}"`,
-          status: "NEW",
-        },
-      });
+          actorEmail: "instagram-webhook",
+          action: "lead.created.external",
+          entityType: "lead",
+          entityId: result.lead.id,
+          summary: "Instagram service inquiry received",
+          metadata: { instagramAccountId: entry.id, senderId },
+        });
+      }
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { headers: rateLimitHeaders(limit) });
 }

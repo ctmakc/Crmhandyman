@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { chaseStage, daysOverdue, displayStatus, owingOf } from "../src/lib/invoice-state";
 import { signIntakePayload, verifyIntakeSignature } from "../src/lib/intake-signature";
+import { verifyFbWebhookSignature } from "../src/lib/integrations/facebook";
 
 function invoiceRegression() {
   const now = new Date(2026, 2, 15, 12, 0, 0);
@@ -35,6 +37,19 @@ function intakeSignatureRegression() {
   );
 }
 
+function metaSignatureRegression() {
+  const secret = "meta-test-secret";
+  const body = JSON.stringify({ object: "page", entry: [{ id: "123" }] });
+  const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+
+  assert.equal(verifyFbWebhookSignature(body, signature, secret), true);
+  assert.equal(verifyFbWebhookSignature(`${body}x`, signature, secret), false);
+  assert.equal(verifyFbWebhookSignature(body, signature.replace(/.$/, "0"), secret), false);
+  assert.equal(verifyFbWebhookSignature(body, "", secret), false);
+  assert.equal(verifyFbWebhookSignature(body, signature, ""), false);
+}
+
 invoiceRegression();
 intakeSignatureRegression();
+metaSignatureRegression();
 console.log("core regression checks passed");

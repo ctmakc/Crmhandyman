@@ -22,6 +22,7 @@ jobs:
       DATABASE_URL: file:./ci.db
       NEXTAUTH_SECRET: ci-only-secret
       NEXTAUTH_URL: http://localhost:3000
+      RATE_LIMIT_PEPPER: ci-rate-limit-pepper
       LEAD_INTAKE_SIGNING_SECRET: ci-intake-secret
     steps:
       - uses: actions/checkout@v4
@@ -32,8 +33,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Block critical production dependency advisories
+        run: npm audit --omit=dev --audit-level=critical
       - run: npx prisma generate
       - name: Apply complete migration chain
         run: npx prisma migrate deploy
+      - name: Run database business regression
+        run: npm run test:db
       - name: Verify application
         run: npm run verify

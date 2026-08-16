@@ -24,6 +24,7 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - APP_VERSION=${APP_VERSION:-dev}
+      - RATE_LIMIT_PEPPER=${RATE_LIMIT_PEPPER:-}
       - LEAD_INTAKE_SIGNING_SECRET=${LEAD_INTAKE_SIGNING_SECRET:-}
       - BACKUP_DIR=/app/data/backups
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}

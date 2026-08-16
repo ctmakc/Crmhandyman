@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAuditEvent } from "@/lib/audit";
 
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -20,7 +21,6 @@ export async function GET(_req: NextRequest) {
     },
     orderBy: { createdAt: "desc" },
   });
-
   return NextResponse.json(tasks);
 }
 
@@ -33,19 +33,41 @@ export async function POST(req: NextRequest) {
   const userId = u.id as string;
 
   const body = await req.json();
+  const title = String(body.title ?? "").trim();
+  if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+
+  const assignedToId = String(body.assignedToId || userId);
+  const assignee = await prisma.user.findFirst({ where: { id: assignedToId, tenantId }, select: { id: true } });
+  if (!assignee) return NextResponse.json({ error: "Assignee not found" }, { status: 404 });
+
+  let projectId: string | undefined;
+  if (body.projectId) {
+    const project = await prisma.project.findFirst({ where: { id: String(body.projectId), tenantId }, select: { id: true } });
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    projectId = project.id;
+  }
 
   const task = await prisma.task.create({
     data: {
       tenantId,
-      title: body.title,
-      description: body.description,
-      projectId: body.projectId || undefined,
-      assignedToId: body.assignedToId || userId,
+      title: title.slice(0, 300),
+      description: body.description ? String(body.description).slice(0, 4000) : undefined,
+      projectId,
+      assignedToId: assignee.id,
       createdById: userId,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
     },
     include: { assignedTo: { select: { id: true, name: true } } },
   });
 
+  await writeAuditEvent({
+    tenantId,
+    actorEmail: session.user?.email,
+    action: "task.created",
+    entityType: "task",
+    entityId: task.id,
+    summary: `Task created: ${task.title}`,
+    metadata: { projectId: task.projectId, assignedToId: task.assignedToId },
+  });
   return NextResponse.json(task, { status: 201 });
 }
