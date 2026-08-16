@@ -51,6 +51,14 @@ ENV NEXT_PUBLIC_SUPPORT_EMAIL=$NEXT_PUBLIC_SUPPORT_EMAIL
 # button does not render (dev/test); set to https://crm.<root> to turn Google on.
 ARG NEXT_PUBLIC_AUTH_ORIGIN=""
 ENV NEXT_PUBLIC_AUTH_ORIGIN=$NEXT_PUBLIC_AUTH_ORIGIN
+# The public demo tour: on this workspace's login the visitor gets a one-tap way in with
+# these shared (throwaway) credentials. All empty → no tour button anywhere.
+ARG NEXT_PUBLIC_DEMO_SLUG=""
+ENV NEXT_PUBLIC_DEMO_SLUG=$NEXT_PUBLIC_DEMO_SLUG
+ARG NEXT_PUBLIC_DEMO_EMAIL=""
+ENV NEXT_PUBLIC_DEMO_EMAIL=$NEXT_PUBLIC_DEMO_EMAIL
+ARG NEXT_PUBLIC_DEMO_PASSWORD=""
+ENV NEXT_PUBLIC_DEMO_PASSWORD=$NEXT_PUBLIC_DEMO_PASSWORD
 RUN npx prisma generate && npm run build
 
 # --- Stage 3: runtime ---------------------------------------------------------------

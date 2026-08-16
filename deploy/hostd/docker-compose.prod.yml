@@ -23,6 +23,11 @@ services:
         # The front door where Google OAuth starts; inlined so the button knows where to
         # send a subdomain visitor. Empty hides the Google button.
         NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-}
+        # Public demo tour: on <DEMO_SLUG>.<root>/login a "Look around" button signs in
+        # with these throwaway shared credentials. All empty → no tour button.
+        NEXT_PUBLIC_DEMO_SLUG: ${NEXT_PUBLIC_DEMO_SLUG:-}
+        NEXT_PUBLIC_DEMO_EMAIL: ${NEXT_PUBLIC_DEMO_EMAIL:-}
+        NEXT_PUBLIC_DEMO_PASSWORD: ${NEXT_PUBLIC_DEMO_PASSWORD:-}
     image: handyman-crm:latest
     container_name: handyman-crm
     restart: unless-stopped

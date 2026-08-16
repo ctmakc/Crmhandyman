@@ -57,6 +57,35 @@ function LoginForm() {
 
   const sentHere = landingFrom(params.get("callbackUrl")) !== "/";
 
+  /**
+   * The demo tour. On the demo workspace's own address (NEXT_PUBLIC_DEMO_SLUG), a visitor
+   * gets a one-tap way in — no credentials to hand out — because the whole point is to let
+   * a prospect look around. The demo login is public and the workspace is wiped clean on a
+   * schedule, so the shared password living in the bundle costs nothing.
+   */
+  const demoSlug = (process.env.NEXT_PUBLIC_DEMO_SLUG || "").trim().toLowerCase();
+  const demoEmail = process.env.NEXT_PUBLIC_DEMO_EMAIL || "";
+  const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD || "";
+  const isDemo = Boolean(demoSlug && demoEmail && demoPassword && slug === demoSlug);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  async function enterDemo() {
+    setDemoLoading(true);
+    setError("");
+    const res = await signIn("credentials", {
+      email: demoEmail,
+      password: demoPassword,
+      slug: demoSlug,
+      redirect: false,
+    });
+    if (res?.error) {
+      setError("The demo is being refreshed — try again in a moment.");
+      setDemoLoading(false);
+    } else {
+      router.push("/");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -86,10 +115,28 @@ function LoginForm() {
       points={["Leads from every channel", "Estimates → invoices", "Crew board", "Profit on every job"]}
       footnote="HVAC · Moving · Renovation"
     >
-      <div className="eyebrow">{slug ? `Workspace · ${slug}` : "Sign in"}</div>
+      <div className="eyebrow">{isDemo ? "Demo · look around" : slug ? `Workspace · ${slug}` : "Sign in"}</div>
       <h1 className="t-page mt-2 font-black leading-none tracking-tight text-ink">
-        Open the desk
+        {isDemo ? "See it working" : "Open the desk"}
       </h1>
+
+      {/* The demo tour: one tap into a fully-dressed shop, no credentials to type. */}
+      {isDemo && (
+        <div className="mt-5">
+          <p className="measure t-body text-ink-2">
+            A real contractor&apos;s desk, filled in — leads, jobs, estimates, invoices and the
+            money behind them. Look around; nothing here is live.
+          </p>
+          <Button type="button" onClick={enterDemo} disabled={demoLoading} className="mt-5 w-full">
+            {demoLoading ? "Opening…" : "Look around the demo"}
+          </Button>
+          <div className="mt-5 flex items-center gap-3 text-ink-2">
+            <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+            <span className="mono text-[11px] uppercase tracking-wide">or sign in</span>
+            <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+          </div>
+        </div>
+      )}
 
       {/* The tech who tapped an alert at 06:40 is told his place is being held. */}
       {sentHere && (

@@ -71,9 +71,36 @@ function daysAhead(n: number) {
   return new Date(Date.now() + n * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * Empty a workspace of everything a visitor could have touched, so a fresh presentation
+ * world can be laid over it. Deleted from the leaves inward: money before the paper before
+ * the job, so no foreign key ever blocks. The tenant, its admin and its crew stay — only
+ * the demonstrable content and any invites/keys a curious visitor made are cleared. This is
+ * for the demo workspace ONLY; run against a real shop and it erases their books.
+ */
+async function wipe(tenantId: string) {
+  const t = { tenantId };
+  await prisma.payment.deleteMany({ where: t });
+  await prisma.expense.deleteMany({ where: t });
+  await prisma.invoice.deleteMany({ where: t });
+  await prisma.estimate.deleteMany({ where: t });
+  await prisma.task.deleteMany({ where: t });
+  await prisma.jobPhoto.deleteMany({ where: t });
+  await prisma.project.deleteMany({ where: t });
+  await prisma.lead.deleteMany({ where: t });
+  await prisma.equipment.deleteMany({ where: t });
+  await prisma.serviceContract.deleteMany({ where: t });
+  await prisma.client.deleteMany({ where: t });
+  await prisma.invite.deleteMany({ where: t });
+  await prisma.intakeKey.deleteMany({ where: t });
+  await prisma.channelIntegration.deleteMany({ where: t });
+  await prisma.auditLog.deleteMany({ where: t });
+}
+
 async function main() {
   const slug = (argOf("slug") || process.env.PRESENT_SLUG || "demo").trim().toLowerCase();
-  const force = process.env.PRESENT_FORCE === "1" || process.argv.includes("--force");
+  const reset = process.env.PRESENT_RESET === "1" || process.argv.includes("--reset");
+  const force = reset || process.env.PRESENT_FORCE === "1" || process.argv.includes("--force");
 
   const tenant = await prisma.tenant.findUnique({ where: { slug } });
   if (!tenant) {
@@ -82,6 +109,13 @@ async function main() {
         `  npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/provision-tenant.ts ` +
         `--business "Northwind Mechanical & Movers" --slug ${slug} --owner owner@example.ca`
     );
+  }
+
+  // --reset wipes the workspace clean first, so a demo a visitor poked at comes back pristine
+  // on the next cron run. It also implies --force, so the fill proceeds over the wiped world.
+  if (reset) {
+    await wipe(tenant.id);
+    console.log(`Wiped «${tenant.businessName}» (${slug}) — re-dressing.`);
   }
 
   // The guard. A workspace already dressed for a demo carries this stamp in its own journal;
