@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "HandymanPro CRM",
-  "short_name": "HandymanPro",
+  "name": "HandyCRM",
+  "short_name": "HandyCRM",
   "description": "The work order in your pocket — today's stops, one tap each, with or without a signal.",
   "start_url": "/today",
   "scope": "/",

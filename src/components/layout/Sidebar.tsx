@@ -116,7 +116,7 @@ export default function Sidebar({ business }: { business?: string | null }) {
         />
         <div className="border-b border-navy-700 px-5 py-5">
           <span className="text-[19px] font-black leading-none tracking-tight text-plate">
-            HANDYMAN<span className="text-amber">PRO</span>
+            HANDY<span className="text-amber">CRM</span>
           </span>
           <p className="mono mt-2 truncate text-[10px] uppercase tracking-[0.14em] text-ink-rail">
             {business || "Work-order desk"}

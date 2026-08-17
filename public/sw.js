@@ -1,5 +1,5 @@
 /*
- * HandymanPro — the field service worker.
+ * HandyCRM — the field service worker.
  *
  * Its whole job is to make /today open in a basement. It caches the SHELL only: the
  * page frame and the hashed build assets. It never caches an API answer — the board's

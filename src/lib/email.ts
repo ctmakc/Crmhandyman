@@ -8,7 +8,7 @@ import { mailer, smtpConfigured, smtpFrom } from "@/lib/mailer";
  * how to say.
  *
  * Every word here is read by the CONTRACTOR'S customer, so none of it may name this
- * product. The subject used to say «Your Estimate from HandymanPro» — a company the
+ * product. The subject used to say «Your Estimate from HandyCRM» — a company the
  * customer has never dealt with — and the body opened «Please find your estimate
  * attached» and closed «Thank you for your business!» without naming the sum, the
  * number or the sender. The attachment went out as `estimate-cms3jnlyt0000h67g.pdf`.

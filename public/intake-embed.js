@@ -1,5 +1,5 @@
 /**
- * HandymanPro CRM — embeddable lead form for client landing pages.
+ * HandyCRM — embeddable lead form for client landing pages.
  *
  * A site owner pastes two lines into any page:
  *

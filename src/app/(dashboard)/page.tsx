@@ -11,6 +11,10 @@ import {
   WoNumber,
   Empty,
   Readout,
+  StatTile,
+  Sparkline,
+  MeterBar,
+  AgingBar,
   buttonClass,
   textToneFor,
 } from "@/components/ui/primitives";
@@ -20,6 +24,7 @@ import { LeadWait } from "@/components/LeadClock";
 import ChaseLane from "@/components/ChaseLane";
 import ServiceDueLane from "@/components/ServiceDueLane";
 import { nextDueVisit, daysUntil } from "@/lib/contracts";
+import { daysOverdue } from "@/lib/invoice-state";
 import { sessionTenant } from "@/lib/session";
 import { redirect } from "next/navigation";
 
@@ -33,11 +38,28 @@ export default async function DashboardPage() {
   const { tenantId, id: userId, role } = sessionTenant(session);
   const isAdmin = role === "ADMIN";
 
+  const now = new Date();
+
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
+
+  // Today's window — for the crew count and the board-today caption.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+
+  // The bridge's money trend runs weekly. Ten Sunday-aligned buckets ending on the
+  // current week, so the sparkline lines up with the week board below it, and a
+  // thirty-day headline is read off the same fetch rather than a second round trip.
+  const SPARK_WEEKS = 10;
+  const bucketsStart = new Date(weekStart);
+  bucketsStart.setDate(weekStart.getDate() - 7 * (SPARK_WEEKS - 1));
+  const thirtyStart = new Date(now);
+  thirtyStart.setDate(now.getDate() - 30);
 
   // One wave, not four. The crew count and the contract book used to be awaited after
   // this block finished, so the desk paid three round trips end to end for answers that
@@ -48,7 +70,6 @@ export default async function DashboardPage() {
     pendingTasksCount,
     recentLeads,
     recentProjects,
-    monthRevenue,
     outstanding,
     weekJobs,
     crewSize,
@@ -58,6 +79,11 @@ export default async function DashboardPage() {
     usedKeyCount,
     integrationCount,
     realCrewCount,
+    // Revision 4 — the instruments on the command bridge.
+    leadStatusGroups,
+    projectStatusGroups,
+    paymentsWindow,
+    todayJobs,
   ] = await Promise.all([
     /**
      * «New leads» counts leads that are NEW. It counted CONTACTED as well, so the deck
@@ -75,26 +101,23 @@ export default async function DashboardPage() {
     }),
     prisma.lead.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.project.findMany({ where: { tenantId }, orderBy: { updatedAt: "desc" }, take: 5 }),
-    isAdmin
-      ? prisma.payment.aggregate({
-          where: {
-            tenantId,
-            date: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
-          },
-          _sum: { amountCents: true },
-        })
-      : null,
     /**
      * What is actually still on the street. The aggregate below used to sum
      * `totalCents`, so a part-paid invoice was counted whole and the deck answered
      * the morning's first question with a bigger number than the book it links to.
      * Owing is total minus what has landed — the same arithmetic `owingCents` runs
-     * everywhere else, so the two screens now agree to the cent.
+     * everywhere else, so the two screens now agree to the cent. `dueDate` rides along
+     * so the aging well can split the same money by how late it is.
      */
     isAdmin
       ? prisma.invoice.findMany({
           where: { tenantId, status: { in: ["SENT", "PARTIAL"] } },
-          select: { totalCents: true, payments: { select: { amountCents: true } } },
+          select: {
+            totalCents: true,
+            dueDate: true,
+            status: true,
+            payments: { select: { amountCents: true } },
+          },
         })
       : null,
     prisma.project.findMany({
@@ -149,6 +172,22 @@ export default async function DashboardPage() {
           where: { tenantId, role: "WORKER", NOT: { email: { endsWith: "@demo.local" } } },
         })
       : 0,
+    // The lead pipeline, split by stage — the caption under the New-leads tile.
+    prisma.lead.groupBy({ by: ["status"], where: { tenantId }, _count: { _all: true } }),
+    // The job book, split by state — the scheduled-vs-live meter under Active jobs.
+    prisma.project.groupBy({ by: ["status"], where: { tenantId }, _count: { _all: true } }),
+    // Ten weeks of takings for the revenue sparkline and the thirty-day headline.
+    isAdmin
+      ? prisma.payment.findMany({
+          where: { tenantId, date: { gte: bucketsStart } },
+          select: { amountCents: true, date: true },
+        })
+      : [],
+    // Who is out today — for the crew count and the board-today line.
+    prisma.project.findMany({
+      where: { tenantId, scheduledDate: { gte: todayStart, lt: todayEnd } },
+      select: { assignedToId: true },
+    }),
   ]);
 
   /**
@@ -266,52 +305,197 @@ export default async function DashboardPage() {
     }
   }
 
-  /**
-   * THE RAIL, IN THE ORDER THE QUESTIONS ARRIVE.
-   *
-   * The desk is opened at six in the morning to answer three things: how much money is
-   * out on the street, who has to be phoned today, and what is on the board. The rail
-   * used to run counts first and the money last, so the answer the owner came for was
-   * the fifth item down the narrowest column — and all five readouts were the same
-   * 30px, which is five things shouting and nothing dominating.
-   *
-   * Money leads at full gauge size; the counts follow at record size. Different weight,
-   * different question.
-   */
-  const collectedCents = monthRevenue?._sum?.amountCents || 0;
-  const outstandingCents = (outstanding ?? []).reduce(
-    (sum, inv) =>
-      sum + Math.max(inv.totalCents - inv.payments.reduce((p, x) => p + x.amountCents, 0), 0),
-    0
-  );
+  /* ----------------------------------------------------------------------
+     THE COMMAND-BRIDGE INSTRUMENTS (Revision 4).
+     The headline metrics are lifted off the narrow rail and onto plate
+     instruments that sit on the deck. Each carries its own true colour where a
+     colour means something — money in emerald, money owed rose, the live lane
+     amber — and its own micro-figure: a weekly trend, a state split, an aging
+     bar. Nothing is a rainbow; a hue that decorates is a hue that is absent.
+     ---------------------------------------------------------------------- */
 
-  const money = isAdmin
+  // The lead pipeline behind the New-leads tile.
+  const leadBy = Object.fromEntries(
+    leadStatusGroups.map((g) => [g.status, g._count._all])
+  ) as Record<string, number>;
+  const contactedCount = leadBy["CONTACTED"] ?? 0;
+  const verifiedCount = leadBy["VERIFIED"] ?? 0;
+
+  // Scheduled against in-progress — the job book's live split.
+  const projBy = Object.fromEntries(
+    projectStatusGroups.map((g) => [g.status, g._count._all])
+  ) as Record<string, number>;
+  const scheduledCount = projBy["SCHEDULED"] ?? 0;
+  const inProgressCount = projBy["IN_PROGRESS"] ?? 0;
+
+  // Who is out today, and how much work is on the road.
+  const crewOutToday = new Set(
+    todayJobs.map((j) => j.assignedToId).filter(Boolean) as string[]
+  ).size;
+  const jobsToday = todayJobs.length;
+
+  // Ten weeks of takings → the sparkline; the last thirty days → the headline.
+  const weekBuckets = new Array(SPARK_WEEKS).fill(0) as number[];
+  let moneyIn30Cents = 0;
+  for (const p of paymentsWindow ?? []) {
+    const d = new Date(p.date);
+    const idx = Math.floor((d.getTime() - bucketsStart.getTime()) / 604_800_000);
+    if (idx >= 0 && idx < SPARK_WEEKS) weekBuckets[idx] += p.amountCents;
+    if (d >= thirtyStart) moneyIn30Cents += p.amountCents;
+  }
+
+  // The receivables, split by age — the sunk well and the Owing tile read from here.
+  let curCents = 0;
+  let d1to30Cents = 0;
+  let d31to60Cents = 0;
+  let d60plusCents = 0;
+  let overdueCount = 0;
+  for (const inv of outstanding ?? []) {
+    const paid = inv.payments.reduce((s, x) => s + x.amountCents, 0);
+    const owe = inv.totalCents - paid;
+    if (owe <= 0) continue;
+    const late = daysOverdue({
+      status: inv.status,
+      totalCents: inv.totalCents,
+      dueDate: inv.dueDate,
+      amountPaidCents: paid,
+    });
+    if (late <= 0) {
+      curCents += owe;
+    } else {
+      overdueCount++;
+      if (late <= 30) d1to30Cents += owe;
+      else if (late <= 60) d31to60Cents += owe;
+      else d60plusCents += owe;
+    }
+  }
+  const owingTotalCents = curCents + d1to30Cents + d31to60Cents + d60plusCents;
+  const unpaidCount = outstanding?.length ?? 0;
+
+  // The plate band. Owners read money; the crew reads work — so the four
+  // instruments differ by role, and the money well shows only to the owner.
+  interface Tile {
+    key: string;
+    label: string;
+    value: number;
+    href: string;
+    money?: boolean;
+    tone?: string;
+    suffix?: React.ReactNode;
+    lamp?: boolean;
+    foot?: React.ReactNode;
+  }
+  const tiles: Tile[] = isAdmin
     ? [
         {
-          label: `Owing · ${outstanding?.length || 0}`,
-          value: formatCents(outstandingCents),
-          href: "/invoices",
-          // A zero is a zero. Colour reports the size of the number, never its category:
-          // an empty month printed emerald read as good news.
-          tone: outstandingCents > 0 ? "var(--rose-ink)" : undefined,
+          key: "leads",
+          label: "New leads",
+          value: newLeadsCount,
+          lamp: newLeadsCount > 0,
+          href: "/leads",
+          foot: (
+            <p className="eyebrow leading-relaxed">
+              {contactedCount} contacted · {verifiedCount} verified
+            </p>
+          ),
         },
         {
-          label: "Collected · this month",
-          value: formatCents(collectedCents),
+          key: "in",
+          label: "Money in · 30 days",
+          value: moneyIn30Cents,
+          money: true,
+          tone: moneyIn30Cents > 0 ? "var(--emerald-ink)" : undefined,
           href: "/finance",
-          tone: collectedCents > 0 ? "var(--emerald-ink)" : undefined,
+          foot: (
+            <Sparkline
+              values={weekBuckets}
+              tone="var(--emerald)"
+              width={140}
+              height={30}
+              ariaLabel="Weekly takings, last ten weeks"
+            />
+          ),
+        },
+        {
+          key: "owing",
+          label: "Owing",
+          value: owingTotalCents,
+          money: true,
+          tone: owingTotalCents > 0 ? "var(--rose-ink)" : undefined,
+          href: "/invoices",
+          foot: (
+            <p className="eyebrow leading-relaxed">
+              {unpaidCount} unpaid · {overdueCount} overdue
+            </p>
+          ),
+        },
+        {
+          key: "jobs",
+          label: "Active jobs",
+          value: activeProjectsCount,
+          href: "/projects",
+          foot: (
+            <>
+              <MeterBar
+                height={8}
+                segments={[
+                  { value: scheduledCount, tone: "var(--sky)", label: "Scheduled" },
+                  { value: inProgressCount, tone: "var(--amber)", label: "In progress" },
+                ]}
+                ariaLabel="Scheduled against in progress"
+              />
+              <p className="eyebrow mt-2.5 leading-relaxed">
+                {scheduledCount} booked · {inProgressCount} live
+                {jobsToday > 0 ? ` · ${jobsToday} out today` : ""}
+              </p>
+            </>
+          ),
         },
       ]
-    : [];
-
-  const counts = [
-    // The amber lamp — not amber type — marks the one lane needing attention.
-    { label: "New leads", value: String(newLeadsCount), href: "/leads", lamp: newLeadsCount > 0 },
-    { label: "Active jobs", value: String(activeProjectsCount), href: "/projects" },
-    // Two words, so all three labels hold one line when the counts sit side by side on
-    // a phone — «Open crew tasks» wrapped and dropped its numeral out of line.
-    { label: "Crew tasks", value: String(pendingTasksCount), href: "/tasks" },
-  ];
+    : [
+        {
+          key: "leads",
+          label: "New leads",
+          value: newLeadsCount,
+          lamp: newLeadsCount > 0,
+          href: "/leads",
+          foot: (
+            <p className="eyebrow leading-relaxed">
+              {contactedCount} contacted · {verifiedCount} verified
+            </p>
+          ),
+        },
+        {
+          key: "jobs",
+          label: "Active jobs",
+          value: activeProjectsCount,
+          href: "/projects",
+          foot: (
+            <MeterBar
+              height={8}
+              segments={[
+                { value: scheduledCount, tone: "var(--sky)", label: "Scheduled" },
+                { value: inProgressCount, tone: "var(--amber)", label: "In progress" },
+              ]}
+              ariaLabel="Scheduled against in progress"
+            />
+          ),
+        },
+        {
+          key: "tasks",
+          label: "My open tasks",
+          value: pendingTasksCount,
+          lamp: pendingTasksCount > 0,
+          href: "/tasks",
+        },
+        {
+          key: "board",
+          label: "Out today",
+          value: jobsToday,
+          suffix: crewOutToday > 0 ? `· ${crewOutToday} crew` : undefined,
+          href: "/projects",
+        },
+      ];
 
   return (
     <div className="pb-24 md:pb-0">
@@ -327,41 +511,102 @@ export default async function DashboardPage() {
         }
       />
 
-      {/* Before the desk, the commissioning card: a fresh workspace cannot
-          receive a lead until the intake plumbing exists, so the checklist
-          precedes the (empty) instruments it feeds. Dismiss is the owner's,
-          handled inside — see the component for the persistence choice. */}
+      {/* THE COMMAND BRIDGE — a band of plate instruments raised off the deck.
+          Two up on a phone (each a 44px-plus tap target), four across on the desk;
+          the number on each counts up once as the desk arms. */}
+      <section aria-label="The desk at a glance" className="mt-8">
+        <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+          {tiles.map((t, i) => (
+            <StatTile
+              key={t.key}
+              label={t.label}
+              value={t.value}
+              money={t.money}
+              tone={t.tone}
+              suffix={t.suffix}
+              lamp={t.lamp}
+              href={t.href}
+              foot={t.foot}
+              armIndex={i}
+            />
+          ))}
+        </div>
+
+        {/* THE SUNK WELL — the receivable total, recessed into the deck, with the
+            same money split by age. A plate is raised and read first; the well is
+            sunk and read against it. Owner only — the crew's board carries no book. */}
+        {isAdmin && (
+          <div
+            className="arm-readout mt-3 border border-line bg-sunk px-5 py-4 md:mt-4"
+            style={{ ["--i" as string]: 4 } as React.CSSProperties}
+          >
+            <div className="flex flex-col gap-5 md:flex-row md:items-center md:gap-10">
+              <Link href="/invoices" className="group shrink-0">
+                <div className="eyebrow group-hover:text-ink">On the street</div>
+                <Readout
+                  value={formatCents(owingTotalCents)}
+                  tone={owingTotalCents > 0 ? "var(--rose-ink)" : undefined}
+                  className="mt-2 block"
+                />
+                <div className="eyebrow mt-2 text-ink-3">
+                  {unpaidCount} unpaid · {overdueCount} overdue
+                </div>
+              </Link>
+              <div className="min-w-0 flex-1">
+                <div className="eyebrow mb-2.5">Owing by age</div>
+                <AgingBar
+                  height={12}
+                  showLabels
+                  buckets={{
+                    currentCents: curCents,
+                    d1to30Cents,
+                    d31to60Cents,
+                    d60plusCents,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* The commissioning card sits under the instruments it feeds: a fresh
+          workspace cannot receive a lead until the intake plumbing exists, so the
+          desk shows the numbers first and the setup it still needs beneath them.
+          Dismiss is the owner's, handled inside the component. */}
       {showOnboarding && (
-        <OnboardingChecklist
-          userId={userId}
-          steps={{
-            hasIntakeKey: intakeKeyCount > 0,
-            landingWired: usedKeyCount > 0,
-            channelsConnected: integrationCount > 0,
-            crewInvited: realCrewCount > 0,
-          }}
-        />
+        <div className="mt-10">
+          <OnboardingChecklist
+            userId={userId}
+            steps={{
+              hasIntakeKey: intakeKeyCount > 0,
+              landingWired: usedKeyCount > 0,
+              channelsConnected: integrationCount > 0,
+              crewInvited: realCrewCount > 0,
+            }}
+          />
+        </div>
       )}
+
+      {/* The hairline is struck under the bridge on entrance — a drawn rule, not a
+          static border, so the band reads as an instrument panel closing off. */}
+      <div className="rule-draw mt-10" aria-hidden />
 
       {/*
         An asymmetric desk: a stack of equal panels says everything weighs the same.
-        The board is the work; the money rail is the consequence. Different widths =
-        different weight.
-
-        ORDER FLIPS ON THE PHONE. On the desk the eye takes the board and the rail in
-        one look, so the rail sits to the right of the work. On a 390px screen the DOM
-        order IS the reading order, and the rail was last: the owner scrolled past the
-        week, five jobs and five leads before a single number about money appeared.
-        Below `lg` the rail goes first — money, then who to phone, then the board.
+        The board is the work; the actionable lists sit in the narrower rail. Different
+        widths = different weight. The rail shows only to the owner — a crew desk runs
+        the board full width.
       */}
-      <div className="mt-10 grid gap-x-10 gap-y-12 lg:grid-cols-[minmax(0,1fr)_300px]">
-        {/* The lanes carry their own order below `lg`. On the desk the reading is
-            week → work → leads; on a phone the money rail already took the top, and
-            leaving the leads lane last put «who do I ring» 1659px down a 844px
-            screen. The morning question comes straight after the money. */}
-        <div className="order-2 flex min-w-0 flex-col gap-12 lg:order-1">
-          <div className="order-2 lg:order-1">
-          {/* The week is the hero: it opens the deck with no frame around it. */}
+      <div
+        className={
+          isAdmin
+            ? "mt-8 grid gap-x-10 gap-y-12 lg:grid-cols-[minmax(0,1fr)_300px]"
+            : "mt-8"
+        }
+      >
+        <div className="flex min-w-0 flex-col gap-12">
+          {/* The week is the hero of the desk: it opens with no frame around it. */}
           <DayRail
             jobs={weekJobs.map((j) => ({
               id: j.id,
@@ -372,9 +617,8 @@ export default async function DashboardPage() {
             }))}
             crewSize={crewSize}
           />
-          </div>
 
-          <section className="order-3 lg:order-2">
+          <section>
             <LaneHead
               title="Jobs on the books"
               right={
@@ -423,7 +667,7 @@ export default async function DashboardPage() {
             </Lane>
           </section>
 
-          <section className="order-1 lg:order-3">
+          <section>
             <LaneHead
               title="Incoming leads"
               lamp={newLeadsCount > 0 ? "var(--amber)" : undefined}
@@ -478,53 +722,14 @@ export default async function DashboardPage() {
           </section>
         </div>
 
-        {/* The money rail: narrow, dense, and read first. */}
-        <aside className="order-1 space-y-10 lg:order-2 lg:border-l lg:border-line lg:pl-8">
-          {money.length > 0 && (
-            <div className="space-y-6">
-              {money.map((r, i) => (
-                <Link
-                  key={r.label}
-                  href={r.href}
-                  className="arm-readout group block"
-                  style={{ ["--i" as string]: i } as React.CSSProperties}
-                >
-                  <span className="eyebrow group-hover:text-ink">{r.label}</span>
-                  <Readout value={r.value} tone={r.tone} className="mt-1.5 block" />
-                </Link>
-              ))}
-            </div>
-          )}
-
-          {/* The counts of the day. Same rail, one step down the scale — a tally of
-              open tasks and a bill nobody has paid are not the same size of fact. */}
-          <div className={money.length > 0 ? "lane pt-4" : undefined}>
-            <div className="grid grid-cols-3 gap-4 lg:grid-cols-1 lg:gap-6">
-              {counts.map((r, i) => (
-                <Link
-                  key={r.label}
-                  href={r.href}
-                  className="arm-readout group block"
-                  style={{ ["--i" as string]: money.length + i } as React.CSSProperties}
-                >
-                  <div className="flex items-center gap-2">
-                    {r.lamp && (
-                      <span
-                        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: "var(--amber)" }}
-                      />
-                    )}
-                    <span className="eyebrow group-hover:text-ink">{r.label}</span>
-                  </div>
-                  <Readout value={r.value} size={22} className="mt-1.5 block" />
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}
-          {chase.length > 0 && <ChaseLane invoices={chase} />}
-        </aside>
+        {/* The rail: the two lists the owner acts on — maintenance he can lose by
+            forgetting, and money already earned and not yet banked. */}
+        {isAdmin && (serviceDue.length > 0 || chase.length > 0) && (
+          <aside className="space-y-10 lg:border-l lg:border-line lg:pl-8">
+            {serviceDue.length > 0 && <ServiceDueLane contracts={serviceDue} />}
+            {chase.length > 0 && <ChaseLane invoices={chase} />}
+          </aside>
+        )}
       </div>
     </div>
   );

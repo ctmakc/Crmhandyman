@@ -18,6 +18,8 @@ import {
   Empty,
   Field,
   Plate,
+  StatTile,
+  MeterBar,
   buttonClass,
   controlClass,
   Skeleton,
@@ -526,6 +528,17 @@ export default function ProjectsPage() {
   /** The crew is served the same board with the money taken out of the payload. */
   const ownerView = !projects.some((p) => p.viewerRole === "WORKER");
 
+  /* The command bridge over the ladder. Counts are the three rungs; the money is
+     owner-only — collected against what was quoted across the board on show. A live
+     job with nobody on it is a truck that does not leave, so it is called out in amber. */
+  const uncrewedLive = live.filter((p) => !p.assignedToId).length;
+  const collectedCents = ownerView
+    ? projects.reduce((s, p) => s + paidCentsOf(p), 0)
+    : 0;
+  const quotedCents = ownerView
+    ? projects.reduce((s, p) => s + (estCentsOf(p) ?? 0), 0)
+    : 0;
+
   const showLive = !statusFilter || statusFilter === "IN_PROGRESS";
   const showBooked = !statusFilter || statusFilter === "SCHEDULED";
   const showClosed =
@@ -601,6 +614,107 @@ export default function ProjectsPage() {
           </button>
         }
       />
+
+      {/* THE LADDER BRIDGE — a band of plate readouts over the three rungs: live work,
+          booked work, closed work, and (owner) what has been collected against the
+          board. Two up on a phone, four across on the desk; each number counts up as
+          the board arms, and the sunk ladder below reads the split by SHAPE. */}
+      {!loading && !noMatch && projects.length > 0 && (
+        <section aria-label="The board at a glance">
+          <div
+            className={`grid grid-cols-2 gap-3 md:gap-4 ${
+              ownerView ? "lg:grid-cols-4" : "lg:grid-cols-3"
+            }`}
+          >
+            <StatTile
+              label="On the go"
+              value={live.length}
+              lamp={live.length > 0}
+              armIndex={0}
+              foot={
+                <p
+                  className="eyebrow leading-relaxed"
+                  style={uncrewedLive > 0 ? { color: "var(--amber-ink)" } : undefined}
+                >
+                  {ownerView && uncrewedLive > 0
+                    ? `${uncrewedLive} uncrewed`
+                    : "under the crew's hands"}
+                </p>
+              }
+            />
+            <StatTile
+              label="Booked"
+              value={booked.length}
+              armIndex={1}
+              foot={<p className="eyebrow leading-relaxed">on the peg</p>}
+            />
+            <StatTile
+              label="Closed"
+              value={closed.length}
+              armIndex={2}
+              foot={<p className="eyebrow leading-relaxed">in the drawer</p>}
+            />
+            {ownerView && (
+              <StatTile
+                label="Collected"
+                value={collectedCents}
+                money
+                tone={collectedCents > 0 ? "var(--emerald-ink)" : undefined}
+                armIndex={3}
+                foot={
+                  <p className="eyebrow leading-relaxed">
+                    of <Money cents={quotedCents} className="text-ink-2" /> quoted
+                  </p>
+                }
+              />
+            )}
+          </div>
+
+          {/* THE STATE LADDER, sunk into the deck and read against the raised plates:
+              live amber, booked sky, closed slate — the three rungs by proportion. */}
+          {live.length + booked.length + closed.length > 0 && (
+            <div
+              className="arm-readout mt-3 border border-line bg-sunk px-4 py-3 md:mt-4"
+              style={{ ["--i" as string]: 4 } as React.CSSProperties}
+            >
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="eyebrow">State ladder</span>
+                <span className="eyebrow text-ink-3">
+                  EST <span aria-hidden>→</span> PAID
+                </span>
+              </div>
+              <MeterBar
+                className="mt-2.5"
+                height={10}
+                segments={[
+                  { value: live.length, tone: "var(--amber)", label: "On the go" },
+                  { value: booked.length, tone: "var(--sky)", label: "Booked" },
+                  { value: closed.length, tone: "var(--slate)", label: "Closed" },
+                ]}
+                ariaLabel="Live, booked and closed by proportion"
+              />
+              {/* A colour key, not a second count — the numbers live in the plates
+                  above. The bar carries the proportion; this says which hue is which. */}
+              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                {[
+                  { label: "On the go", tone: "var(--amber)" },
+                  { label: "Booked", tone: "var(--sky)" },
+                  { label: "Closed", tone: "var(--slate)" },
+                ].map((s) => (
+                  <span key={s.label} className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-2 w-2 shrink-0"
+                      style={{ background: s.tone }}
+                    />
+                    <span className="eyebrow">{s.label}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {showAddForm && (
         <Plate className="page-doc p-5">

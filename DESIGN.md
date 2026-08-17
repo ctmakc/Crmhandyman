@@ -496,3 +496,59 @@ a DOM probe over nine screens. Cycle 1 caught two of my own: removing the card i
 and the phone's More sheet printed section codes `04 · 06 · 07 · 08…`, a gap sequence that
 asks a question it cannot answer — the codes came out. Gates: `tsc` clean, `next lint`
 clean, **354 of 354 tests**, `next build` clean.
+
+---
+
+# Revision 4 — «НАРЯД, но дорого» (locked 2026-08-16)
+
+Owner verdict on the shipped screens: they read as one flat grey-white table, screen after
+screen. The bones (navy chrome, work-order voice, mono, 3px radius, the status palette) are
+RIGHT and stay. What is missing is **richness and per-screen character** — the product looks
+unfinished next to what it does. This revision adds depth without leaving the brand.
+
+## What "dorogo" means here (do all of these; none is optional)
+
+1. **Surface depth, used deliberately.** The three deck surfaces already exist
+   (`--plate` raised, `--deck` field, `--sunk` recessed) — actually USE them to build
+   layers: a plate panel sitting on the deck, a sunk well for a total. One hairline
+   `--line` border plus at most a 1px inset/again is the elevation language — still no
+   drop-shadow soup, but the page must stop being one flat plane. A "dorogo" screen has a
+   clear foreground instrument and a quiet background.
+2. **Status color as signal, not decoration.** The palette (amber live / sky / emerald in /
+   rose owing / slate) is under-used. Money in is emerald, money owed is rose, a live job is
+   amber, overdue escalates. Every screen should carry its own true colors where they mean
+   something — never a rainbow, never color for its own sake (owner tone rule applies to
+   pixels too).
+3. **Micro-visualization primitives (NEW — build these once, reuse everywhere).**
+   - `Sparkline` — a tiny mono/SVG week trend (leads/week, revenue/week). Flat, hairline,
+     one accent stroke. No axes, no chrome.
+   - `AgingBar` / `MeterBar` — a segmented bar for invoice aging (current→30→60→90) and for
+     any proportion (capacity, collected vs owing). Uses status colors.
+   - `StatTile` — the big living metric: a mono number at display size, an eyebrow label, an
+     optional delta or sparkline under it. The command-bridge readout.
+   - `Balance` — the two-sided in/out figure for the finance T-account, aligned and ruled.
+   All flat, all tokenized, all zero-radius, all honoring `prefers-reduced-motion`.
+4. **Every screen gets its own instrument (the owner's standing demand).**
+   - **Dispatch** = the command bridge: a top band of StatTiles (leads today · money in this
+     week + sparkline · overdue with an aging bar · crew out), then the week and the lists.
+     This is the FLAGSHIP — build it first as the quality bar the others copy.
+   - **Finance** = the ledger: a real two-sided T with a running balance meter, in emerald /
+     out rose, the NET as the punched total. (Also FIX the right column overflowing the
+     viewport — it currently clips.)
+   - **Invoices** = the aging book: an AgingBar per row, an owed-vs-collected meter at top.
+   - **Leads** = the call sheet (already close) + a source-mix strip and a response-time stat.
+   - **Clients** = the card index (already close) — add an owing meter and a lifetime spark.
+   - **Reports** = where the sparklines and bars earn their keep.
+5. **Motion stays the §5 bar** — count-up on the StatTiles' real numbers, ticket-snap on
+   status, a hairline draw under section heads. Transform/opacity only, reduced-motion honored.
+
+## Hard rules that DO NOT change
+- Navy chrome, cool deck, Chivo + Chivo Mono, `--r: 3px` (never rounder), the status tokens.
+- No raw hex in components — tokens only. No drop-shadow pile-ups; depth comes from the three
+  surfaces + one hairline. Owner tone: no "not X but Y", no emoji, numbers and nouns.
+- Mobile/field: the tech's phone view stays first-class — StatTiles wrap, tap targets ≥44px.
+
+## Also fix (bugs seen in the audit)
+- The "Jobs" nav item points at a path that 404s by link — the route is `/projects`; make the
+  nav label "Jobs" resolve to it (check Sidebar href vs the real route).
+- Finance right column clips off the right edge — contain it.

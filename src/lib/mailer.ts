@@ -19,7 +19,7 @@ export function smtpConfigured(): boolean {
 
 /** Who the client sees the mail from. */
 export function smtpFrom(businessName?: string): string {
-  return process.env.SMTP_FROM || `${businessName ?? "HandymanPro"} <noreply@example.com>`;
+  return process.env.SMTP_FROM || `${businessName ?? "HandyCRM"} <noreply@example.com>`;
 }
 
 /**

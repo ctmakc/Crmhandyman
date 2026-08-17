@@ -16,12 +16,14 @@ import {
   Button,
   controlClass,
   Skeleton,
+  StatTile,
+  MeterBar,
   spineFor,
   textToneFor,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { LeadWait } from "@/components/LeadClock";
-import { responseOf, waitRank, STALE_MS } from "@/lib/lead-clock";
+import { responseOf, waitRank, waitShort, STALE_MS } from "@/lib/lead-clock";
 
 interface Lead {
   id: string;
@@ -75,6 +77,31 @@ function bandOf(lead: Lead, now: number): Band {
   const r = responseOf(lead, now);
   if (r.answered) return "called";
   return r.ms < STALE_MS ? "live" : "cold";
+}
+
+/**
+ * THE SOURCE MIX RAMP.
+ *
+ * Where a lead came from carries no status — FACEBOOK is not "better" than GOOGLE — so the
+ * strip is drawn in a neutral ink ramp, biggest channel darkest, never in the status hues.
+ * Colour on this desk means state; a channel is not a state, so it takes ink, not a lamp.
+ */
+const SOURCE_RAMP = [
+  "var(--ink)",
+  "var(--ink-2)",
+  "var(--slate)",
+  "var(--ink-3)",
+  "var(--field-line)",
+  "var(--line)",
+];
+const rampTone = (i: number) => SOURCE_RAMP[Math.min(i, SOURCE_RAMP.length - 1)];
+
+/** The middle reading of a set — the typical callback wait, not the average an outlier drags. */
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 /** A mono divider inside a lane — the same one the worked lane uses for CLOSED. */
@@ -225,6 +252,38 @@ export default function LeadsPage() {
     (l) => l.status === "CONVERTED" || l.status === "REJECTED"
   );
 
+  /* ------------------------------------------------------------------ INSTRUMENTS
+     Two readings sit above the sheet. The response gauge is the one number the shop
+     moves by working harder today; the source strip says which channel is paying. */
+
+  // The median callback wait across every lead that has actually been answered — the
+  // fresh, unanswered rows are still a running clock, not a response time yet.
+  const answeredMs = leads
+    .map((l) => responseOf(l, now))
+    .filter((r) => r.answered)
+    .map((r) => r.ms);
+  const answeredCount = answeredMs.length;
+  const medianMs = median(answeredMs);
+  const respMin = medianMs / 60_000;
+  const respTone =
+    answeredCount === 0
+      ? undefined
+      : respMin < 60
+        ? "var(--emerald-ink)"
+        : respMin < 240
+          ? "var(--amber-ink)"
+          : "var(--rose-ink)";
+
+  // The channel mix of what is on the desk, biggest first — drawn in the neutral ramp.
+  const sourceCounts: Record<string, number> = {};
+  for (const l of leads) sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1;
+  const sourceRows = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]);
+  const sourceSegments = sourceRows.map(([s, c], i) => ({
+    value: c,
+    tone: rampTone(i),
+    label: s,
+  }));
+
   function clearFilters() {
     setSearch("");
     setSourceFilter("");
@@ -236,7 +295,9 @@ export default function LeadsPage() {
     return (
       <Row
         status={toneKey(lead.status)}
-        className={`relative ${lead.id === snapId ? "ticket-snap" : ""}`}
+        /* On the plate a row hovers to the plate colour and the feedback vanishes;
+           `!bg-sunk` pops it to the recessed tone instead so a hovered call still lifts. */
+        className={`relative hover:!bg-sunk ${lead.id === snapId ? "ticket-snap" : ""}`}
       >
         {/* The whole row opens the record — a gloved tap should not have to find
             an 11px name. The phone and the outcome buttons ride above it. */}
@@ -315,6 +376,50 @@ export default function LeadsPage() {
           </Button>
         }
       />
+
+      {/* THE INSTRUMENTS — response speed and where the work comes from. Two plates
+          raised off the deck: the gauge the owner moves by calling back faster, and
+          the channel mix that says which ad spend is landing. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+        <StatTile
+          label="Median response"
+          value={medianMs}
+          format={(n) => (answeredCount === 0 ? "—" : waitShort(n))}
+          tone={respTone}
+          foot={
+            <p className="eyebrow leading-relaxed">
+              {answeredCount} answered
+              {live.length > 0 ? ` · ${live.length} still waiting` : ""}
+            </p>
+          }
+        />
+        <div className="plate px-4 py-3.5">
+          <span className="eyebrow">Where they come from</span>
+          <div className="mt-3.5">
+            <MeterBar
+              height={10}
+              segments={sourceSegments}
+              ariaLabel="Share of leads by source"
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+            {sourceRows.map(([s, c], i) => (
+              <span key={s} className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="inline-block h-2 w-2 shrink-0"
+                  style={{ background: rampTone(i) }}
+                />
+                <span className="eyebrow">{s}</span>
+                <span className="mono t-meta tabular-nums text-ink-2">{c}</span>
+              </span>
+            ))}
+            {sourceRows.length === 0 && (
+              <span className="eyebrow">{loading ? "Reading the desk…" : "No leads on the desk"}</span>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* THE PIPELINE RAIL — the stage strip. Counts + share bars over one
           continuous rule; clicking a stage filters the sheet to it. */}
@@ -513,26 +618,33 @@ export default function LeadsPage() {
 
       {/* THE SHEET — 7/5 split: the calls to make vs the leads already worked,
           divided by a single vertical rule. */}
-      <div className="grid grid-cols-1 gap-y-10 lg:grid-cols-[7fr_5fr]">
-        {/* ON THE PHONE — fresh and aging calls, most urgent on top. */}
-        <section className="lg:pr-10">
-          <LaneHead
-            title="On the phone"
-            lamp="var(--amber)"
-            right={
-              /* `0 TO CALL` printed over three rows with running clocks on them:
-                 the head counted only the fresh band while the lane also holds the
-                 cold one. It names both, so the number matches what is under it. */
-              <span className="eyebrow">
-                {loading
-                  ? ""
-                  : `${live.length} fresh${cold.length ? ` · ${cold.length} gone cold` : ""}`}
-              </span>
-            }
-          />
-          {loading ? (
-            <Skeleton lines={4} />
-          ) : callSheet.length === 0 ? (
+      <div className="grid grid-cols-1 gap-y-10 lg:grid-cols-[7fr_5fr] lg:gap-x-8">
+        {/* ON THE PHONE — the foreground instrument: fresh and aging calls, most
+            urgent on top, raised onto a plate so it reads as the thing in hand
+            against the quiet worked lane on the deck beside it. */}
+        <section className="min-w-0">
+          <div className="plate overflow-hidden">
+            <div className="px-4 pt-3.5">
+              <LaneHead
+                title="On the phone"
+                lamp="var(--amber)"
+                right={
+                  /* `0 TO CALL` printed over three rows with running clocks on them:
+                     the head counted only the fresh band while the lane also holds the
+                     cold one. It names both, so the number matches what is under it. */
+                  <span className="eyebrow">
+                    {loading
+                      ? ""
+                      : `${live.length} fresh${cold.length ? ` · ${cold.length} gone cold` : ""}`}
+                  </span>
+                }
+              />
+            </div>
+            {loading ? (
+              <div className="border-t border-line px-1 pt-1">
+                <Skeleton lines={4} />
+              </div>
+            ) : callSheet.length === 0 ? (
             <Lane>
               {narrowed ? (
                 <Empty
@@ -586,10 +698,12 @@ export default function LeadsPage() {
               ))}
             </Lane>
           )}
+          </div>
         </section>
 
-        {/* WORKED — verified up top, the closed book compressed below. */}
-        <section className="lg:border-l lg:border-line lg:pl-10">
+        {/* WORKED — the quiet background lane, on the bare deck: verified up top,
+            the closed book compressed below. */}
+        <section className="min-w-0 lg:pt-1">
           <LaneHead
             title="Worked"
             count={loading ? undefined : verified.length + closed.length}

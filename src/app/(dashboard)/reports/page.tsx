@@ -19,6 +19,8 @@ import {
   Money,
   Num,
   Readout,
+  Sparkline,
+  MeterBar,
   buttonClass,
 } from "@/components/ui/primitives";
 
@@ -317,6 +319,20 @@ export default async function ReportsPage({
    */
   const spendNull = report.spendBooked && !report.spendShown ? "not split" : "not booked";
 
+  /* THE CHANNEL MIX — one bar, split by which channel the collected money came
+     through. It is all collected money, so every segment is emerald; the 2px track
+     reveal between them separates the shares, and the legend names them biggest
+     first. A hue here would be decoration — the fact is proportion, not status. */
+  const mixChannels = report.channels.filter((c) => c.collectedCents > 0);
+  const mixTotalCents = mixChannels.reduce((s, c) => s + c.collectedCents, 0);
+
+  /* THE SEASON TRENDS — three hairline plots off the twelve-month strip, so the
+     shape of the year is read before the bars are counted. Revenue is money, so it
+     is emerald; leads are informational sky; jobs are neutral slate. */
+  const revenueTrend = report.months.map((m) => m.collectedCents);
+  const leadsTrend = report.months.map((m) => m.leads);
+  const jobsTrend = report.months.map((m) => m.jobs);
+
   return (
     <div className="space-y-10 pb-24 md:pb-0">
       <PageHead
@@ -538,12 +554,52 @@ export default async function ReportsPage({
             ) : (
               /* The shelf is wider than the desk once there are six channels, so it
                  carries its own scroller — and says so, and answers the keyboard. */
-              <div
-                className="overflow-x-auto border-t border-line pt-5"
-                role="region"
-                aria-label={`Channels for ${periodLabel}`}
-                tabIndex={0}
-              >
+              <div className="border-t border-line pt-5">
+                {/* The mix bar reads before the columns are: which channel actually
+                    carried the money, at a glance. */}
+                {mixTotalCents > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="eyebrow">Where the money came through</span>
+                      <Money
+                        cents={mixTotalCents}
+                        className="t-micro"
+                        tone="var(--emerald-ink)"
+                      />
+                    </div>
+                    <MeterBar
+                      className="mt-2.5"
+                      height={10}
+                      segments={mixChannels.map((c) => ({
+                        value: c.collectedCents,
+                        tone: "var(--emerald)",
+                        label: `${c.label} · ${formatCents(c.collectedCents)}`,
+                      }))}
+                      ariaLabel="Collected money by channel"
+                    />
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+                      {mixChannels.map((c) => (
+                        <span key={c.channel} className="inline-flex items-baseline gap-1.5">
+                          <span
+                            aria-hidden
+                            className="inline-block h-2 w-2 shrink-0 translate-y-px"
+                            style={{ background: "var(--emerald)" }}
+                          />
+                          <span className="eyebrow">{c.label}</span>
+                          <span className="mono t-micro tabular-nums text-ink-2">
+                            {Math.round((c.collectedCents / mixTotalCents) * 100)}%
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div
+                  className="overflow-x-auto"
+                  role="region"
+                  aria-label={`Channel funnels for ${periodLabel}`}
+                  tabIndex={0}
+                >
                 <div className="flex min-w-full gap-6 md:gap-0">
                   {report.channels.map((c) => (
                     <ChannelColumn
@@ -553,6 +609,7 @@ export default async function ReportsPage({
                       spendNull={spendNull}
                     />
                   ))}
+                </div>
                 </div>
               </div>
             )}
@@ -608,6 +665,65 @@ export default async function ReportsPage({
               </Empty>
             ) : (
               <div className="border-t border-line pt-4">
+                {/* THE TREND PLOTS — the shape of the year in three hairlines, read
+                    before the bars below are counted. Revenue is money (emerald),
+                    leads informational (sky), jobs neutral (slate). */}
+                <div className="mb-6 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-3">
+                  {[
+                    {
+                      key: "rev",
+                      label: "Revenue trend",
+                      values: revenueTrend,
+                      tone: "var(--emerald)",
+                      head: (
+                        <Money
+                          cents={revenueTrend.reduce((s, v) => s + v, 0)}
+                          className="t-row font-bold"
+                          tone="var(--emerald-ink)"
+                        />
+                      ),
+                      aria: "Revenue by month",
+                    },
+                    {
+                      key: "leads",
+                      label: "Leads trend",
+                      values: leadsTrend,
+                      tone: "var(--sky)",
+                      head: (
+                        <Num className="t-row font-bold text-ink">
+                          {leadsTrend.reduce((s, v) => s + v, 0)}
+                        </Num>
+                      ),
+                      aria: "Leads by month",
+                    },
+                    {
+                      key: "jobs",
+                      label: "Jobs trend",
+                      values: jobsTrend,
+                      tone: "var(--slate)",
+                      head: (
+                        <Num className="t-row font-bold text-ink">
+                          {jobsTrend.reduce((s, v) => s + v, 0)}
+                        </Num>
+                      ),
+                      aria: "Jobs by month",
+                    },
+                  ].map((t) => (
+                    <div key={t.key}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="eyebrow">{t.label}</span>
+                        {t.head}
+                      </div>
+                      <Sparkline
+                        className="mt-2.5 w-full"
+                        values={t.values}
+                        tone={t.tone}
+                        height={30}
+                        ariaLabel={t.aria}
+                      />
+                    </div>
+                  ))}
+                </div>
                 {/* The top of the plot is a number, so a bar's height means something
                     before the label under it is read. It stands outside the scroller:
                     inside it, the phone scrolled the scale off its own chart. */}

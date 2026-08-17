@@ -17,7 +17,7 @@ import Toaster from "@/components/ui/Toaster";
  */
 export const metadata = {
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "HandymanPro", statusBarStyle: "default" as const },
+  appleWebApp: { capable: true, title: "HandyCRM", statusBarStyle: "default" as const },
   icons: { apple: "/icons/apple-touch-icon.png" },
 };
 

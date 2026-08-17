@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCents, inCents, type InCents } from "@/lib/money";
+import { inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   Row,
@@ -15,8 +15,8 @@ import {
   Chip,
   Field,
   Money,
-  Num,
-  Readout,
+  StatTile,
+  MeterBar,
   Skeleton,
   Stamp,
 } from "@/components/ui/primitives";
@@ -121,6 +121,7 @@ export default function ClientsPage() {
 
   const owingTotalCents = clients.reduce((s, c) => s + c.owingCents, 0);
   const withIron = clients.filter((c) => c.equipmentCount > 0).length;
+  const owingCount = clients.filter((c) => c.owingCents > 0).length;
 
   /** Alphabetical card index: sorted, then filed under a letter divider. */
   const groups = useMemo(() => {
@@ -159,30 +160,55 @@ export default function ClientsPage() {
         }
       />
 
-      {/* The three readouts, on one baseline rule. Money is a gauge: the unit
-          mark recedes so the digits carry the weight. A zero owing is a fact,
-          not good news, so it stays in neutral ink. */}
-      {/* Label OVER number, as on the deck, the call sheet, the book and the
-          two money screens: stacked, the figures land on one baseline and can be
-          read across. Written inline, this screen and the contract board were the
-          only two reading left-to-right. */}
-      <div className="flex flex-wrap items-baseline gap-x-10 gap-y-4 border-b border-line pb-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow">On the book</span>
-          <Num className="t-record font-bold tabular-nums">{clients.length}</Num>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow">With equipment</span>
-          <Num className="t-record font-bold tabular-nums">{withIron}</Num>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow">Owing</span>
-          <Readout
-            value={formatCents(owingTotalCents)}
-            size={22}
-            tone={owingTotalCents > 0 ? "var(--rose-ink)" : "var(--ink)"}
-          />
-        </div>
+      {/* THE BOOK AT A GLANCE — three living readouts, raised onto plates off the
+          deck. Each number counts up as the index lands; owing carries its true
+          rose only when there is money on the street, never as decoration. The
+          owing tile takes the full width on a phone so the figure reads large. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label="On the book"
+          value={clients.length}
+          foot={
+            <p className="eyebrow leading-relaxed">
+              {owingCount} owing · {Math.max(clients.length - owingCount, 0)} clear
+            </p>
+          }
+        />
+        <StatTile
+          label="With equipment"
+          value={withIron}
+          foot={
+            <>
+              <MeterBar
+                height={6}
+                segments={[
+                  { value: withIron, tone: "var(--ink-2)", label: "On file" },
+                  {
+                    value: Math.max(clients.length - withIron, 0),
+                    tone: "var(--line)",
+                    label: "None on file",
+                  },
+                ]}
+                ariaLabel="Addresses with equipment on file"
+              />
+              <p className="eyebrow mt-2.5 leading-relaxed">
+                {withIron} of {clients.length} on the book
+              </p>
+            </>
+          }
+        />
+        <StatTile
+          className="col-span-2 sm:col-span-1"
+          label="Owing"
+          value={owingTotalCents}
+          money
+          tone={owingTotalCents > 0 ? "var(--rose-ink)" : undefined}
+          foot={
+            <p className="eyebrow leading-relaxed">
+              {owingCount > 0 ? `${owingCount} on the street` : "Nothing on the street"}
+            </p>
+          }
+        />
       </div>
 
       {/* The A–Z thumb rail — the rolodex tabs — with the search at its end.

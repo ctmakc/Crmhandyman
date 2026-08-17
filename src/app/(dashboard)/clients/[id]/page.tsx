@@ -22,6 +22,8 @@ import {
   LaneHead,
   Readout,
   Money,
+  MeterBar,
+  Sparkline,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { isOverdue, daysOverdue, lateWord } from "@/lib/invoice-state";
@@ -263,6 +265,20 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     return new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime();
   });
 
+  /**
+   * The lifetime curve — what this address has been worth to the shop, job by job,
+   * oldest first, run up as a running total. `history` is newest-first, so it is
+   * walked in reverse. The endpoint is the client's lifetime billed.
+   */
+  const collectedCents = client.totals.collectedCents;
+  let lifeAcc = 0;
+  const lifeSeries = [...history].reverse().map((p) => {
+    const m = jobMoney(p);
+    lifeAcc += m ? m.cents : 0;
+    return lifeAcc;
+  });
+  const lifetimeBilledCents = lifeSeries.length ? lifeSeries[lifeSeries.length - 1] : 0;
+
   return (
     /* `page-doc` without `mx-auto`: every other record in the product runs its
        980px column from the left gutter, and a centred one starts its title 108px
@@ -471,30 +487,90 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           <section>
             <LaneHead title="Money position" />
             <div className="lane">
-              <div className="flex flex-wrap gap-x-10 gap-y-4 pt-4">
-                <div>
-                  <div className="eyebrow">Owing</div>
-                  <div className="mt-2">
-                    <Readout
-                      value={formatCents(owingCents)}
-                      size={22}
-                      tone={owingCents > 0 ? "var(--rose-ink)" : "var(--ink)"}
+              <div className="pt-4">
+                {/* The split of everything ever billed to this address: money that
+                    landed against money still on the street. Status colour as signal
+                    — emerald in, rose owed — never decoration. */}
+                {collectedCents + owingCents > 0 && (
+                  <div className="mb-6">
+                    <MeterBar
+                      height={10}
+                      segments={[
+                        { value: collectedCents, tone: "var(--emerald)", label: "Collected" },
+                        { value: owingCents, tone: "var(--rose)", label: "Owing" },
+                      ]}
+                      ariaLabel="Collected against owing"
                     />
+                    <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          aria-hidden
+                          className="inline-block h-2 w-2 shrink-0"
+                          style={{ background: "var(--emerald)" }}
+                        />
+                        <span className="eyebrow">Collected</span>
+                        <Money cents={collectedCents} className="t-meta text-ink-2" />
+                      </span>
+                      {owingCents > 0 && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            aria-hidden
+                            className="inline-block h-2 w-2 shrink-0"
+                            style={{ background: "var(--rose)" }}
+                          />
+                          <span className="eyebrow">Owing</span>
+                          <Money cents={owingCents} className="t-meta text-ink-2" />
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="eyebrow">Collected to date</div>
-                  <div className="mt-2">
-                    {/* Emerald is a claim about money that came in. A zero in
-                        emerald called an empty file good news. */}
-                    <Readout
-                      value={formatCents(client.totals.collectedCents)}
-                      size={22}
-                      tone={
-                        client.totals.collectedCents > 0 ? "var(--emerald-ink)" : "var(--ink)"
-                      }
-                    />
+                )}
+
+                <div className="flex flex-wrap items-start gap-x-10 gap-y-5">
+                  <div>
+                    <div className="eyebrow">Owing</div>
+                    <div className="mt-2">
+                      <Readout
+                        value={formatCents(owingCents)}
+                        size={22}
+                        tone={owingCents > 0 ? "var(--rose-ink)" : "var(--ink)"}
+                      />
+                    </div>
                   </div>
+                  <div>
+                    <div className="eyebrow">Collected to date</div>
+                    <div className="mt-2">
+                      {/* Emerald is a claim about money that came in. A zero in
+                          emerald called an empty file good news. */}
+                      <Readout
+                        value={formatCents(collectedCents)}
+                        size={22}
+                        tone={collectedCents > 0 ? "var(--emerald-ink)" : "var(--ink)"}
+                      />
+                    </div>
+                  </div>
+                  {/* The lifetime curve: what the address has been worth, run up job
+                      by job. The figure is the endpoint; the trend rides beneath it. */}
+                  {lifetimeBilledCents > 0 && (
+                    <div>
+                      <div className="eyebrow">Lifetime billed</div>
+                      <div className="mt-2">
+                        <Readout value={formatCents(lifetimeBilledCents)} size={22} />
+                      </div>
+                      {/* A trend needs at least two jobs; one job is a dot, not a
+                          curve, so the readout stands alone until the file has a history. */}
+                      {lifeSeries.length >= 2 && (
+                        <Sparkline
+                          className="mt-2.5"
+                          values={lifeSeries}
+                          tone="var(--emerald)"
+                          width={132}
+                          height={26}
+                          ariaLabel="Lifetime billed, job by job"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {client.totals.costsCents > 0 && (

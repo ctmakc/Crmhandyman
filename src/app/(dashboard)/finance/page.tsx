@@ -10,8 +10,8 @@ import {
   Empty,
   Field,
   Money,
-  Num,
   Readout,
+  Balance,
   Skeleton,
   ErrorNote,
   Stamp,
@@ -107,9 +107,11 @@ function BookLine({
   return (
     <div className="flex items-baseline gap-3 py-2">
       <span className="eyebrow hidden shrink-0 sm:inline">{stamp}</span>
-      {/* On the phone this fills the line so the amount keeps the right margin and a
-          column of money stays a column. On the desk it yields to the dot leader. */}
-      <span className="min-w-0 flex-1 sm:flex-none">
+      {/* On the phone this GROWS to fill the line so the amount keeps the right margin.
+          On the desk it does NOT grow (the dot leader fills the gap) but it stays
+          shrinkable and truncates — the old `sm:flex-none` let a long cost description
+          run the money clean off the right edge of the viewport. */}
+      <span className="min-w-0 grow truncate sm:grow-0">
         <span className="t-body block truncate font-medium text-ink" title={hint}>
           {title}
         </span>
@@ -604,25 +606,32 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* THE BOTTOM LINE — the one dominant number on the page. */}
-        <div className="rule-double mt-10 flex flex-wrap items-end justify-between gap-4 pt-4">
-          <div>
-            <div className="eyebrow">Net · {periodLabel}</div>
-            <div className="eyebrow mt-2">
-              Jobs closed <Num>{data?.projectCount || 0}</Num>
+        {/* THE CLOSING BALANCE — the two sides reconciled, sunk into the deck as the
+            month's bottom line. The Balance instrument carries money-in emerald over
+            money-out rose, the running-balance meter between them, and the NET punched
+            under the accountant's double rule. A sunk well reads as the foreground
+            total against the quiet ledger above it. */}
+        <div className="mt-10 border border-line bg-sunk px-5 py-5 md:px-8 md:py-6">
+          <div className="grid gap-x-12 gap-y-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <Balance
+              inCents={data?.totalRevenueCents || 0}
+              outCents={data?.totalExpensesCents || 0}
+              netCents={netCents}
+              meter
+              inLabel="Money in"
+              outLabel="Money out"
+              netLabel={`Net · ${periodLabel}`}
+            />
+            <div className="shrink-0 md:border-l md:border-line md:pl-12">
+              <div className="eyebrow">Jobs closed</div>
+              <span
+                className="mono mt-2 block font-bold leading-none tabular-nums text-ink-2"
+                style={{ fontSize: 30, letterSpacing: "-0.03em" }}
+              >
+                {data?.projectCount || 0}
+              </span>
             </div>
           </div>
-          <Readout
-            value={formatCents(netCents)}
-            size={30}
-            tone={
-              netCents > 0
-                ? "var(--emerald-ink)"
-                : netCents < 0
-                  ? "var(--rose-ink)"
-                  : "var(--ink-2)"
-            }
-          />
         </div>
       </section>
       )}

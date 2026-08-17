@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X, CalendarClock } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
-import { formatCents, inCents, type InCents } from "@/lib/money";
+import { inCents, type InCents } from "@/lib/money";
 import {
   PageHead,
   Empty,
@@ -16,7 +16,7 @@ import {
   LaneHead,
   Money,
   Num,
-  Readout,
+  StatTile,
   Skeleton,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
@@ -214,6 +214,8 @@ export default function ContractsPage() {
   const monthLoad = MONTH_ABBR.map(
     (_, i) => active.filter((r) => r.visitMonths.includes(i + 1)).length
   );
+  /** The tallest month sets the scale the histogram bars are read against. */
+  const maxLoad = Math.max(...monthLoad, 1);
 
   return (
     <div className="space-y-6 pb-24 md:pb-0">
@@ -237,87 +239,96 @@ export default function ContractsPage() {
       />
 
       {/* ------------------------------------------------------------------
-          THE YEAR RULE — the maintenance wall planner. Twelve months on one
-          tick-edged board; the load per month is the reading, and the current
-          month is lit by the amber light source, exactly like today on the
-          dispatch week board. The count is the whole point of the board, so
-          it is printed at every width — the phone used to get the months with
-          the obligations taken out of them.
+          THE YEAR RULE — the maintenance wall planner, raised onto its own plate
+          so it reads as the foreground instrument over the quiet deck. Twelve
+          months on one tick-edged board; the load per month is drawn as a column
+          whose height is the reading, and the current month is lit by the amber
+          light source, exactly like today on the dispatch week board. The count
+          stays printed above every bar — it is the whole point of the board.
           ------------------------------------------------------------------ */}
-      <div>
+      <Plate className="overflow-hidden">
         <div className="ruleband" style={{ backgroundSize: "calc(100% / 12) 4px" }} />
         <div className="grid grid-cols-12 border-b border-line">
           {MONTH_ABBR.map((abbr, i) => {
             const isNow = i + 1 === thisMonth;
             const count = monthLoad[i];
+            const barTone = isNow ? "var(--amber)" : "var(--slate)";
             return (
               <div
                 key={abbr}
                 className={cn(
-                  "arm-col flex h-[58px] flex-col items-center justify-between pb-2 pt-1.5 min-[480px]:h-[72px]",
+                  "arm-col flex h-[92px] flex-col items-center justify-between pb-2 pt-2 min-[480px]:h-[116px]",
                   i > 0 && "border-l border-line",
                   isNow && "today-glow"
                 )}
                 style={{ ["--i" as string]: i } as React.CSSProperties}
                 title={`${MONTH_NAMES[i + 1]} — ${count} ${count === 1 ? "visit" : "visits"} due`}
               >
+                {/* The count reads first; weight carries the load so nine quiet
+                    zeros sit under four bold columns. */}
+                <Num
+                  className={cn("t-body tabular-nums leading-none", count === 0 ? "font-normal" : "font-bold")}
+                  tone={count === 0 ? "var(--ink-3)" : isNow ? "var(--amber-ink)" : "var(--ink)"}
+                >
+                  {count}
+                </Num>
+                {/* The column: height against the busiest month of the year. A
+                    month with nothing due is the baseline, not a block — spent
+                    ground the bars stand on. */}
+                <div className="flex w-full flex-1 items-end justify-center px-[3px] py-1.5 min-[480px]:px-1.5">
+                  {count > 0 && (
+                    <div
+                      className="w-full"
+                      style={{
+                        height: `${Math.max((count / maxLoad) * 100, 12)}%`,
+                        background: barTone,
+                      }}
+                    />
+                  )}
+                </div>
                 <span
                   className={cn("mono t-micro leading-none tracking-[0.09em]", isNow && "font-bold")}
                   style={{ color: isNow ? "var(--amber-ink)" : "var(--ink-3)" }}
                 >
                   {abbr}
                 </span>
-                {/* A month with nothing due prints a zero: the `·` it printed
-                    before was a 2:1 dot doing a number's job. Weight carries the
-                    load — nine quiet zeros beside four bold counts, so the board
-                    still reads as a shape from across the shop. */}
-                <Num
-                  className={cn(
-                    "t-row tabular-nums min-[480px]:hidden",
-                    count === 0 ? "font-normal" : "font-bold"
-                  )}
-                  tone={count === 0 ? "var(--ink-3)" : isNow ? "var(--amber-ink)" : "var(--ink)"}
-                >
-                  {count}
-                </Num>
-                <Num
-                  className={cn(
-                    "t-record hidden tabular-nums min-[480px]:block",
-                    count === 0 ? "font-normal" : "font-bold"
-                  )}
-                  tone={count === 0 ? "var(--ink-3)" : isNow ? "var(--amber-ink)" : "var(--ink)"}
-                >
-                  {count}
-                </Num>
               </div>
             );
           })}
         </div>
-        {/* Label over number — one grammar for a summary strip across the product. */}
-        <div className="flex flex-wrap items-baseline gap-x-10 gap-y-4 pt-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Active contracts</span>
-            <Num className="t-record font-bold tabular-nums">{active.length}</Num>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Due within 45 days</span>
-            <Num
-              className="t-record font-bold tabular-nums"
-              tone={dueSoon.length ? "var(--amber-ink)" : "var(--ink)"}
-            >
-              {dueSoon.length}
-            </Num>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Value per year</span>
-            <Readout
-              value={formatCents(annualValueCents)}
-              size={22}
-              tone={annualValueCents > 0 ? "var(--emerald-ink)" : "var(--ink)"}
-            />
-          </div>
-        </div>
-      </div>
+      </Plate>
+
+      {/* The three headline figures as command-bridge plates: how many plans run,
+          how many come due inside the booking window (amber-lamped when any do),
+          and what the book is worth over a year. */}
+      <section aria-label="The contract book at a glance" className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3">
+        <StatTile label="Active contracts" value={active.length} armIndex={0} />
+        <StatTile
+          label="Due within 45 days"
+          value={dueSoon.length}
+          lamp={dueSoon.length > 0}
+          tone={dueSoon.length > 0 ? "var(--amber-ink)" : undefined}
+          armIndex={1}
+          foot={
+            <p className="eyebrow leading-relaxed">
+              {dueSoon.length > 0 ? "ready to book onto the board" : "nothing due soon"}
+            </p>
+          }
+        />
+        <StatTile
+          label="Value per year"
+          value={annualValueCents}
+          money
+          tone={annualValueCents > 0 ? "var(--emerald-ink)" : undefined}
+          armIndex={2}
+          className="col-span-2 lg:col-span-1"
+          foot={
+            <p className="eyebrow leading-relaxed">
+              across <Num className="text-ink-2">{active.length}</Num> active {active.length === 1 ? "plan" : "plans"}
+            </p>
+          }
+        />
+      </section>
 
       {showForm && (
         <Plate className="p-5">

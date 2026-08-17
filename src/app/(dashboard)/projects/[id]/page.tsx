@@ -24,6 +24,7 @@ import {
   Chip,
   Field,
   Lane,
+  MeterBar,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import {
@@ -724,6 +725,34 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                   </div>
                 ))}
               </div>
+
+              {/* The margin as one bar: what came in against what it cost to do.
+                  Collected in emerald, costs in rose — the sliver of plate showing
+                  past the costs is the margin, read by shape before the figure. */}
+              {(money.collectedCents > 0 || money.costsCents > 0) && (
+                <div className="mt-6">
+                  <MeterBar
+                    height={10}
+                    segments={[
+                      { value: money.collectedCents, tone: "var(--emerald)", label: "Collected" },
+                      { value: money.costsCents, tone: "var(--rose)", label: "Costs" },
+                    ]}
+                    ariaLabel="Collected against costs"
+                  />
+                  <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span aria-hidden className="inline-block h-2 w-2 shrink-0" style={{ background: "var(--emerald)" }} />
+                      <span className="eyebrow">Collected</span>
+                      <Money cents={money.collectedCents} className="t-meta text-ink-2" />
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span aria-hidden className="inline-block h-2 w-2 shrink-0" style={{ background: "var(--rose)" }} />
+                      <span className="eyebrow">Costs</span>
+                      <Money cents={money.costsCents} className="t-meta text-ink-2" />
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-line pt-5">
                 <div>

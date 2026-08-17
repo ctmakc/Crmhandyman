@@ -11,7 +11,7 @@ import "./globals.css";
 import { SessionProvider } from "@/components/SessionProvider";
 
 export const metadata: Metadata = {
-  title: "HandymanPro CRM",
+  title: "HandyCRM",
   description: "Work-order CRM for HVAC, moving and trade contractors",
 };
 

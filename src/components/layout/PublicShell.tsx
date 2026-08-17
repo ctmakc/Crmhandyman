@@ -29,7 +29,7 @@ export function PublicShell({
       <aside className="bg-navy-900 px-6 py-5 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14">
         <div>
           <span className="t-record font-black tracking-tight text-plate">
-            HANDYMAN<span className="text-amber">PRO</span>
+            HANDY<span className="text-amber">CRM</span>
           </span>
           <p className="mono t-micro mt-1.5 uppercase tracking-[0.14em] text-ink-rail">
             Work-order desk

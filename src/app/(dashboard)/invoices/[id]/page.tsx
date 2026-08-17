@@ -31,6 +31,7 @@ import {
   Field,
   LaneHead,
   Money,
+  MeterBar,
   Readout,
   Skeleton,
   Stamp,
@@ -258,6 +259,31 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                   ? "PAID IN FULL"
                   : invoice.status}
             </p>
+            {/* Collected against still owed — the same paid/owing meter the book
+                carries per row, so the record reconciles with the list at a glance.
+                A draft is not owed yet, so it draws none. */}
+            {invoice.status !== "DRAFT" &&
+              invoice.status !== "VOID" &&
+              (invoice.amountPaidCents > 0 || owingCents > 0) && (
+                <div className="ml-auto mt-3 w-full min-w-[150px] max-w-[220px]">
+                  <MeterBar
+                    height={4}
+                    segments={[
+                      { value: invoice.amountPaidCents, tone: "var(--emerald)", label: "Collected" },
+                      {
+                        value: Math.max(owingCents, 0),
+                        tone: settled
+                          ? "var(--emerald)"
+                          : overdue
+                            ? "var(--rose)"
+                            : "var(--sky)",
+                        label: "Owing",
+                      },
+                    ]}
+                    ariaLabel="Collected against owing"
+                  />
+                </div>
+              )}
             <dl className="t-meta mt-3 space-y-1">
               <div className="flex justify-end gap-3">
                 <dt className="text-ink-3">Issued</dt>

@@ -8,6 +8,21 @@ import { docRef } from "@/lib/document";
    Colour comes from tokens only — see DESIGN.md.
    ========================================================================== */
 
+/**
+ * The micro-visualisation set (Revision 4) lives in its own client module — the
+ * count-up gauge needs the DOM — and is re-exported here so every screen keeps
+ * one import site for the primitives it draws from.
+ */
+export {
+  Sparkline,
+  MeterBar,
+  AgingBar,
+  StatTile,
+  Balance,
+  CountUp,
+} from "./dataviz";
+export type { MeterSegment, AgingBuckets } from "./dataviz";
+
 /** Semantic status -> spine colour token. A colour here always means something. */
 export const SPINE: Record<string, string> = {
   NEW: "var(--amber)",

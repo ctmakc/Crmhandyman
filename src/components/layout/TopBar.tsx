@@ -50,7 +50,7 @@ export default function TopBar({ user }: TopBarProps) {
   return (
     <header className="flex h-14 items-center justify-between border-b border-line bg-plate px-4 md:px-6">
       <div className="text-[15px] font-black tracking-tight text-ink md:hidden">
-        HANDYMAN<span className="text-amber-ink">PRO</span>
+        HANDY<span className="text-amber-ink">CRM</span>
       </div>
       <div className="flex items-center gap-4">
         <ShiftStamp />

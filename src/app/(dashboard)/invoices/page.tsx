@@ -28,6 +28,9 @@ import {
   Empty,
   Money,
   Num,
+  Readout,
+  MeterBar,
+  AgingBar,
   Skeleton,
   Button,
   controlClass,
@@ -123,14 +126,33 @@ export default function InvoicesPage() {
     .reduce((s, i) => s + i.totalCents, 0);
   const collectedCents = live.reduce((s, i) => s + i.amountPaidCents, 0);
 
-  const segments = [
-    { key: "OVERDUE", amt: overdueCents, bar: "var(--rose)", ink: "var(--rose-ink)" },
-    { key: "PARTIAL", amt: partialCents, bar: "var(--amber)", ink: "var(--amber-ink)" },
-    { key: "AWAITING", amt: awaitingCents, bar: "var(--sky)", ink: "var(--sky-ink)" },
-    { key: "DRAFTS", amt: draftedCents, bar: "var(--slate)", ink: "var(--slate-ink)" },
-    { key: "COLLECTED", amt: collectedCents, bar: "var(--emerald)", ink: "var(--emerald-ink)" },
-  ].filter((s) => s.amt > 0);
-  const barTotal = segments.reduce((s, x) => s + x.amt, 0);
+  /* Issued paper still owed — SENT and PARTIAL, overdue or not. Drafts are excluded:
+     a bill the client has never seen is not owed. This is the money on the street. */
+  const owingOnStreetCents = overdueCents + partialCents + awaitingCents;
+  const unpaidCount = live.filter(
+    (i) => (i.status === "SENT" || i.status === "PARTIAL") && owingCents(i) > 0
+  ).length;
+  const overdueCount = live.filter((i) => isOverdue(i)).length;
+
+  /* Owing split by how late it is — the aging book's headline instrument. On-terms
+     (SENT/PARTIAL not yet due) sits in `current`; past due escalates amber→rose the
+     same ladder the chase lane climbs. */
+  let curCents = 0;
+  let d1to30Cents = 0;
+  let d31to60Cents = 0;
+  let d60plusCents = 0;
+  for (const i of live) {
+    if (i.status !== "SENT" && i.status !== "PARTIAL") continue;
+    const owe = owingCents(i);
+    if (owe <= 0) continue;
+    const late = daysOverdue(i);
+    if (late <= 0) curCents += owe;
+    else if (late <= 30) d1to30Cents += owe;
+    else if (late <= 60) d31to60Cents += owe;
+    else d60plusCents += owe;
+  }
+
+  const hasMoney = owingOnStreetCents + collectedCents + draftedCents > 0;
 
   /* ------------------------------------------------------------------
      Aging bands. Overdue first and dominant; settled compressed last.
@@ -241,6 +263,33 @@ export default function InvoicesPage() {
       : band.key === "drafts"
         ? inv.totalCents
         : owingCents(inv);
+
+    /* THE PER-ROW METER — collected against what is still owed, tinted by how late
+       the owed part is. A paid bill reads full emerald, a draft full slate, and an
+       overdue bill's owed segment escalates amber (≤30) → rose (past a month) so the
+       aging is legible on the row itself, not only in the well up top. */
+    const paidPart = inv.amountPaidCents;
+    const owePart = owingCents(inv);
+    const late = daysOverdue(inv);
+    let rowSegs: { value: number; tone: string; label?: string }[];
+    if (settled) {
+      rowSegs = voided
+        ? [{ value: 1, tone: "var(--slate)" }]
+        : [{ value: inv.totalCents, tone: "var(--emerald)", label: "Collected" }];
+    } else if (band.key === "drafts") {
+      rowSegs = [{ value: inv.totalCents, tone: "var(--slate)", label: "Not sent" }];
+    } else {
+      const oweTone = overdue
+        ? late > 30
+          ? "var(--rose)"
+          : "var(--amber)"
+        : "var(--sky)";
+      rowSegs = [
+        { value: paidPart, tone: "var(--emerald)", label: "Collected" },
+        { value: owePart, tone: oweTone, label: "Owing" },
+      ];
+    }
+
     return (
       <Row
         key={inv.id}
@@ -294,6 +343,7 @@ export default function InvoicesPage() {
             }
           />
         </div>
+        <MeterBar className="mt-2" height={3} segments={rowSegs} />
       </Row>
     );
   }
@@ -318,52 +368,89 @@ export default function InvoicesPage() {
         sub="Issued from an accepted estimate — same lines, same totals, new number."
       />
 
-      {/* THE AGING BAR: one stacked rule — the whole book at a glance.
-          It was an 8px band of solid colour running the width of the deck, which
-          made the semantic hues read as paint. A rule states the same proportion
-          and lets the readouts under it carry the weight. */}
-      <div>
-        <div
-          className="flex h-1 w-full gap-px overflow-hidden bg-sunk"
-          role="img"
-          aria-label={
-            barTotal > 0
-              ? `Receivables aging: ${segments
-                  .map((s) => `${s.key.toLowerCase()} ${formatCents(s.amt)}`)
-                  .join(", ")}`
-              : "No money on the books yet"
-          }
-        >
-          {barTotal > 0 &&
-            segments.map((s) => (
-              <div
-                key={s.key}
-                style={{ width: `${(s.amt / barTotal) * 100}%`, background: s.bar }}
+      {/* THE RECEIVABLES WELL — the whole book at a glance, sunk into the deck as
+          the foreground instrument. Left: what is owed and how bad it is. Right: the
+          owed-against-collected meter, then the same money split by age. The aging
+          book, read top down. */}
+      {hasMoney ? (
+        <div className="border border-line bg-sunk px-5 py-5 md:px-6 md:py-6">
+          <div className="grid gap-x-10 gap-y-6 md:grid-cols-[auto_minmax(0,1fr)] md:items-center">
+            <div className="shrink-0">
+              <div className="eyebrow">Owing on the street</div>
+              <Readout
+                value={formatCents(owingOnStreetCents)}
+                tone={
+                  overdueCount > 0
+                    ? "var(--rose-ink)"
+                    : owingOnStreetCents > 0
+                      ? "var(--ink)"
+                      : "var(--ink-3)"
+                }
+                className="mt-2 block"
               />
-            ))}
-        </div>
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-10 gap-y-3">
-          {segments.length > 0 ? (
-            segments.map((s) => (
-              <div key={s.key} className="flex flex-col gap-1.5">
-                <span className="eyebrow" style={{ color: s.ink }}>
-                  {s.key}
-                </span>
-                <Money cents={s.amt} className="t-row" tone={s.ink} />
+              <div className="eyebrow mt-2 text-ink-3">
+                <Num>{unpaidCount}</Num> unpaid
+                {overdueCount > 0 ? (
+                  <>
+                    {" · "}
+                    <span style={{ color: "var(--rose-ink)" }}>
+                      <Num>{overdueCount}</Num> overdue
+                    </span>
+                  </>
+                ) : (
+                  ""
+                )}
               </div>
-            ))
-          ) : (
-            /* The bar reads whatever the filter left behind, so an empty bar has
-               two meanings. Saying «no money on the books» over a $26,900 book
-               that a search box is hiding is the screen telling a lie. */
-            <span className="eyebrow">
-              {search || statusFilter
-                ? "Nothing on the book matches that filter"
-                : "No money on the books yet"}
-            </span>
-          )}
+              {draftedCents > 0 && (
+                <div className="eyebrow mt-1.5 text-ink-3">
+                  <Money cents={draftedCents} className="t-micro" tone="var(--slate-ink)" /> in
+                  drafts, not sent
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="eyebrow">Collected against owing</span>
+                <span className="eyebrow">
+                  <Money cents={collectedCents} className="t-micro" tone="var(--emerald-ink)" /> in
+                  {" · "}
+                  <Money cents={owingOnStreetCents} className="t-micro" tone="var(--rose-ink)" /> out
+                </span>
+              </div>
+              <MeterBar
+                className="mt-2.5"
+                height={10}
+                segments={[
+                  { value: collectedCents, tone: "var(--emerald)", label: "Collected" },
+                  { value: owingOnStreetCents, tone: "var(--rose)", label: "Owing" },
+                ]}
+                ariaLabel="Collected against owing"
+              />
+              <div className="eyebrow mb-2.5 mt-5">Owing by age</div>
+              <AgingBar
+                height={10}
+                showLabels
+                buckets={{
+                  currentCents: curCents,
+                  d1to30Cents,
+                  d31to60Cents,
+                  d60plusCents,
+                }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        /* The book reads whatever the filter left behind, so empty has two meanings. */
+        <div className="border-t border-line pt-4">
+          <span className="eyebrow">
+            {search || statusFilter
+              ? "Nothing on the book matches that filter"
+              : "No money on the books yet"}
+          </span>
+        </div>
+      )}
 
       {controls}
 

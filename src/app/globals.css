@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   HandymanPro — «НАРЯД» / WORK ORDER design system.
+   HandyCRM — «НАРЯД» / WORK ORDER design system.
    See DESIGN.md. Tokens are law: no raw hex below this block, no raw hex in
    components. Depth = hairline + recess + status spine. Never a box-shadow.
    ========================================================================== */
@@ -441,6 +441,47 @@ a.ticket:hover,
 
 .ticket-snap {
   animation: ticket-snap 160ms var(--ease) both;
+}
+
+/* --------------------------------------------------------------------------
+   MICRO-VISUALISATION MOTION (Revision 4 — «НАРЯД, но дорого»).
+   Two structural draws for the command bridge. Both move a single property and
+   collapse to their finished state under the reduced-motion rule at the foot of
+   the file, so the instruments are never left half-drawn.
+   -------------------------------------------------------------------------- */
+
+/* The sparkline draws itself in — the accent stroke walks left to right the way
+   a plotter lays a trend down. `pathLength` is normalised to 100 on the path, so
+   one dash covers the whole line regardless of how many weeks it spans. */
+@keyframes spark-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.spark-draw {
+  stroke-dasharray: 100;
+  animation: spark-draw 720ms var(--ease) both;
+}
+
+/* A hairline draws under a section head on entrance — the rule is struck left to
+   right rather than simply appearing, so the head reads as an instrument opening
+   a lane instead of a title sitting on a border. */
+@keyframes rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.rule-draw {
+  height: 1px;
+  background: var(--line);
+  transform-origin: left center;
+  animation: rule-draw 460ms var(--ease) both;
 }
 
 /* Perforation: the estimate's tear-off edge. */

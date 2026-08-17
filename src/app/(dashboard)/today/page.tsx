@@ -11,6 +11,8 @@ import {
   PageHead,
   Skeleton,
   Stamp,
+  StatTile,
+  MeterBar,
   spineFor,
   textToneFor,
   buttonClass,
@@ -222,6 +224,11 @@ export default function TodayPage() {
   });
 
   const open = jobs.filter((j) => j.status !== "COMPLETED" && j.status !== "CANCELLED");
+  // The two readings the tech acts on: what is still booked for the day and what is
+  // already under his hands. The field board carries no money by design (the API
+  // strips it), so the bridge here counts work, not dollars.
+  const scheduledOpen = open.filter((j) => j.status === "SCHEDULED").length;
+  const onRoad = open.filter((j) => j.status === "IN_PROGRESS").length;
   const outbox = readOutbox();
   const rejectionFor = (jobId: string) => outbox.rejections.find((r) => r.jobId === jobId);
 
@@ -363,21 +370,54 @@ export default function TodayPage() {
        of every neighbour's. */
     <div className="page-doc pb-24 md:pb-0">
       <PageHead eyebrow={`Field · ${today}`} title="Today" />
-      {/* The one number on the screen, in the face every other number in the product
-          is set in. It rode in the page sub-line as body text.
 
-          A board with nothing on it says so once, in the empty state below — the
-          sub-line used to say it too, in different words, two lines above. */}
-      {jobs.length > 0 && (
-        <p className="measure t-lede mt-3 text-ink-2">
-          {open.length === 0 ? (
-            "Nothing left on the board."
-          ) : (
-            <>
-              <Num>{open.length}</Num> stop{open.length === 1 ? "" : "s"} to go.
-            </>
-          )}
-        </p>
+      {/* THE FIELD BRIDGE — two plate readouts raised off the deck: what is still on
+          the board, and what has already been carried over from an earlier day. The
+          field board carries no money (the API strips it by design), so the bridge
+          reads work. Each plate is a 44px-plus tap target and its number counts up
+          once as the screen arms. */}
+      {!loading && jobs.length > 0 && (
+        <section aria-label="The day at a glance" className="mt-6 grid grid-cols-2 gap-3">
+          <StatTile
+            label="Stops to go"
+            value={open.length}
+            lamp={open.length > 0}
+            armIndex={0}
+            foot={
+              open.length > 0 ? (
+                <>
+                  <MeterBar
+                    height={8}
+                    segments={[
+                      { value: scheduledOpen, tone: "var(--sky)", label: "Booked" },
+                      { value: onRoad, tone: "var(--amber)", label: "On the road" },
+                    ]}
+                    ariaLabel="Booked against on the road"
+                  />
+                  <p className="eyebrow mt-2.5 leading-relaxed">
+                    {scheduledOpen} booked · {onRoad} on the road
+                  </p>
+                </>
+              ) : (
+                <p className="eyebrow leading-relaxed">Board clear</p>
+              )
+            }
+          />
+          <StatTile
+            label="Carried over"
+            value={carried.length}
+            tone={carried.length > 0 ? "var(--amber-ink)" : undefined}
+            lamp={carried.length > 0}
+            armIndex={1}
+            foot={
+              <p className="eyebrow leading-relaxed">
+                {carried.length > 0
+                  ? "Open from an earlier day — close them out"
+                  : "Nothing left open behind you"}
+              </p>
+            }
+          />
+        </section>
       )}
 
       {/* How old the board is. A cached list that does not say so is worse than none. */}
