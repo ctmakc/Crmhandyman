@@ -45,6 +45,8 @@ rsync -az --delete \
   --exclude "var" \
   --exclude ".env" \
   --exclude "cloudflared" \
+  --exclude "reset-demo.sh" \
+  --exclude "present-fill.cjs" \
   --exclude "dev.db*" \
   --exclude "cookies.txt" \
   --exclude "*.tsbuildinfo" \
