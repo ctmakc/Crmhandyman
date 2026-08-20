@@ -8,6 +8,7 @@ import {
   chaseStage,
   chaseStageForDays,
   sameCalendarDay,
+  planInvoicePayment,
   CHASE_DAYS,
 } from "@/lib/invoice-state";
 
@@ -196,5 +197,59 @@ describe("sameCalendarDay", () => {
     expect(sameCalendarDay(new Date(2026, 7, 12, 9).toISOString(), new Date(2026, 7, 12, 18))).toBe(true);
     expect(sameCalendarDay(null, new Date(2026, 7, 12))).toBe(false);
     expect(sameCalendarDay(undefined, new Date(2026, 7, 12))).toBe(false);
+  });
+});
+
+describe("planInvoicePayment", () => {
+  /**
+   * The one rule the invoice desk and the door both run. These pin the two figures that
+   * have to agree across the two doors: the refusal of an overpayment, and the status the
+   * bill rests at. All amounts are whole cents — the arithmetic that leaves no dust.
+   */
+  it("refuses a payment past the remainder and does not clamp it silently", () => {
+    // $50 owed, $80 offered: the door must be told no, the same as the invoice desk.
+    const plan = planInvoicePayment(toCents(50), 0, toCents(80));
+    expect(plan.overpays).toBe(true);
+    expect(plan.remainingCents).toBe(toCents(50));
+  });
+
+  it("takes the exact remainder, settles the bill and reads PAID", () => {
+    const plan = planInvoicePayment(toCents(113), toCents(50), toCents(63));
+    expect(plan.overpays).toBe(false);
+    expect(plan.settled).toBe(true);
+    expect(plan.status).toBe("PAID");
+    expect(plan.paidCents).toBe(toCents(113));
+  });
+
+  it("rests at PARTIAL a cent short and closes on the last cent", () => {
+    const short = planInvoicePayment(toCents(113), 0, toCents(113) - 1);
+    expect(short.settled).toBe(false);
+    expect(short.status).toBe("PARTIAL");
+
+    const last = planInvoicePayment(toCents(113), toCents(113) - 1, 1);
+    expect(last.settled).toBe(true);
+    expect(last.status).toBe("PAID");
+  });
+
+  it("settles a full first payment on an untouched bill — the door on a DRAFT", () => {
+    // A job paid in full at the door before any partial: nothing paid yet, the whole
+    // total offered. It settles and reads PAID, the state that fixes «stuck on DRAFT».
+    const plan = planInvoicePayment(toCents(100), 0, toCents(100));
+    expect(plan.overpays).toBe(false);
+    expect(plan.settled).toBe(true);
+    expect(plan.status).toBe("PAID");
+    expect(plan.remainingCents).toBe(toCents(100));
+  });
+
+  it("holds the ceiling at the remainder after a part payment, not the whole total", () => {
+    // $50 down on $113 leaves $63; a $100 second payment reads generous until owing turns
+    // −$37. The remainder is the ceiling, and a payment at it exactly is allowed.
+    const plan = planInvoicePayment(toCents(113), toCents(50), toCents(100));
+    expect(plan.remainingCents).toBe(toCents(63));
+    expect(plan.overpays).toBe(true);
+
+    const atLimit = planInvoicePayment(toCents(113), toCents(50), toCents(63));
+    expect(atLimit.overpays).toBe(false);
+    expect(atLimit.settled).toBe(true);
   });
 });

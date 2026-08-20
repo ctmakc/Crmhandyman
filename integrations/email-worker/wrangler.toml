@@ -6,7 +6,7 @@ compatibility_date = "2026-08-01"
 
 [vars]
 # Where the CRM listens; override per environment with `wrangler deploy --var`.
-CRM_WEBHOOK_URL = "https://crm.agintent.com/api/webhooks/email"
+CRM_WEBHOOK_URL = "https://crm.itopsi.com/api/webhooks/email"
 
 # SIGNING_KEY is a secret, never a var — set it with:
 #   wrangler secret put SIGNING_KEY

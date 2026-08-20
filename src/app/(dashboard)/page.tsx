@@ -25,6 +25,7 @@ import ChaseLane from "@/components/ChaseLane";
 import ServiceDueLane from "@/components/ServiceDueLane";
 import { nextDueVisit, daysUntil } from "@/lib/contracts";
 import { daysOverdue } from "@/lib/invoice-state";
+import { dayStamp } from "@/lib/dates";
 import { sessionTenant } from "@/lib/session";
 import { redirect } from "next/navigation";
 
@@ -616,6 +617,12 @@ export default async function DashboardPage() {
               date: j.scheduledDate ? j.scheduledDate.toISOString() : null,
             }))}
             crewSize={crewSize}
+            /* The week window is decided here, on the server, off the same `weekStart`
+               that scoped `weekJobs` above — so the rail cannot draw a different week
+               than the jobs it was handed, and the browser cannot re-derive a different
+               «today» from its own clock and throw the first paint away. */
+            weekStartStamp={dayStamp(weekStart)}
+            todayKey={dayStamp(now)}
           />
 
           <section>

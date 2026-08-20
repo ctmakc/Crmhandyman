@@ -83,7 +83,11 @@ const TRUSTED_PROXY_HOPS = (() => {
  * client cannot forge it. Each additional trusted hop moves one position left.
  */
 export function clientIp(req: Request): string {
-  return clientIpFromHeaders(req.headers.get("x-forwarded-for"), req.headers.get("x-real-ip"));
+  return clientIpFromHeaders(
+    req.headers.get("x-forwarded-for"),
+    req.headers.get("x-real-ip"),
+    req.headers.get("cf-connecting-ip")
+  );
 }
 
 /**
@@ -94,8 +98,23 @@ export function clientIp(req: Request): string {
  */
 export function clientIpFromHeaders(
   forwardedFor: string | null | undefined,
-  realIp?: string | null
+  realIp?: string | null,
+  cfConnectingIp?: string | null
 ): string {
+  /**
+   * Cloudflare sits in front of this deployment (a tunnel from the box to Cloudflare's
+   * edge), and cloudflared does NOT append the visitor to X-Forwarded-For the way a
+   * plain reverse proxy does — so counting from the right of XFF found the same tunnel
+   * address for everyone and collapsed the whole platform into one throttle bucket:
+   * one shop's failed logins locked out another's, and a busy landing's web leads got
+   * 429'd and dropped. `CF-Connecting-IP` is the real visitor address, stamped by
+   * Cloudflare's edge and overwritten on every request, so a client cannot forge it and
+   * nothing reaches this container except through the tunnel. When it is present it is
+   * the most trustworthy source; absent (dev/test) we fall back to the XFF rule below.
+   */
+  const cf = (cfConnectingIp ?? "").trim();
+  if (cf) return cf;
+
   /**
    * No proxy in front: `X-Forwarded-For` is the caller's own writing and is worth
    * nothing, so it is not read at all. Everything then shares the `unknown` bucket

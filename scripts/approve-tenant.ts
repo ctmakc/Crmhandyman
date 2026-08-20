@@ -11,6 +11,47 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+// The one SMTP transport in the product — the same one the overdue reminders send through —
+// and the pure copy for this mail. Reached by relative path because this script runs under
+// ts-node without the `@/` alias.
+import { mailer, smtpConfigured, smtpFrom } from "../src/lib/mailer";
+import { approvalEmailCopy, type ApprovalTarget } from "../src/lib/approval-email";
+
+/**
+ * The email /pending promises.
+ *
+ * The waiting room tells a new owner "you get an email when approved" — and until now no
+ * email was ever sent, so a workspace could go live and its owner never know. Approval is
+ * the moment that promise comes due, so this fires it here, on the PENDING→ACTIVE step.
+ *
+ * Best-effort, like every other send in the product: if SMTP is not configured we say so on
+ * stdout (the operator approving the workspace is standing right here) rather than pretend a
+ * mail went out, and a transport that throws is reported, never fatal — the approval already
+ * happened and must not be undone by a mail server having a bad minute.
+ */
+async function sendApprovalEmail(tenant: ApprovalTarget) {
+  const copy = approvalEmailCopy(tenant);
+  if (!smtpConfigured()) {
+    process.stdout.write(
+      `  ! SMTP is not configured — no email sent. Tell the owner (${tenant.ownerEmail}) they can sign in at ${copy.signInUrl}\n`
+    );
+    return;
+  }
+  try {
+    await mailer().sendMail({
+      from: smtpFrom(tenant.businessName),
+      to: tenant.ownerEmail,
+      subject: copy.subject,
+      text: copy.body.join("\n\n"),
+      html: copy.body.map((p) => `<p>${p}</p>`).join(""),
+    });
+    process.stdout.write(`  ✓ Emailed ${tenant.ownerEmail} — signs in at ${copy.signInUrl}\n`);
+  } catch (e) {
+    process.stdout.write(
+      `  ! Could not email ${tenant.ownerEmail} (${e instanceof Error ? e.message : String(e)}). They can sign in at ${copy.signInUrl}\n`
+    );
+  }
+}
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -68,8 +109,10 @@ async function main() {
       data: { status: status as "ACTIVE" | "PENDING" | "SUSPENDED" },
     });
     process.stdout.write(`${tenant.businessName} (${slug}): ${tenant.status} → ${status}\n`);
+    // `tenant` still holds the status read before the update, so this fires once, on the real
+    // PENDING→ACTIVE transition — never when re-approving an already-active workspace.
     if (status === "ACTIVE" && tenant.status === "PENDING") {
-      process.stdout.write(`  The owner can now sign in with Google at their workspace.\n`);
+      await sendApprovalEmail({ slug, businessName: tenant.businessName, ownerEmail: tenant.ownerEmail });
     }
   } finally {
     await prisma.$disconnect();

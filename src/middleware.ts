@@ -6,6 +6,11 @@ const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/expired",
+  // The legal surface. Terms and the privacy notice have to be readable by a stranger with
+  // no session — a prospect deciding whether to sign up, a regulator, or a contractor's own
+  // customer following a link — so they sit outside the sign-in wall like /login does.
+  "/terms",
+  "/privacy",
   // The Google sign-up waiting room: a workspace that exists but is not approved yet, or
   // an account that has not named one. Reachable with a half-formed session.
   "/pending",

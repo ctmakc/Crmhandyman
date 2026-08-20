@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Empty, LaneHead, spineFor } from "@/components/ui/primitives";
+import { dayStamp, parseDayInput } from "@/lib/dates";
 import {
   dayIndexOf,
   dayLoad,
@@ -70,10 +71,25 @@ const BAND_TOP = 52;
 export default function DayRail({
   jobs,
   crewSize = 0,
+  weekStartStamp,
+  todayKey,
 }: {
   jobs: RailJob[];
   /** Hands the shop has. Context for the load lines, never a capacity to divide by. */
   crewSize?: number;
+  /**
+   * The Sunday that opens this week and today, both as `YYYY-MM-DD` decided on the
+   * SERVER — the same window that already scoped the jobs handed down. Deriving them
+   * here from `new Date()` during render is what discarded the server HTML: the box
+   * runs UTC, so after ~8pm ET the browser (America/Toronto) is still on the previous
+   * calendar day, the two renders disagreed on which column is which and which one is
+   * lit, React #423 threw away the first paint, and the amber today-glow could land on
+   * the wrong day. A day stamp is a bare calendar day with no instant in it, so
+   * `parseDayInput` rebuilds the identical local-midnight Date on either runtime and the
+   * first paint is already right.
+   */
+  weekStartStamp: string;
+  todayKey: string;
 }) {
   /**
    * The server hands over the week's start dates; a job that began before Sunday and is
@@ -107,17 +123,16 @@ export default function DayRail({
     };
   }, []);
 
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - start.getDay());
+  // Rebuilt from the server's stamp, never from the clock on this machine. A DAY_ONLY
+  // string parses to local midnight through the same `parseDayInput` the schedule library
+  // uses for job dates, so the seven columns line up with the jobs on them.
+  const start = parseDayInput(weekStartStamp) ?? new Date();
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     return d;
   });
-
-  const todayKey = new Date().toDateString();
 
   // Everything the schedule library reads lives on one shape: start, run, holder.
   const scheduled = rows.map((j) => ({
@@ -208,14 +223,14 @@ export default function DayRail({
         <div
           className="absolute top-0 h-[9px] w-[2px]"
           style={{
-            left: `calc(${days.findIndex((d) => d.toDateString() === todayKey)} * 100% / 7)`,
+            left: `calc(${days.findIndex((d) => dayStamp(d) === todayKey)} * 100% / 7)`,
             background: "var(--amber)",
           }}
           aria-hidden
         />
         <div className="grid grid-cols-7">
         {days.map((day, i) => {
-          const isToday = day.toDateString() === todayKey;
+          const isToday = dayStamp(day) === todayKey;
           const dayJobs = stopsOn(day);
           return (
             <div
@@ -331,13 +346,13 @@ export default function DayRail({
               key={day.toISOString()}
               className="border-b border-line px-4 py-3 last:border-b-0"
               style={{
-                background: day.toDateString() === todayKey ? "var(--sunk)" : undefined,
+                background: dayStamp(day) === todayKey ? "var(--sunk)" : undefined,
               }}
             >
               <div className="flex items-baseline justify-between gap-3">
                 <div className="mono t-micro uppercase tracking-[0.12em] text-ink-3">
                   {day.toLocaleDateString("en-CA", { weekday: "long", day: "2-digit", month: "short" })}
-                  {day.toDateString() === todayKey ? " · TODAY" : ""}
+                  {dayStamp(day) === todayKey ? " · TODAY" : ""}
                 </div>
                 {load.clashes.length > 0 && (
                   <div

@@ -986,7 +986,14 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       expect(after.body.expenses).toEqual([]);
     });
 
-    /** Overpaying at the door owes nothing back through this figure. */
+    /**
+     * The door owes nothing back because it refuses the overage in the first place.
+     * A $50 bill collected as $80 used to book straight in: the balance clamped to $0 for
+     * the crew while the owner's revenue carried the extra $30 nobody was billed. The door
+     * now reconciles against the open invoice and refuses anything past the remainder, the
+     * same 400 the invoice desk gives, and writes no Payment — so the balance never has a
+     * negative to hide and the books never carry an uninvoiced dollar.
+     */
     it("never lets the door balance run below zero", async () => {
       const job = await a.admin.post("/api/projects", {
         clientName: "Overpay Probe",
@@ -1000,16 +1007,18 @@ describe.sequential("Scenario B — one workspace cannot reach another", () => {
       });
       await a.admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" });
 
-      expect(
-        (await a.worker.post("/api/finance/payments", {
-          projectId: job.body.id,
-          amount: 80,
-          method: "CASH",
-        })).status,
-      ).toBe(201);
+      const over = await a.worker.post("/api/finance/payments", {
+        projectId: job.body.id,
+        amount: 80,
+        method: "CASH",
+      });
+      expect(over.status).toBe(400);
+      expect(over.body.error).toContain("owing");
 
+      // Nothing booked: the crew still owes the whole $50 and no payment reached the job.
       const card = await a.worker.get(`/api/projects/${job.body.id}`);
-      expect(card.body.dueAtDoor).toBe(0);
+      expect(card.body.dueAtDoor).toBe(50);
+      expect(card.body.payments).toEqual([]);
     });
   });
 

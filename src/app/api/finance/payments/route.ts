@@ -6,6 +6,7 @@ import { scopedProjectId } from "@/lib/scope";
 import { parseDayInput } from "@/lib/dates";
 import { inDollars, parseCents } from "@/lib/money";
 import { PAYMENT_METHODS, badChoice, choice } from "@/lib/enums";
+import { planInvoicePayment, type InvoicePaymentPlan } from "@/lib/invoice-state";
 
 export async function POST(req: NextRequest) {
   // The crew collects at the door and buys materials on the way, so recording is
@@ -34,16 +35,63 @@ export async function POST(req: NextRequest) {
   if (method === null)
     return NextResponse.json(badChoice("payment method", PAYMENT_METHODS), { status: 400 });
 
+  // Money at the door is money against a bill, not money floating in the P&L. The job's
+  // open invoice is the ledger this payment settles: without it the amount had no ceiling
+  // (a tech could key $999,999 and inflate the owner's revenue with nothing to reconcile
+  // against) and the paid invoice stayed DRAFT/unpaid forever, so the job read as owing
+  // while the cash was already in hand. We reconcile against the oldest open invoice — a
+  // deposit before its balance — exactly as the invoice desk does, through one shared rule.
+  const openInvoices = await prisma.invoice.findMany({
+    where: { tenantId, projectId: project.value, status: { notIn: ["PAID", "VOID"] } },
+    orderBy: { number: "asc" },
+    include: { payments: { select: { amountCents: true } } },
+  });
+
+  // The bill this payment lands on: the oldest issued paper that still owes something. A
+  // job whose paper is all settled — or that was never invoiced — takes the money as loose
+  // cash the way it always has, and the job card's dueAtDoor still nets it against invoices.
+  let target: (typeof openInvoices)[number] | null = null;
+  let plan: InvoicePaymentPlan | null = null;
+  for (const inv of openInvoices) {
+    const alreadyPaidCents = inv.payments.reduce((s, p) => s + p.amountCents, 0);
+    if (inv.totalCents - alreadyPaidCents <= 0) continue;
+    target = inv;
+    plan = planInvoicePayment(inv.totalCents, alreadyPaidCents, amountCents);
+    break;
+  }
+
+  // The same refusal the invoice desk gives, worded the same, so both doors speak one
+  // sentence about one figure. Nothing is written: no Payment row, no status change.
+  if (target && plan?.overpays)
+    return NextResponse.json(
+      {
+        error:
+          `That is more than the ${money(Math.max(plan.remainingCents, 0))} still owing on ${target.number}. ` +
+          `Record what settles the bill, and put any surplus on its own invoice.`,
+      },
+      { status: 400 }
+    );
+
   const payment = await prisma.payment.create({
     data: {
       tenantId,
       projectId: project.value,
+      // Tie the payment to the bill it settles when there is one; loose cash stays loose.
+      invoiceId: target?.id,
       amountCents,
       method: method ?? "CASH",
       date: parseDayInput(body.date) ?? new Date(),
       notes: body.notes,
     },
   });
+
+  // Advance the invoice by the same rule the invoice desk uses: PARTIAL until the last
+  // cent, PAID when settled, and the paid date stamped only on settlement.
+  if (target && plan)
+    await prisma.invoice.update({
+      where: { id: target.id },
+      data: { status: plan.status, paidAt: plan.settled ? new Date() : null },
+    });
 
   await record({
     tenantId,
@@ -53,11 +101,18 @@ export async function POST(req: NextRequest) {
     entityId: payment.id,
     summary:
       `Recorded ${money(payment.amountCents)} by ${payment.method.replace(/_/g, " ")} on ` +
-      `${day(payment.date)} against ${await jobLabel(tenantId, payment.projectId)}`,
+      `${day(payment.date)} against ${await jobLabel(tenantId, payment.projectId)}` +
+      (target
+        ? plan?.settled
+          ? ` — settled ${target.number} in full`
+          : ` — ${money(Math.max((plan?.remainingCents ?? 0) - amountCents, 0))} still owing on ${target.number}`
+        : ""),
     meta: {
       amountCents: payment.amountCents,
       method: payment.method,
       projectId: payment.projectId,
+      invoiceId: target?.id ?? null,
+      settled: plan?.settled ?? false,
     },
   });
 

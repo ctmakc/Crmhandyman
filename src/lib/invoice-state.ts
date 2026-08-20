@@ -18,6 +18,55 @@ export function owingCents(inv: InvoiceLike) {
 }
 
 /**
+ * Applying a payment to a bill — the one rule both doors obey.
+ *
+ * A payment lands on an invoice from two places: the invoice desk (PUT the invoice with
+ * `action: "pay"`) and the field, where the crew collects at the door (POST a finance
+ * payment against the job). While each door decided for itself what a payment does, they
+ * disagreed on the two figures that have to match: the invoice desk refused an overpayment
+ * and advanced the status, and the door booked any number and left the invoice reading
+ * DRAFT with the money invisible on it. A tech could key $999,999 against a $113 job and
+ * the month's revenue carried the invention with no ceiling; the same job then read as
+ * still owing on its own paper. This function is the single arithmetic both doors run, so
+ * the remainder, the refusal and the resulting status are one answer, computed one way.
+ *
+ * All cents, all integers: summed floats used to leave $0.001 owing forever, so `settled`
+ * is a `>=` on whole cents and can never be tripped by dust. `overpays` is the guard —
+ * the caller refuses with a 400 when it is true and writes nothing. The status is never
+ * VOID or DRAFT here: a payment moves a bill toward PAID, and PARTIAL is where it rests
+ * until the last cent lands. Stamping `paidAt` stays with the caller, which owns the clock.
+ */
+export interface InvoicePaymentPlan {
+  /** Cents still owed on the bill before this payment — the ceiling for the payment. */
+  remainingCents: number;
+  /** True when the payment is larger than the remainder; the caller must refuse it. */
+  overpays: boolean;
+  /** Cents paid across the whole invoice once this payment lands (prior payments plus it). */
+  paidCents: number;
+  /** Whether this payment settles the bill in full, to the cent. */
+  settled: boolean;
+  /** Where the invoice rests after this payment: PAID when settled, else PARTIAL. */
+  status: "PARTIAL" | "PAID";
+}
+
+export function planInvoicePayment(
+  totalCents: number,
+  alreadyPaidCents: number,
+  amountCents: number,
+): InvoicePaymentPlan {
+  const remainingCents = totalCents - alreadyPaidCents;
+  const paidCents = alreadyPaidCents + amountCents;
+  const settled = paidCents >= totalCents;
+  return {
+    remainingCents,
+    overpays: amountCents > remainingCents,
+    paidCents,
+    settled,
+    status: settled ? "PAID" : "PARTIAL",
+  };
+}
+
+/**
  * Late by the same calendar the shop uses.
  *
  * Comparing instants made an invoice due «today» overdue at 00:01 of that very day:

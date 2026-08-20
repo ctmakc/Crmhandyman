@@ -652,3 +652,137 @@ describe.sequential("Scenario A — money guardrails", () => {
     expect(cents(ok.body.total)).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Scenario A — the door reconciles against the bill.
+ *
+ * The door is the second way money reaches a bill, and it used to obey neither rule the
+ * invoice desk does. A payment collected in the field (POST /api/finance/payments) had no
+ * ceiling — a tech could key any figure and the month's revenue carried it — and it never
+ * advanced the invoice, so a job paid in full at the door still read DRAFT/SENT and owing.
+ * Both doors now run one rule: the door refuses the overage the same way the desk does, and
+ * a door payment moves the invoice PARTIAL → PAID exactly as a payment from the desk would.
+ *
+ * Each case gets its own job: the door lands on the oldest open invoice of a job, so a
+ * shared project would let one test's open bill catch the next test's payment.
+ */
+describe.sequential("Scenario A — the door reconciles against the bill", () => {
+  let admin: Client;
+
+  beforeAll(async () => {
+    admin = await signedIn(inject("baseUrl"), inject("alpha").admin);
+  });
+
+  /** A fresh job with one sent invoice for the given work, returned with its total in cents. */
+  async function sentInvoice(label: string, unitPrice: number) {
+    const lead = await admin.post("/api/leads", {
+      name: label,
+      phone: "613-555-0233",
+      jobType: "Furnace service",
+    });
+    const project = await admin.post(`/api/leads/${lead.body.id}/convert`, { title: `${label} — door` });
+    const projectId = project.body.id as string;
+    const estimate = await admin.post(`/api/projects/${projectId}/estimate`, {
+      lineItems: [{ description: label, qty: 1, unit: "lot", unitPrice }],
+      taxRate: TAX_RATE,
+    });
+    const invoice = await admin.post("/api/invoices", { projectId, estimateId: estimate.body.id });
+    await admin.put(`/api/invoices/${invoice.body.id}`, { status: "SENT" });
+    return { projectId, invoiceId: invoice.body.id as string, totalCents: cents(invoice.body.total) };
+  }
+
+  it("refuses a door payment larger than the bill and books nothing", async () => {
+    const { projectId, invoiceId } = await sentInvoice("Tune-up", 100);
+
+    const over = await admin.post("/api/finance/payments", { projectId, amount: 200, method: "CASH" });
+    expect(over.status).toBe(400);
+    expect(over.body.error).toContain("owing");
+
+    // The refusal wrote no Payment and left the invoice SENT with nothing collected.
+    const after = await admin.get(`/api/invoices/${invoiceId}`);
+    expect(after.body.status).toBe("SENT");
+    expect(cents(after.body.amountPaid)).toBe(0);
+    expect(after.body.payments).toHaveLength(0);
+  });
+
+  it("a full door payment settles the invoice to PAID, the same as the desk", async () => {
+    const { projectId, invoiceId, totalCents } = await sentInvoice("Drain snake", 200);
+
+    const paid = await admin.post("/api/finance/payments", {
+      projectId,
+      amount: toDollars(totalCents),
+      method: "E_TRANSFER",
+    });
+    expect(paid.status).toBe(201);
+
+    // The bill the door money landed on now reads settled, with the payment on it — no
+    // longer stuck at SENT with the cash invisible.
+    const after = await admin.get(`/api/invoices/${invoiceId}`);
+    expect(after.body.status).toBe("PAID");
+    expect(after.body.paidAt).toBeTruthy();
+    expect(cents(after.body.amountPaid)).toBe(totalCents);
+    expect(after.body.payments).toHaveLength(1);
+  });
+
+  it("a part door payment moves the bill to PARTIAL and leaves the remainder owing", async () => {
+    const { projectId, invoiceId, totalCents } = await sentInvoice("Water heater", 400);
+
+    const part = await admin.post("/api/finance/payments", { projectId, amount: 150, method: "CASH" });
+    expect(part.status).toBe(201);
+
+    const after = await admin.get(`/api/invoices/${invoiceId}`);
+    expect(after.body.status).toBe("PARTIAL");
+    expect(after.body.paidAt).toBeNull();
+    expect(cents(after.body.amountPaid)).toBe(cents(150));
+    expect(cents(after.body.total) - cents(after.body.amountPaid)).toBe(totalCents - cents(150));
+  });
+
+  it("caps the door at the remainder after a part payment, then settles on it exactly", async () => {
+    const { projectId, invoiceId, totalCents } = await sentInvoice("Boiler", 100);
+
+    const part = await admin.post("/api/finance/payments", { projectId, amount: 50, method: "CASH" });
+    expect(part.status).toBe(201);
+
+    const remainingCents = totalCents - cents(50);
+    const over = await admin.post("/api/finance/payments", {
+      projectId,
+      amount: toDollars(remainingCents + 1),
+      method: "CASH",
+    });
+    expect(over.status).toBe(400);
+
+    const settle = await admin.post("/api/finance/payments", {
+      projectId,
+      amount: toDollars(remainingCents),
+      method: "CASH",
+    });
+    expect(settle.status).toBe(201);
+
+    const after = await admin.get(`/api/invoices/${invoiceId}`);
+    expect(after.body.status).toBe("PAID");
+    expect(cents(after.body.amountPaid)).toBe(totalCents);
+    expect(after.body.payments).toHaveLength(2);
+  });
+
+  it("takes loose cash on a job with no open bill, the way the field always has", async () => {
+    // A job whose paper is already settled still takes money at the door — a top-up, a
+    // tip, a materials reimbursement — as loose cash, with no invoice to reconcile against.
+    const { projectId, totalCents } = await sentInvoice("Settled job", 100);
+    const settle = await admin.post("/api/finance/payments", {
+      projectId,
+      amount: toDollars(totalCents),
+      method: "CASH",
+    });
+    expect(settle.status).toBe(201);
+
+    const extra = await admin.post("/api/finance/payments", { projectId, amount: 25, method: "CASH" });
+    expect(extra.status).toBe(201);
+
+    const project = await admin.get(`/api/projects/${projectId}`);
+    const collectedCents = (project.body.payments as Array<{ amount: number }>).reduce(
+      (s, p) => s + cents(p.amount),
+      0,
+    );
+    expect(collectedCents).toBe(totalCents + cents(25));
+  });
+});

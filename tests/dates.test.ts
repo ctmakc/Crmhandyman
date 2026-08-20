@@ -64,3 +64,59 @@ describe("dayStamp", () => {
     expect(dayStamp(parseDayInput("2026-03-08"))).toBe("2026-03-08");
   });
 });
+
+/**
+ * The day rail builds its seven columns from a server-decided week-start STAMP and lights
+ * today from a server-decided today STAMP, instead of reading `new Date()` while it
+ * renders. This is the exact pure math the component runs — a bare calendar stamp carries
+ * no instant, so the same seven days and the same lit column come out on the UTC server
+ * and in the Toronto browser, which is what stopped React #423 from discarding the first
+ * paint and the amber glow from landing a day off.
+ */
+describe("the day rail rebuilds its week off a server stamp", () => {
+  const weekFrom = (weekStartStamp: string) => {
+    const start = parseDayInput(weekStartStamp) as Date;
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  };
+
+  it("lays out seven consecutive local days from the Sunday stamp", () => {
+    expect(weekFrom("2026-08-16").map(dayStamp)).toEqual([
+      "2026-08-16",
+      "2026-08-17",
+      "2026-08-18",
+      "2026-08-19",
+      "2026-08-20",
+      "2026-08-21",
+      "2026-08-22",
+    ]);
+  });
+
+  it("lights exactly the column whose stamp equals the server's today", () => {
+    // The bug: near midnight ET the box (UTC) said one day and the browser (Toronto)
+    // another, so the lit column disagreed between the two renders. Handed one stamp,
+    // findIndex is unambiguous — one match inside the week, none outside it.
+    const days = weekFrom("2026-08-16");
+    const lit = (todayKey: string) => days.findIndex((d) => dayStamp(d) === todayKey);
+    expect(lit("2026-08-20")).toBe(4);
+    expect(lit("2026-08-16")).toBe(0);
+    expect(lit("2026-08-23")).toBe(-1); // next week — nothing lit, no false Sunday glow
+  });
+
+  it("crosses a DST boundary without dropping or doubling a day", () => {
+    // Toronto springs forward on 2026-03-08. Walking the week with setDate (not a fixed
+    // 24h step) keeps seven distinct calendar days across the 23-hour night.
+    expect(weekFrom("2026-03-08").map(dayStamp)).toEqual([
+      "2026-03-08",
+      "2026-03-09",
+      "2026-03-10",
+      "2026-03-11",
+      "2026-03-12",
+      "2026-03-13",
+      "2026-03-14",
+    ]);
+  });
+});

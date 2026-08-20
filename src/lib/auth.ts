@@ -61,7 +61,8 @@ export const authOptions: NextAuthOptions = {
         // with either shape NextAuth may hand over (plain object or WHATWG Headers).
         const ip = clientIpFromHeaders(
           headerValue(req?.headers, "x-forwarded-for"),
-          headerValue(req?.headers, "x-real-ip")
+          headerValue(req?.headers, "x-real-ip"),
+          headerValue(req?.headers, "cf-connecting-ip")
         );
         if (!(await rateLimit(`login:${ip}`, 10, 15 * 60 * 1000)).ok) return null;
 

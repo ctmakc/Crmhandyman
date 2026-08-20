@@ -10,10 +10,36 @@
  * brand bar, because the person opening this at 06:40 came from an alert link and wants
  * the two fields, not the pitch — the pitch waits below the form.
  */
+/**
+ * The one-line consent notice that sits under a sign-in or sign-up button.
+ *
+ * A contractor typing a customer's name and phone into this product is handing us other
+ * people's personal information, so the moment they act there has to be a plain sentence
+ * that says what they are agreeing to — and it has to reach the two documents, not just
+ * name them. Both pages that carry an auth button drop this into the shell's `consent`
+ * slot rather than each writing the sentence again and drifting.
+ */
+export function ConsentNotice() {
+  return (
+    <>
+      By continuing you agree to the{" "}
+      <a href="/terms" className="font-bold text-ink-2 underline underline-offset-2 hover:text-ink">
+        Terms
+      </a>{" "}
+      and{" "}
+      <a href="/privacy" className="font-bold text-ink-2 underline underline-offset-2 hover:text-ink">
+        Privacy Policy
+      </a>
+      .
+    </>
+  );
+}
+
 export function PublicShell({
   headline,
   points,
   footnote,
+  consent,
   children,
 }: {
   /** The one statement on the navy plate. Desk only. */
@@ -22,6 +48,12 @@ export function PublicShell({
   points: string[];
   /** A last mono line at the foot of the navy plate. */
   footnote?: string;
+  /**
+   * The consent line, rendered under the form. Pages that carry a sign-in or sign-up
+   * button pass `<ConsentNotice />`; the waiting rooms leave it empty because there is
+   * nothing to agree to on them — only the footer's two links.
+   */
+  consent?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -62,7 +94,29 @@ export function PublicShell({
       </aside>
 
       <main className="flex flex-1 items-start px-6 py-10 lg:items-center lg:px-16 lg:py-12">
-        <div className="w-full max-w-[400px]">{children}</div>
+        <div className="w-full max-w-[400px]">
+          {children}
+
+          {consent && (
+            <p className="mono mt-6 t-micro leading-[1.5] text-ink-3">{consent}</p>
+          )}
+
+          {/* The legal surface, on every public page. Storing a stranger's customers' names
+              and numbers with no way to reach the terms or the privacy notice is the thing
+              the launch audit stopped on — so the two links ride the shell itself, not each
+              page. Quiet, mono, below the fold of attention but always one tap away. */}
+          <footer className="mt-10 flex items-center gap-3 border-t pt-4" style={{ borderColor: "var(--line)" }}>
+            <a href="/terms" className="mono t-micro uppercase tracking-[0.1em] text-ink-3 hover:text-ink">
+              Terms
+            </a>
+            <span aria-hidden className="text-ink-3">
+              ·
+            </span>
+            <a href="/privacy" className="mono t-micro uppercase tracking-[0.1em] text-ink-3 hover:text-ink">
+              Privacy
+            </a>
+          </footer>
+        </div>
       </main>
 
       {/* The phone's share of the pitch: under the form, where it costs nobody a scroll. */}

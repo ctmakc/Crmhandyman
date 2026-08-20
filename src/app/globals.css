@@ -402,7 +402,13 @@ a.ticket:hover,
 
 .arm-readout {
   animation: arm-readout 220ms var(--ease) both;
-  animation-delay: calc(340ms + var(--i, 0) * 60ms);
+  /* The readouts still settle after the columns begin ticking, but the wait was tuned
+     for the old money rail alone. The command-bridge stat band now arms with this same
+     class at the TOP of the deck, and a 340ms base plus a 60ms-per-tile stagger left the
+     hero opacity 0 for the better part of a second and the sunk well (i=4) past it. The
+     base drops to 140ms and the step to 45ms: the first tile is in by ~360ms and the
+     last readout well under a second, and the column-then-readout order is kept. */
+  animation-delay: calc(140ms + var(--i, 0) * 45ms);
 }
 
 /* THE RULE — tick marks along the top edge of the week board. The board is a
@@ -743,6 +749,15 @@ input:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  /* Collapsing only the DURATION leaves the DELAY, and the arming keyframes fill
+     `both` — so a tile with a 340ms+ delay held its `from` frame (opacity 0) for over
+     half a second before the 0.01ms animation ran. The hero band went dark on exactly
+     the setting that asks for less motion. Dropping the animation altogether lands every
+     armed element on its resting state at 0ms. */
+  .arm-col,
+  .arm-readout {
+    animation: none !important;
   }
   a.ticket:hover,
   .ticket-hover:hover {

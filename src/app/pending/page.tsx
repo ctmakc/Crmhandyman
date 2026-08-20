@@ -18,7 +18,7 @@ export default function PendingPage() {
           <span className="text-amber">Under review.</span>
         </>
       }
-      points={["We check every new workspace", "Usually within a business day", "You will get an email", "Then sign in"]}
+      points={["An operator reviews it", "Usually within a business day", "You get an email when approved", "Then sign in the same way"]}
       footnote="HVAC · Moving · Renovation"
     >
       <div className="eyebrow">Pending approval</div>
@@ -26,9 +26,10 @@ export default function PendingPage() {
         We are reviewing your workspace
       </h1>
       <p className="measure t-body mt-4 text-ink-2">
-        Your account is set up and safe. Before the desk opens, a person here approves it,
-        which keeps the platform clean for every contractor on it. You will get an email the
-        moment it is ready, and then you sign in the same way.
+        Your account is set up and safe. Before the desk opens, an operator here reviews it,
+        which keeps the platform clean for every contractor on it. The moment it is approved we
+        send an email to the address you signed up with, and then you sign in the same way.
+        This usually happens within a business day.
       </p>
 
       <button

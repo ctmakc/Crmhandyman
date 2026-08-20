@@ -1,48 +1,70 @@
-"use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button, ErrorNote, Field } from "@/components/ui/primitives";
-import { PublicShell } from "@/components/layout/PublicShell";
+import type { Metadata } from "next";
+import { PublicShell, ConsentNotice } from "@/components/layout/PublicShell";
 import { GoogleButton } from "@/components/GoogleButton";
+import { RegisterForm } from "./RegisterForm";
+
+/**
+ * The sign-up screen — now honest about a door that is shut.
+ *
+ * HandyCRM launches invite-only: we open every workspace ourselves, and self-serve sign-up
+ * is off in production (SELF_SERVE_SIGNUP unset). The old page did not know that — it always
+ * rendered the email form, the visitor filled it in, pressed the button, and the API answered
+ * 403 to a form that had no business being there. This page reads the same switch the API
+ * reads, on the server, and when the door is shut it says so and points the visitor at the
+ * two ways in that do work: a word with us, and the live demo.
+ *
+ * A Server Component, because the switch is a server-only env var: a client component would
+ * have to be told the answer by someone, and the only honest someone is the server that owns
+ * the flag. The interactive email form is a client island (`RegisterForm`) rendered only when
+ * the door is actually open — in local development, where the register flow is worked on.
+ */
+
+export const metadata: Metadata = {
+  title: "Get started — HandyCRM",
+  description: "HandyCRM opens invite-only workspaces for trade contractors.",
+};
+
+// The exact rule the register API uses (src/app/api/register/route.ts). Both read the same
+// env, on the server, so the page can never invite a sign-up the API would refuse. Production
+// is closed unless SELF_SERVE_SIGNUP says otherwise; local development stays open.
+function signupOpen() {
+  const raw = (process.env.SELF_SERVE_SIGNUP || "").trim().toLowerCase();
+  if (raw) return raw === "on" || raw === "true" || raw === "1";
+  return process.env.NODE_ENV !== "production";
+}
+
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "support@handymanpro.ca";
+
+// The public demo — a real desk, filled in, nothing live — so a stranger can see the product
+// working while they wait for us to open a workspace for them.
+const DEMO_URL = "https://try.itopsi.com";
+
+// The same signal GoogleButton gates itself on (NEXT_PUBLIC_AUTH_ORIGIN names the OAuth
+// front door). Reading it here — not the server-only googleEnabled — keeps the wrapper block
+// and the button in lockstep: either both show or neither does, never an empty divider.
+const googleReady = Boolean((process.env.NEXT_PUBLIC_AUTH_ORIGIN || "").trim());
 
 export default function RegisterPage() {
-  const router = useRouter();
-  // Signup always opens a trial — the plan is not the visitor's to choose.
-  const [form, setForm] = useState({ businessName: "", email: "", password: "" });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "That did not go through. Check the email address and try again.");
-        return;
-      }
-      router.push(`/login?registered=1&slug=${data.slug}`);
-    } catch {
-      setError("No answer from the desk — check the connection and press the button again.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const open = signupOpen();
 
   return (
     <PublicShell
       headline={
-        <>
-          Seven days.
-          <br />
-          <span className="text-amber">No card.</span>
-        </>
+        open ? (
+          <>
+            Seven days.
+            <br />
+            <span className="text-amber">No card.</span>
+          </>
+        ) : (
+          <>
+            We open
+            <br />
+            each desk
+            <br />
+            <span className="text-amber">by hand.</span>
+          </>
+        )
       }
       points={[
         "Leads from Facebook, Google, email",
@@ -51,77 +73,63 @@ export default function RegisterPage() {
         "Profit on every job",
       ]}
       footnote="HVAC · Moving · Renovation"
+      consent={<ConsentNotice />}
     >
-      <div className="eyebrow">Free trial</div>
-      <h1 className="t-page mt-2 font-black leading-none tracking-tight text-ink">
-        Open your desk
-      </h1>
-      <p className="measure t-body mt-3 text-ink-2">
-        Seven days of the whole thing. The desk is yours the moment you press the button.
-      </p>
+      {open ? (
+        <RegisterForm />
+      ) : (
+        <>
+          <div className="eyebrow">Invite only</div>
+          <h1 className="t-page mt-2 font-black leading-none tracking-tight text-ink">
+            HandyCRM is invite-only right now
+          </h1>
+          <p className="measure t-body mt-4 text-ink-2">
+            We set up every workspace ourselves, so each contractor on the platform is one we
+            know. Tell us about your shop and we will open a desk for you. It usually takes a
+            day.
+          </p>
 
-      {error && <ErrorNote className="mt-5">{error}</ErrorNote>}
+          <a
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("HandyCRM — open a workspace for my shop")}`}
+            className="mono mt-6 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded border border-navy-900 bg-navy-900 px-3.5 py-2 t-body font-bold uppercase leading-[20px] tracking-[0.05em] text-plate transition-[background-color,border-color,color] duration-fast ease-instrument hover:bg-navy-800"
+            style={{ borderRadius: "3px" }}
+          >
+            Talk to us
+          </a>
 
-      <div className="mt-6">
-        <GoogleButton label="Sign up with Google" />
-      </div>
-      <div className="mt-5 flex items-center gap-3 text-ink-2">
-        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
-        <span className="mono text-[11px] uppercase tracking-wide">or with email</span>
-        <span className="h-px flex-1" style={{ background: "var(--line)" }} />
-      </div>
+          <p className="measure t-body mt-5 text-ink-2">
+            Want to look first?{" "}
+            <a href={DEMO_URL} className="font-bold text-ink underline underline-offset-4">
+              See the live demo
+            </a>{" "}
+            — a real desk, filled in, nothing live.
+          </p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <Field id="reg-business" label="Business name" required>
-          {(f) => (
-            <input
-              {...f}
-              type="text"
-              autoComplete="organization"
-              value={form.businessName}
-              onChange={(e) => setForm((s) => ({ ...s, businessName: e.target.value }))}
-              placeholder="Northline Heating & Air"
-            />
+          {/*
+            The one self-serve door that is deliberately still open: "Continue with Google"
+            opens a PENDING workspace an operator reviews before it goes live, so it never
+            skips the human step. The button hides itself where Google is not configured, so
+            this whole block simply disappears rather than dangling an empty divider.
+          */}
+          {googleReady && (
+            <div className="mt-8 border-t pt-6" style={{ borderColor: "var(--line)" }}>
+              <p className="measure t-body text-ink-2">
+                Have a Google account? Start one this way — we review it before it opens.
+              </p>
+              <div className="mt-4">
+                <GoogleButton label="Continue with Google" />
+              </div>
+            </div>
           )}
-        </Field>
 
-        <Field id="reg-email" label="Email" required>
-          {(f) => (
-            <input
-              {...f}
-              type="email"
-              autoComplete="username"
-              value={form.email}
-              onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
-              placeholder="mike@example.com"
-            />
-          )}
-        </Field>
-
-        <Field id="reg-password" label="Password" required hint="Ten characters or more.">
-          {(f) => (
-            <input
-              {...f}
-              type="password"
-              minLength={10}
-              autoComplete="new-password"
-              value={form.password}
-              onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
-            />
-          )}
-        </Field>
-
-        <Button type="submit" disabled={loading} className="w-full">
-          {loading ? "Creating…" : "Create account"}
-        </Button>
-      </form>
-
-      <p className="t-body mt-6 text-ink-2">
-        Already have an account?{" "}
-        <a href="/login" className="font-bold text-ink underline underline-offset-4">
-          Sign in
-        </a>
-      </p>
+          <p className="t-body mt-8 text-ink-2">
+            Already have an account?{" "}
+            <a href="/login" className="font-bold text-ink underline underline-offset-4">
+              Sign in
+            </a>
+          </p>
+        </>
+      )}
     </PublicShell>
   );
 }
