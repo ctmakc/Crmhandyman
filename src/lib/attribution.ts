@@ -25,25 +25,27 @@ import type { Trade } from "@/lib/price-book";
  * ------------------------------------------------------------------------- */
 
 /**
- * The channels a lead can arrive on. Eight are the `LeadSource` enum; `NO_LEAD` is the
- * ninth, synthetic one — a job opened without a lead (walk-in, repeat customer, the
- * owner's phone). It carries no leads and no ad spend, and it is in the report because
- * leaving it out would hide real collected money and make the totals disagree with the
- * books.
- *
- * A landing-page quiz files its leads under whatever its intake key is configured to
- * count as (src/app/api/settings/intake-keys); keys left on the default land in OTHER,
- * which is why OTHER reads as the landing bucket rather than as a shrug.
+ * The real acquisition buckets the desk can buy or own. `NO_LEAD` is synthetic — work
+ * opened without a lead (repeat customer, walk-in, owner's phone). Keeping Google LSA,
+ * HomeStars, Bark and UrbanTasker separate is load-bearing for Beaver: these sources have
+ * very different purchase mechanics and cost per booked move, so flattening them into
+ * EMAIL/OTHER makes the source-to-cash report useless precisely where paid lead spend is
+ * highest.
  */
 export const CHANNELS = [
   { key: "FACEBOOK", label: "Facebook" },
   { key: "INSTAGRAM", label: "Instagram" },
   { key: "GOOGLE", label: "Google" },
+  { key: "GOOGLE_LSA", label: "Google LSA" },
   { key: "HOMESTARS", label: "HomeStars" },
+  { key: "BARK", label: "Bark" },
+  { key: "URBANTASKER", label: "UrbanTasker" },
+  { key: "MOVINGWALDO", label: "MovingWaldo" },
   { key: "KIJIJI", label: "Kijiji" },
+  { key: "WEBSITE", label: "Website" },
   { key: "EMAIL", label: "Email" },
   { key: "MANUAL", label: "Phone / walk-in" },
-  { key: "OTHER", label: "Landing quiz / other" },
+  { key: "OTHER", label: "Other" },
   { key: "NO_LEAD", label: "No lead on file" },
 ] as const;
 
@@ -86,14 +88,23 @@ const CHANNEL_ALIASES: Record<string, ChannelKey> = {
   ig: "INSTAGRAM",
   google: "GOOGLE",
   adwords: "GOOGLE",
-  lsa: "GOOGLE",
+  lsa: "GOOGLE_LSA",
+  googlelsa: "GOOGLE_LSA",
   homestars: "HOMESTARS",
+  bark: "BARK",
+  urbantasker: "URBANTASKER",
+  urban: "URBANTASKER",
+  movingwaldo: "MOVINGWALDO",
+  waldo: "MOVINGWALDO",
   kijiji: "KIJIJI",
+  website: "WEBSITE",
+  web: "WEBSITE",
+  site: "WEBSITE",
   email: "EMAIL",
   newsletter: "EMAIL",
   manual: "MANUAL",
-  quiz: "OTHER",
-  landing: "OTHER",
+  quiz: "WEBSITE",
+  landing: "WEBSITE",
   other: "OTHER",
 };
 

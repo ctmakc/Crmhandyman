@@ -2,22 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
 import { generateIntakeKey, hashIntakeKey } from "@/lib/intake";
+import { LEAD_SOURCES, choice } from "@/lib/enums";
 
 /**
  * The owner's side of landing intake. A key is a write credential for the workspace's
  * lead list, so it lives on the same shelf as the crew list — admins only.
  */
-
-const SOURCES = new Set([
-  "FACEBOOK",
-  "INSTAGRAM",
-  "GOOGLE",
-  "HOMESTARS",
-  "KIJIJI",
-  "EMAIL",
-  "MANUAL",
-  "OTHER",
-]);
 
 /** The key itself is never in this projection; only its digest exists after creation. */
 const LIST_FIELDS = {
@@ -50,9 +40,12 @@ export async function POST(req: NextRequest) {
   const label = typeof body.label === "string" ? body.label.trim().slice(0, 60) : "";
   if (!label) return NextResponse.json({ error: "Name this channel" }, { status: 400 });
 
-  const source = typeof body.source === "string" ? body.source.toUpperCase() : "OTHER";
-  if (!SOURCES.has(source)) {
-    return NextResponse.json({ error: "Unknown lead source" }, { status: 400 });
+  const source = choice(
+    LEAD_SOURCES,
+    typeof body.source === "string" ? body.source.toUpperCase() : "OTHER"
+  );
+  if (!source) {
+    return NextResponse.json({ error: "Unknown lead source", allowed: [...LEAD_SOURCES] }, { status: 400 });
   }
 
   const key = generateIntakeKey();
@@ -77,7 +70,11 @@ export async function DELETE(req: NextRequest) {
   const removed = await prisma.intakeKey.deleteMany({
     where: { id, tenantId: guard.identity.tenantId },
   });
-  if (removed.count === 0) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
+  if (removed.count === 0)
+    return NextResponse.json(
+      { error: "That record is gone — it was deleted, or the link points at another workspace" },
+      { status: 404 }
+    );
 
   return NextResponse.json({ ok: true });
 }

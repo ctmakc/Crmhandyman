@@ -24,6 +24,7 @@ import {
 import { toast } from "@/components/ui/Toaster";
 import { LeadWait } from "@/components/LeadClock";
 import { responseOf, waitRank, waitShort, STALE_MS } from "@/lib/lead-clock";
+import { LEAD_SOURCES } from "@/lib/enums";
 
 interface Lead {
   id: string;
@@ -44,16 +45,7 @@ interface Lead {
 
 /* The pipeline, in the order a lead walks it. */
 const STAGES = ["NEW", "CONTACTED", "VERIFIED", "CONVERTED", "REJECTED"];
-const SOURCES = [
-  "MANUAL",
-  "FACEBOOK",
-  "INSTAGRAM",
-  "GOOGLE",
-  "HOMESTARS",
-  "KIJIJI",
-  "EMAIL",
-  "OTHER",
-];
+const SOURCES = [...LEAD_SOURCES];
 
 /**
  * VERIFIED is this screen's word for a vetted lead; the shared SPINE map spells
@@ -227,9 +219,7 @@ export default function LeadsPage() {
   const counts: Record<string, number> = {};
   for (const l of leads) counts[l.status] = (counts[l.status] || 0) + 1;
 
-  const visible = statusFilter
-    ? leads.filter((l) => l.status === statusFilter)
-    : leads;
+  const visible = statusFilter ? leads.filter((l) => l.status === statusFilter) : leads;
 
   const narrowed = search !== "" || sourceFilter !== "" || statusFilter !== "";
 
@@ -248,9 +238,7 @@ export default function LeadsPage() {
 
   /* Right lane — worked. Verified up top, the closed book compressed below. */
   const verified = visible.filter((l) => l.status === "VERIFIED");
-  const closed = visible.filter(
-    (l) => l.status === "CONVERTED" || l.status === "REJECTED"
-  );
+  const closed = visible.filter((l) => l.status === "CONVERTED" || l.status === "REJECTED");
 
   /* ------------------------------------------------------------------ INSTRUMENTS
      Two readings sit above the sheet. The response gauge is the one number the shop
@@ -295,12 +283,8 @@ export default function LeadsPage() {
     return (
       <Row
         status={toneKey(lead.status)}
-        /* On the plate a row hovers to the plate colour and the feedback vanishes;
-           `!bg-sunk` pops it to the recessed tone instead so a hovered call still lifts. */
         className={`relative hover:!bg-sunk ${lead.id === snapId ? "ticket-snap" : ""}`}
       >
-        {/* The whole row opens the record — a gloved tap should not have to find
-            an 11px name. The phone and the outcome buttons ride above it. */}
         <Link
           href={`/leads/${lead.id}`}
           className="absolute inset-0"
@@ -308,9 +292,7 @@ export default function LeadsPage() {
         />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="t-row truncate font-bold leading-tight text-ink">
-              {lead.name}
-            </p>
+            <p className="t-row truncate font-bold leading-tight text-ink">{lead.name}</p>
             {lead.phone ? (
               <a
                 href={`tel:${lead.phone}`}
@@ -325,10 +307,6 @@ export default function LeadsPage() {
           </div>
           <LeadWait lead={lead} />
         </div>
-        {/* The job line and the outcome cluster share one line on the desk: the row
-            used to spend a whole empty band between them, and four calls filled the
-            screen. The buttons are row-scale controls, so they read as marks on the
-            sheet rather than as the page's own buttons. */}
         <div className="mt-1.5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between md:gap-4">
           <p className="t-body min-w-0 truncate text-ink-2 md:flex-1">
             {[lead.jobType, lead.city, lead.source].filter(Boolean).join(" · ")}
@@ -337,9 +315,7 @@ export default function LeadsPage() {
             {lead.status === "NEW" && (
               <Button
                 variant="quiet"
-                onClick={(e) =>
-                  setOutcome(e, lead, "CONTACTED", `${lead.name} marked contacted`)
-                }
+                onClick={(e) => setOutcome(e, lead, "CONTACTED", `${lead.name} marked contacted`)}
               >
                 Contacted
               </Button>
@@ -377,9 +353,6 @@ export default function LeadsPage() {
         }
       />
 
-      {/* THE INSTRUMENTS — response speed and where the work comes from. Two plates
-          raised off the deck: the gauge the owner moves by calling back faster, and
-          the channel mix that says which ad spend is landing. */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
         <StatTile
           label="Median response"
@@ -396,11 +369,7 @@ export default function LeadsPage() {
         <div className="plate px-4 py-3.5">
           <span className="eyebrow">Where they come from</span>
           <div className="mt-3.5">
-            <MeterBar
-              height={10}
-              segments={sourceSegments}
-              ariaLabel="Share of leads by source"
-            />
+            <MeterBar height={10} segments={sourceSegments} ariaLabel="Share of leads by source" />
           </div>
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
             {sourceRows.map(([s, c], i) => (
@@ -421,13 +390,8 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* THE PIPELINE RAIL — the stage strip. Counts + share bars over one
-          continuous rule; clicking a stage filters the sheet to it. */}
       <div className="border-b border-line pb-5">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-          {/* On the phone the five stages used to wrap onto two rows 200px deep and
-              push the first call of the day under the fold. Tighter gaps and a
-              narrower bar keep the whole pipeline on one line at 390px. */}
           <div className="flex flex-wrap items-end gap-x-2 gap-y-4 md:gap-x-8 md:gap-y-5">
             {STAGES.map((stage) => {
               const count = counts[stage] || 0;
@@ -439,19 +403,13 @@ export default function LeadsPage() {
                   key={stage}
                   type="button"
                   aria-pressed={active}
-                  onClick={() =>
-                    setStatusFilter((v) => (v === stage ? "" : stage))
-                  }
+                  onClick={() => setStatusFilter((v) => (v === stage ? "" : stage))}
                   className="text-left transition-opacity duration-fast ease-instrument"
                   style={{ opacity: dimmed ? 0.55 : 1 }}
                 >
                   <span
                     className="eyebrow block"
-                    style={
-                      active
-                        ? { color: textToneFor(toneKey(stage)) }
-                        : undefined
-                    }
+                    style={active ? { color: textToneFor(toneKey(stage)) } : undefined}
                   >
                     {stage}
                   </span>
@@ -461,10 +419,7 @@ export default function LeadsPage() {
                   <span className="mt-2 block h-[3px] w-12 bg-sunk md:w-16">
                     <span
                       className="block h-full transition-[width] duration-instrument ease-instrument"
-                      style={{
-                        width: `${pct}%`,
-                        background: spineFor(toneKey(stage)),
-                      }}
+                      style={{ width: `${pct}%`, background: spineFor(toneKey(stage)) }}
                     />
                   </span>
                 </button>
@@ -472,12 +427,7 @@ export default function LeadsPage() {
             })}
           </div>
 
-          {/* Search and source fold into the rail — small, right-aligned. */}
           <div className="flex w-full items-center gap-2 md:w-auto">
-            {/* The magnifier used to be absolutely positioned inside the box and the
-                text was pushed past it with `pl-8`. `.control` owns the padding of
-                every field in the product, so the utility lost and the placeholder
-                started underneath the icon. The field says what it is in words. */}
             <div className="min-w-0 flex-1 md:w-[240px] md:flex-none">
               <label className="sr-only" htmlFor="lead-search">
                 Search the sheet
@@ -516,17 +466,10 @@ export default function LeadsPage() {
       {showAddForm && (
         <Plate className="p-5">
           <div className="eyebrow">New intake ticket</div>
-          <form
-            onSubmit={handleAddLead}
-            className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
-          >
+          <form onSubmit={handleAddLead} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="new-lead-name" label="Name" required>
               {(f) => (
-                <input
-                  {...f}
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
+                <input {...f} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               )}
             </Field>
             <Field id="new-lead-phone" label="Phone">
@@ -553,11 +496,7 @@ export default function LeadsPage() {
             </Field>
             <Field id="new-lead-city" label="City">
               {(f) => (
-                <input
-                  {...f}
-                  value={form.city}
-                  onChange={(e) => setForm({ ...form, city: e.target.value })}
-                />
+                <input {...f} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
               )}
             </Field>
             <Field id="new-lead-jobtype" label="Job type">
@@ -586,11 +525,7 @@ export default function LeadsPage() {
                 </select>
               )}
             </Field>
-            <Field
-              id="new-lead-notes"
-              label="What they asked for"
-              className="sm:col-span-2"
-            >
+            <Field id="new-lead-notes" label="What they asked for" className="sm:col-span-2">
               {(f) => (
                 <textarea
                   {...f}
@@ -604,11 +539,7 @@ export default function LeadsPage() {
               <Button type="submit" variant="primary" disabled={saving}>
                 {saving ? "Logging…" : "Log lead"}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowAddForm(false)}
-              >
+              <Button type="button" variant="ghost" onClick={() => setShowAddForm(false)}>
                 Cancel
               </Button>
             </div>
@@ -616,12 +547,7 @@ export default function LeadsPage() {
         </Plate>
       )}
 
-      {/* THE SHEET — 7/5 split: the calls to make vs the leads already worked,
-          divided by a single vertical rule. */}
       <div className="grid grid-cols-1 gap-y-10 lg:grid-cols-[7fr_5fr] lg:gap-x-8">
-        {/* ON THE PHONE — the foreground instrument: fresh and aging calls, most
-            urgent on top, raised onto a plate so it reads as the thing in hand
-            against the quiet worked lane on the deck beside it. */}
         <section className="min-w-0">
           <div className="plate overflow-hidden">
             <div className="px-4 pt-3.5">
@@ -629,13 +555,8 @@ export default function LeadsPage() {
                 title="On the phone"
                 lamp="var(--amber)"
                 right={
-                  /* `0 TO CALL` printed over three rows with running clocks on them:
-                     the head counted only the fresh band while the lane also holds the
-                     cold one. It names both, so the number matches what is under it. */
                   <span className="eyebrow">
-                    {loading
-                      ? ""
-                      : `${live.length} fresh${cold.length ? ` · ${cold.length} gone cold` : ""}`}
+                    {loading ? "" : `${live.length} fresh${cold.length ? ` · ${cold.length} gone cold` : ""}`}
                   </span>
                 }
               />
@@ -645,70 +566,62 @@ export default function LeadsPage() {
                 <Skeleton lines={4} />
               </div>
             ) : callSheet.length === 0 ? (
-            <Lane>
-              {narrowed ? (
-                <Empty
-                  hint="The search box, the source list and the stage you picked decide what shows here. The search itself runs over the name, the phone and the job."
-                  action={
-                    <Button variant="ghost" onClick={clearFilters}>
-                      Clear search
-                    </Button>
-                  }
-                >
-                  No lead matches that
-                </Empty>
-              ) : total === 0 ? (
-                <Empty
-                  hint="Nothing has come in yet. Leads land here by themselves once the ad form or the website quiz posts to your intake link — and you can write one down by hand the moment the phone rings."
-                  action={
-                    <Button variant="ghost" onClick={() => setShowAddForm(true)}>
-                      Log a lead by hand
-                    </Button>
-                  }
-                >
-                  No leads yet
-                </Empty>
-              ) : (
-                <Empty hint="Every lead on the desk has been worked. New ones land at the top of this lane the minute they come in.">
-                  Nobody is waiting for a call
-                </Empty>
-              )}
-            </Lane>
-          ) : (
-            <Lane>
-              {live.length === 0 && (
-                <Empty hint="Everything below came in more than two days ago or has already been called.">
-                  Nobody fresh is waiting
-                </Empty>
-              )}
-              {live.map((lead) => (
-                <CallRow key={lead.id} lead={lead} />
-              ))}
+              <Lane>
+                {narrowed ? (
+                  <Empty
+                    hint="The search box, the source list and the stage you picked decide what shows here. The search itself runs over the name, the phone and the job."
+                    action={
+                      <Button variant="ghost" onClick={clearFilters}>
+                        Clear search
+                      </Button>
+                    }
+                  >
+                    No lead matches that
+                  </Empty>
+                ) : total === 0 ? (
+                  <Empty
+                    hint="Nothing has come in yet. Leads land here by themselves once the ad form or the website quiz posts to your intake link — and you can write one down by hand the moment the phone rings."
+                    action={
+                      <Button variant="ghost" onClick={() => setShowAddForm(true)}>
+                        Log a lead by hand
+                      </Button>
+                    }
+                  >
+                    No leads yet
+                  </Empty>
+                ) : (
+                  <Empty hint="Every lead on the desk has been worked. New ones land at the top of this lane the minute they come in.">
+                    Nobody is waiting for a call
+                  </Empty>
+                )}
+              </Lane>
+            ) : (
+              <Lane>
+                {live.length === 0 && (
+                  <Empty hint="Everything below came in more than two days ago or has already been called.">
+                    Nobody fresh is waiting
+                  </Empty>
+                )}
+                {live.map((lead) => (
+                  <CallRow key={lead.id} lead={lead} />
+                ))}
 
-              {cold.length > 0 && (
-                <BandRule>Gone cold · nobody here has called back for 2 days</BandRule>
-              )}
-              {cold.map((lead) => (
-                <CallRow key={lead.id} lead={lead} />
-              ))}
+                {cold.length > 0 && <BandRule>Gone cold · nobody here has called back for 2 days</BandRule>}
+                {cold.map((lead) => (
+                  <CallRow key={lead.id} lead={lead} />
+                ))}
 
-              {called.length > 0 && <BandRule>Called already · waiting on them</BandRule>}
-              {called.map((lead) => (
-                <CallRow key={lead.id} lead={lead} />
-              ))}
-            </Lane>
-          )}
+                {called.length > 0 && <BandRule>Called already · waiting on them</BandRule>}
+                {called.map((lead) => (
+                  <CallRow key={lead.id} lead={lead} />
+                ))}
+              </Lane>
+            )}
           </div>
         </section>
 
-        {/* WORKED — the quiet background lane, on the bare deck: verified up top,
-            the closed book compressed below. */}
         <section className="min-w-0 lg:pt-1">
-          <LaneHead
-            title="Worked"
-            count={loading ? undefined : verified.length + closed.length}
-            unit="lead"
-          />
+          <LaneHead title="Worked" count={loading ? undefined : verified.length + closed.length} unit="lead" />
           {loading ? (
             <Skeleton lines={3} />
           ) : verified.length === 0 && closed.length === 0 ? (
@@ -737,13 +650,9 @@ export default function LeadsPage() {
                     aria-label={`Open the lead card for ${lead.name}`}
                   />
                   <div className="flex items-baseline justify-between gap-3">
-                    <p className="t-row truncate font-bold leading-tight text-ink">
-                      {lead.name}
-                    </p>
+                    <p className="t-row truncate font-bold leading-tight text-ink">{lead.name}</p>
                     <WoNumber id={lead.id} prefix="LD" date={lead.createdAt} />
                   </div>
-                  {/* A verified lead is the one you ring to book the date, so the
-                      number is a tap here as well as on the call sheet. */}
                   <p className="t-body mt-1 flex items-baseline gap-x-2 text-ink-2">
                     {lead.phone && (
                       <a
@@ -753,12 +662,8 @@ export default function LeadsPage() {
                         {lead.phone}
                       </a>
                     )}
-                    <span className="truncate">
-                      {[lead.jobType, lead.city].filter(Boolean).join(" · ")}
-                    </span>
+                    <span className="truncate">{[lead.jobType, lead.city].filter(Boolean).join(" · ")}</span>
                   </p>
-                  {/* The reading stays on a worked lead: it is the proof the desk is
-                      fast, and the only place that number can be seen afterwards. */}
                   <div className="relative z-[1] mt-2 flex items-end justify-between gap-3">
                     <LeadWait lead={lead} compact />
                     <Button variant="primary" onClick={(e) => openJob(e, lead.id)}>
@@ -767,9 +672,7 @@ export default function LeadsPage() {
                   </div>
                 </Row>
               ))}
-              {verified.length > 0 && closed.length > 0 && (
-                <BandRule>Closed</BandRule>
-              )}
+              {verified.length > 0 && closed.length > 0 && <BandRule>Closed</BandRule>}
               {closed.map((lead) => (
                 <Row
                   key={lead.id}
@@ -783,10 +686,7 @@ export default function LeadsPage() {
                   />
                   <div className="flex items-baseline gap-3">
                     <span className="t-body truncate text-ink-2">{lead.name}</span>
-                    <span
-                      className="eyebrow ml-auto shrink-0"
-                      style={{ color: textToneFor(lead.status) }}
-                    >
+                    <span className="eyebrow ml-auto shrink-0" style={{ color: textToneFor(lead.status) }}>
                       {lead.status}
                     </span>
                     {lead.status === "CONVERTED" && lead.project && (

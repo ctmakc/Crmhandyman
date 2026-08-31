@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyNewLead } from "@/lib/notify";
 import { startLeadAutomation } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
+import { parseInboundLeadEmail } from "@/lib/marketplace-email";
 import crypto from "crypto";
 import { declaredTooLarge } from "@/lib/request-body";
 import { throttle } from "../guard";
@@ -36,24 +37,17 @@ function configuredAddress(config: string | null): string | null {
   return null;
 }
 
-const DEDUP_WINDOW_DAYS = Number(process.env.LEAD_DEDUP_DAYS || 30);
-
-function detectSource(from: string, subject: string): string {
-  const combined = `${from} ${subject}`.toLowerCase();
-  if (combined.includes("homestars")) return "HOMESTARS";
-  if (combined.includes("kijiji")) return "KIJIJI";
-  if (combined.includes("google")) return "GOOGLE";
-  return "EMAIL";
-}
-
 function extractEmailFromText(text: string): string | undefined {
   const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   return match?.[0];
 }
 
-function extractPhoneFromText(text: string): string | undefined {
-  const match = text.match(/(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
-  return match?.[0];
+function messageId(formData: FormData): string | undefined {
+  for (const key of ["Message-Id", "Message-ID", "message-id", "messageId"]) {
+    const value = formData.get(key)?.toString().trim();
+    if (value) return value;
+  }
+  return undefined;
 }
 
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
@@ -78,18 +72,14 @@ export async function POST(req: NextRequest) {
 
   const from = formData.get("From")?.toString() || formData.get("sender")?.toString() || "";
   const subject = formData.get("Subject")?.toString() || formData.get("subject")?.toString() || "";
-  const bodyText = formData.get("body-plain")?.toString() || formData.get("stripped-text")?.toString() || "";
+  const bodyText =
+    formData.get("body-plain")?.toString() || formData.get("stripped-text")?.toString() || "";
 
-  const nameMatch = from.match(/^(.+?)\s*<.+>$/) || from.match(/^(.+?)@/);
-  const name = nameMatch?.[1]?.trim() || "Email Lead";
-  const email = extractEmailFromText(from) || undefined;
-  const phone = extractPhoneFromText(bodyText) || undefined;
-  const source = detectSource(from, subject);
-
-  const recipient = (formData.get("recipient")?.toString() ||
+  const recipient = (
+    formData.get("recipient")?.toString() ||
     formData.get("To")?.toString() ||
-    "")
-    .toLowerCase();
+    ""
+  ).toLowerCase();
   const recipientAddress = extractEmailFromText(recipient)?.toLowerCase();
 
   const candidates = await prisma.channelIntegration.findMany({
@@ -105,23 +95,46 @@ export async function POST(req: NextRequest) {
   }
 
   const tenantId = emailIntegration.tenantId;
+  const parsed = parseInboundLeadEmail({
+    from,
+    subject,
+    body: bodyText,
+    messageId: messageId(formData),
+  });
 
-  if (email) {
-    const since = new Date(Date.now() - DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const existing = await prisma.lead.findFirst({
-      where: { email, tenantId, createdAt: { gte: since } },
-    });
-    if (existing) return NextResponse.json({ ok: true, deduped: true });
-  }
+  // Provider notifications are commonly retried by the mail platform. Contact-address
+  // dedup was the wrong primitive here: it collapsed a customer's second legitimate move
+  // into their first one. RFC Message-ID (or a stable notification hash when it is absent)
+  // identifies the notification rather than the person.
+  const replay = await prisma.lead.findFirst({
+    where: { tenantId, sourceLeadId: parsed.sourceLeadId },
+    select: { id: true },
+  });
+  if (replay) return NextResponse.json({ ok: true, deduped: true });
+
+  const providerFacts = [
+    `Inbound email source: ${parsed.source}`,
+    `Subject: ${subject}`,
+    `Sender: ${from}`,
+    parsed.providerLeadId ? `Provider lead ID: ${parsed.providerLeadId}` : null,
+  ].filter(Boolean);
+  const raw = bodyText.trim().slice(0, 2_000);
+  const notes = defangStamps(
+    `${providerFacts.join("\n")}${raw ? `\n\nRaw notification:\n${raw}` : ""}`
+  );
 
   const created = await prisma.lead.create({
     data: {
       tenantId,
-      name,
-      email,
-      phone,
-      source: source as never,
-      notes: defangStamps(`Subject: ${subject}\n\n${bodyText.slice(0, 500)}`),
+      name: parsed.name,
+      email: parsed.email,
+      phone: parsed.phone,
+      address: parsed.address,
+      city: parsed.city,
+      source: parsed.source,
+      sourceLeadId: parsed.sourceLeadId,
+      jobType: parsed.jobType,
+      notes,
       status: "NEW",
     },
   });
@@ -129,5 +142,5 @@ export async function POST(req: NextRequest) {
   await notifyNewLead(tenantId, created.id);
   void startLeadAutomation(tenantId, created.id);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, leadId: created.id, source: parsed.source });
 }
