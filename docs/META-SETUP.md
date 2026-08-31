@@ -13,11 +13,11 @@ The CRM stores:
 - campaign id/name;
 - ad set id/name;
 - ad id/name;
-- form id/name;
+- form id;
 - Meta platform / organic flag when Meta supplies them;
 - lead creation time.
 
-These marketing facts are stored separately from human notes in `Lead.sourceMeta` and appear on the lead card under **Attribution**.
+These marketing facts are stored separately from human notes in `Lead.sourceMeta` and appear on the lead card under **Attribution**. HandyCRM does not currently make a second Graph request merely to resolve the form's display name; `form_id` is the stable attribution key and avoids adding another failure point to lead ingestion.
 
 Instagram business-account messages use the separate `/api/webhooks/instagram` route.
 
@@ -98,10 +98,11 @@ adset_name
 ad_id
 ad_name
 form_id
-form_name
 is_organic
 platform
 ```
+
+`form_name` is intentionally not requested from the Lead object. If the product later needs human-readable form names in reports, resolve them separately by `form_id` and treat failure of that optional lookup as non-fatal.
 
 If Meta omits an optional attribution field, the lead is still accepted; only that attribution row stays absent.
 
@@ -129,7 +130,7 @@ A successful Beaver acceptance is not merely “a row appeared”. Verify all of
 2. Name and phone are correct.
 3. Source is `FACEBOOK`.
 4. The lead card shows **Attribution**.
-5. Campaign / ad set / ad / form values match the Meta test source when Meta supplied them.
+5. Campaign / ad set / ad / form ID values match the Meta test source when Meta supplied them.
 6. A repeat delivery of the same Meta `leadgen_id` does not create a duplicate.
 7. Owner notification is delivered if configured.
 8. If Beaver SMS automation is enabled and the lead has a phone, the configured acknowledgement/SLA path starts without falsifying the human response clock.
