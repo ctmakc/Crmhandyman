@@ -9,6 +9,7 @@ import DemoBanner from "@/components/DemoBanner";
 import OfflineBar from "@/components/OfflineBar";
 import QuickJump from "@/components/QuickJump";
 import LeadSalesDock from "@/components/LeadSalesDock";
+import LeadFollowUpInbox from "@/components/LeadFollowUpInbox";
 import Toaster from "@/components/ui/Toaster";
 
 /**
@@ -47,6 +48,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </div>
       <QuickJump />
       <LeadSalesDock />
+      <LeadFollowUpInbox />
       <Toaster />
     </div>
   );
