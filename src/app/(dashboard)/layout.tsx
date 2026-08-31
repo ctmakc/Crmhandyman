@@ -8,6 +8,7 @@ import TopBar from "@/components/layout/TopBar";
 import DemoBanner from "@/components/DemoBanner";
 import OfflineBar from "@/components/OfflineBar";
 import QuickJump from "@/components/QuickJump";
+import LeadSalesDock from "@/components/LeadSalesDock";
 import Toaster from "@/components/ui/Toaster";
 
 /**
@@ -45,6 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <main className="deck-grid flex-1 overflow-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
       <QuickJump />
+      <LeadSalesDock />
       <Toaster />
     </div>
   );
