@@ -158,8 +158,9 @@ export default function LeadCostsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="measure t-meta text-ink-2">
               Enter the amount actually charged for that specific contact. Leave blank if
-              the marketplace did not charge for the lead. Monthly Meta/Google campaign
-              invoices belong in Finance as channel ad spend, not here.
+              the marketplace did not charge for the lead. Do not also book the same Bark,
+              HomeStars or marketplace money in Finance — one payment gets one accounting
+              path. Meta/general Google campaign invoices belong in Finance instead.
             </p>
             <label className="eyebrow flex cursor-pointer items-center gap-2 whitespace-nowrap">
               <input
