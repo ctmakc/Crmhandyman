@@ -17,8 +17,9 @@ describe("Meta Graph integration", () => {
   it("defaults to the current v26.0 contract and requests attribution fields", () => {
     delete process.env.META_GRAPH_VERSION;
     expect(metaGraphVersion()).toBe("v26.0");
-    const url = decodeURIComponent(facebookLeadUrl("lead 123"));
-    expect(url).toContain("https://graph.facebook.com/v26.0/lead%20123?");
+    const rawUrl = facebookLeadUrl("lead 123");
+    expect(rawUrl).toContain("https://graph.facebook.com/v26.0/lead%20123?");
+    const decodedUrl = decodeURIComponent(rawUrl);
     for (const field of [
       "campaign_id",
       "campaign_name",
@@ -29,9 +30,9 @@ describe("Meta Graph integration", () => {
       "form_id",
       "form_name",
     ]) {
-      expect(url).toContain(field);
+      expect(decodedUrl).toContain(field);
     }
-    expect(url).not.toContain("access_token=");
+    expect(rawUrl).not.toContain("access_token=");
   });
 
   it("accepts a valid operator override but rejects malformed versions", () => {
