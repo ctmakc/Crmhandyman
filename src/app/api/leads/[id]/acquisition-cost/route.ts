@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
+import { money, record } from "@/lib/audit";
 import {
   leadFeeApiValue,
   leadFeeDescription,
@@ -12,7 +13,7 @@ import {
 async function scopedLead(tenantId: string, id: string) {
   return prisma.lead.findFirst({
     where: { tenantId, id },
-    select: { id: true, source: true, createdAt: true },
+    select: { id: true, name: true, source: true, createdAt: true },
   });
 }
 
@@ -48,7 +49,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
-  const { tenantId } = guard.identity;
+  const { tenantId, id: actorId } = guard.identity;
 
   const lead = await scopedLead(tenantId, params.id);
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -60,7 +61,18 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const id = leadFeeExpenseId(lead.id);
   if (parsed.cents === null) {
-    await prisma.expense.deleteMany({ where: { id, tenantId, projectId: null } });
+    const removed = await prisma.expense.deleteMany({ where: { id, tenantId, projectId: null } });
+    if (removed.count > 0) {
+      await record({
+        tenantId,
+        actor: { id: actorId },
+        action: "lead.acquisition_cost",
+        entity: "Lead",
+        entityId: lead.id,
+        summary: `Cleared the ${lead.source} direct lead cost for ${lead.name}`,
+        meta: { source: lead.source, amountCents: null },
+      });
+    }
     return NextResponse.json({ amount: null, source: lead.source });
   }
 
@@ -82,6 +94,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       date: lead.createdAt,
     },
     select: { amountCents: true },
+  });
+
+  await record({
+    tenantId,
+    actor: { id: actorId },
+    action: "lead.acquisition_cost",
+    entity: "Lead",
+    entityId: lead.id,
+    summary: `Set the ${lead.source} direct lead cost for ${lead.name} to ${money(fee.amountCents)}`,
+    meta: { source: lead.source, amountCents: fee.amountCents },
   });
 
   return NextResponse.json({ amount: leadFeeApiValue(fee.amountCents), source: lead.source });
