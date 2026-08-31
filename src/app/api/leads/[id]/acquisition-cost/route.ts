@@ -6,6 +6,7 @@ import {
   leadFeeDescription,
   leadFeeExpenseId,
   parseLeadFee,
+  supportsDirectLeadFee,
 } from "@/lib/lead-fee";
 
 async function scopedLead(tenantId: string, id: string) {
@@ -13,6 +14,13 @@ async function scopedLead(tenantId: string, id: string) {
     where: { tenantId, id },
     select: { id: true, source: true, createdAt: true },
   });
+}
+
+function unsupportedSource(source: string) {
+  return NextResponse.json(
+    { error: `${source} uses channel-level spend, not a direct lead fee` },
+    { status: 400 }
+  );
 }
 
 /** Owner-only: field crew should not see what the shop pays to acquire customers. */
@@ -23,6 +31,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
   const lead = await scopedLead(tenantId, params.id);
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  if (!supportsDirectLeadFee(lead.source)) return unsupportedSource(lead.source);
 
   const fee = await prisma.expense.findFirst({
     where: { id: leadFeeExpenseId(lead.id), tenantId, projectId: null },
@@ -43,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const lead = await scopedLead(tenantId, params.id);
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  if (!supportsDirectLeadFee(lead.source)) return unsupportedSource(lead.source);
 
   const body = await req.json().catch(() => null);
   const parsed = parseLeadFee(body?.amount);
