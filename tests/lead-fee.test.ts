@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  DIRECT_FEE_SOURCES,
   leadFeeApiValue,
   leadFeeDescription,
   leadFeeExpenseId,
   leadIdFromFeeExpenseId,
   parseLeadFee,
+  supportsDirectLeadFee,
 } from "@/lib/lead-fee";
 import { adSpendChannel } from "@/lib/attribution";
 
@@ -19,6 +21,21 @@ describe("per-lead acquisition fees", () => {
     const description = leadFeeDescription("BARK", "cm123");
     expect(description).toContain("direct lead fee");
     expect(adSpendChannel(description)).toBe("BARK");
+  });
+
+  it("only allows sources that can charge for a concrete lead", () => {
+    expect(DIRECT_FEE_SOURCES).toEqual([
+      "GOOGLE_LSA",
+      "HOMESTARS",
+      "BARK",
+      "URBANTASKER",
+      "MOVINGWALDO",
+    ]);
+    expect(supportsDirectLeadFee("BARK")).toBe(true);
+    expect(supportsDirectLeadFee("GOOGLE_LSA")).toBe(true);
+    expect(supportsDirectLeadFee("FACEBOOK")).toBe(false);
+    expect(supportsDirectLeadFee("GOOGLE")).toBe(false);
+    expect(supportsDirectLeadFee("MANUAL")).toBe(false);
   });
 
   it("accepts dollars, preserves explicit zero and lets blank clear the fee", () => {
