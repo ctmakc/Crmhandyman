@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("Meta Graph integration", () => {
-  it("defaults to the current v26.0 contract and requests attribution fields", () => {
+  it("defaults to the current v26.0 contract and requests supported attribution fields", () => {
     delete process.env.META_GRAPH_VERSION;
     expect(metaGraphVersion()).toBe("v26.0");
     const rawUrl = facebookLeadUrl("lead 123");
@@ -28,10 +28,12 @@ describe("Meta Graph integration", () => {
       "ad_id",
       "ad_name",
       "form_id",
-      "form_name",
     ]) {
       expect(decodedUrl).toContain(field);
     }
+    // Lead exposes form_id. Asking the Lead edge for form_name can make the entire
+    // Graph request fail; resolving a form's name is a separate lookup and is optional.
+    expect(decodedUrl).not.toContain("form_name");
     expect(rawUrl).not.toContain("access_token=");
   });
 
