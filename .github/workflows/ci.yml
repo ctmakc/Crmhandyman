@@ -41,8 +41,20 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Validate production shell and compose files
+        env:
+          NEXTAUTH_SECRET: ci-only-secret
+          NEXTAUTH_URL: https://crm.itopsi.com
+        run: |
+          bash -n \
+            deploy/hostd/deploy.sh \
+            deploy/hostd/status.sh \
+            deploy/hostd/backup-cron.sh \
+            deploy/hostd/healthwatch.sh
+          docker compose -f deploy/hostd/docker-compose.prod.yml config >/dev/null
+
       # Docker runtime intentionally omits ts-node. Prove the operator provisioner can be
-      # emitted as ordinary JS exactly the way the Dockerfile ships it into production.
+      # emitted and actually started as ordinary JS exactly the way the Dockerfile ships it.
       - name: Compile production tenant provisioner
         run: |
           rm -rf /tmp/operator-scripts
@@ -54,6 +66,7 @@ jobs:
             --esModuleInterop \
             --skipLibCheck
           test -s /tmp/operator-scripts/provision-tenant.js
+          node /tmp/operator-scripts/provision-tenant.js --help | grep -q "provision-tenant"
 
       - name: Tests
         run: npm test
