@@ -32,6 +32,7 @@ const TONE: Record<string, string> = {
   "estimate.reject": "var(--rose)",
   "estimate.status": "var(--sky)",
   "lead.convert": "var(--emerald)",
+  "lead.acquisition_cost": "var(--amber)",
   "lead.activity.sms_sent": "var(--sky)",
   "lead.activity.sms_received": "var(--sky)",
   "lead.activity.sms_failed": "var(--rose)",
@@ -106,7 +107,7 @@ export default async function ActionLogPage({
       <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 07"
+        eyebrow="Desk setup · 08"
         title="Action log"
         sub="Every change to money, paper, access and lead communication, in the order it happened. Entries are written once and never edited."
       />
