@@ -23,6 +23,16 @@ describe("detectInboundEmailSource", () => {
     expect(detectInboundEmailSource("hello@urbantasker.com", "New customer request", "")).toBe("URBANTASKER");
     expect(detectInboundEmailSource("partners@movingwaldo.com", "New moving referral", "")).toBe("MOVINGWALDO");
   });
+
+  it("does not classify ordinary customer prose as a marketplace", () => {
+    expect(
+      detectInboundEmailSource(
+        "Mary Brown <mary@example.ca>",
+        "Need movers next Friday",
+        "I found you on Google. Also our dog barks when someone comes to the door."
+      )
+    ).toBe("EMAIL");
+  });
 });
 
 describe("parseInboundLeadEmail", () => {
