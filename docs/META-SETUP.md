@@ -1,174 +1,178 @@
-# Facebook и Instagram: как подключить приём заявок
+# Meta Lead Ads / Instagram — production setup
 
-Инструкция для владельца. Технических знаний она требует по минимуму: везде, где
-надо что-то нажать в кабинете Meta, шаги расписаны по одному.
+This is the current operator guide for HandyCRM on `itopsi.com`.
 
-> **Честно о текущем положении.** Пока аккаунт Meta заблокирован, подключить канал
-> физически невозможно: все ключи выдаёт кабинет разработчика Meta, а он открывается
-> только из живого аккаунта. Код в CRM полностью готов и проверен — как только
-> аккаунт разблокируют, останется пройти шаги ниже и вставить три ключа. Ничего
-> дописывать не придётся.
+## What the integration does
 
-## Что это даёт
+Facebook Lead Ads are delivered to HandyCRM by webhook. The webhook contains the lead id and page id; HandyCRM then retrieves the full lead from Meta Graph API and creates a tenant-scoped CRM lead.
 
-- **Facebook Lead Ads.** Человек заполняет вашу лид-форму в рекламе Facebook —
-  и через несколько секунд заявка уже лежит в CRM: имя, телефон, город, комментарий.
-  Владельцу тут же уходит уведомление (Telegram и/или почта, как настроено).
-- **Instagram.** Сообщение в директ вашего бизнес-аккаунта со словами про ремонт,
-  установку, покраску и т.п. превращается в заявку. Важно знать заранее: фильтр
-  ловит английские слова (repair, fix, install, paint, quote, estimate, help,
-  service и похожие). Сообщение «привет» без сути заявкой не станет — это защита
-  от мусора в списке лидов.
+The CRM stores:
 
-## Какие ключи участвуют и где они живут
+- name, phone, email, address/city and service/job type;
+- Meta lead id for replay protection;
+- campaign id/name;
+- ad set id/name;
+- ad id/name;
+- form id/name;
+- Meta platform / organic flag when Meta supplies them;
+- lead creation time.
 
-Всего пять значений. Три живут на сервере (в файле настроек `.env`, их вносит тот,
-кто обслуживает сервер), два — в самой CRM на экране настроек.
+These marketing facts are stored separately from human notes in `Lead.sourceMeta` and appear on the lead card under **Attribution**.
 
-| Значение | Где взять | Куда вписать |
-|---|---|---|
-| `META_APP_ID` | Кабинет разработчика Meta → ваше приложение → Settings → Basic → App ID | `.env` на сервере |
-| `META_APP_SECRET` | Там же, строка App Secret (кнопка Show) | `.env` на сервере |
-| `META_WEBHOOK_VERIFY_TOKEN` | Придумываете сами — любая длинная случайная строка | `.env` на сервере **и** в поле Verify token в кабинете Meta (должны совпасть буква в букву) |
-| Page access token | Кабинет Meta, шаг 4 ниже | CRM: Settings → Intake channels → Facebook Lead Ads → поле **Page access token** |
-| Page ID | Страница Facebook → About → Page ID (или тот же Graph API Explorer) | CRM: то же место → поле **Facebook page id** |
+Instagram business-account messages use the separate `/api/webhooks/instagram` route.
 
-Про поле **Webhook secret** на том же экране CRM: туда вписывается тот же App Secret.
-Проверку подписи сервер ведёт по значению из `.env`, поле в CRM хранит копию для
-полноты картины канала.
+## Server environment
 
-Без `META_APP_SECRET` сервер отклоняет все доставки от Meta — это сделано специально:
-пока ключа нет, никто посторонний не может накидать в CRM выдуманных заявок.
+Required:
 
-## Пошагово
-
-### Шаг 1. Создать приложение Meta
-
-1. Зайдите на <https://developers.facebook.com/apps/> под аккаунтом, который
-   управляет вашей бизнес-страницей.
-2. **Create App** → тип **Business** → имя произвольное (например, «HandymanPro CRM»).
-3. После создания откройте **Settings → Basic** и выпишите **App ID** и **App Secret**.
-   Это `META_APP_ID` и `META_APP_SECRET`.
-
-### Шаг 2. Вписать ключи на сервере
-
-В `.env` на сервере заполняются три строки:
-
-```
-META_APP_ID="ваш App ID"
-META_APP_SECRET="ваш App Secret"
-META_WEBHOOK_VERIFY_TOKEN="любая-длинная-случайная-строка"
+```env
+META_APP_ID="..."
+META_APP_SECRET="..."
+META_WEBHOOK_VERIFY_TOKEN="..."
 ```
 
-После правки `.env` приложение перезапускается (это делает тот, кто обслуживает
-сервер). Verify token — просто пароль-рукопожатие между Meta и нашим сервером;
-подойдёт любая случайная строка, главное потом вставить её же в кабинет Meta.
+Optional Graph version override:
 
-### Шаг 3. Подписать приложение на вебхуки
+```env
+META_GRAPH_VERSION="v26.0"
+```
 
-1. В приложении Meta добавьте продукт **Webhooks**.
-2. Выберите объект **Page** → **Subscribe to this object**.
-3. Meta спросит два значения:
-   - **Callback URL** — адрес нашего сервера:
-     `https://handymanpro.ca/api/webhooks/facebook`
-     (если ваш домен другой — та же дорожка `/api/webhooks/facebook` на вашем домене).
-   - **Verify token** — та самая строка из `META_WEBHOOK_VERIFY_TOKEN`.
-4. Нажмите **Verify and Save**. Meta постучится на наш сервер, сервер ответит —
-   если токены совпали, галочка загорится зелёным.
-5. В списке полей подпишитесь на **leadgen** — это и есть заявки из лид-форм.
+The application currently defaults to `v26.0`. Do not pin an old Graph version in code. Meta retires Graph versions on a rolling schedule, so a future version bump should normally be an environment/configuration change followed by CI and a real test lead.
 
-Для Instagram-сообщений то же самое повторяется с объектом **Instagram**
-(поле **messages**) и адресом `https://handymanpro.ca/api/webhooks/instagram`.
-Verify token один и тот же на оба канала.
+`META_APP_SECRET` is load-bearing: if it is absent, webhook deliveries are rejected. The webhook verifies `X-Hub-Signature-256` against the raw request body.
 
-### Шаг 4. Получить Page access token
+The Page access token is stored per tenant in HandyCRM under the Facebook integration. The token is sent to Graph API in the `Authorization: Bearer ...` header; it is not placed in the request URL.
 
-Токен страницы — это разрешение, по которому CRM забирает у Meta содержимое заявки.
+## Meta app setup
 
-1. В приложении добавьте продукт **Facebook Login for Business** (или используйте
-   **Graph API Explorer**: <https://developers.facebook.com/tools/explorer/>).
-2. В Graph API Explorer выберите ваше приложение, нажмите **Get Page Access Token**,
-   выберите вашу страницу.
-3. Приложению нужны разрешения **pages_show_list**, **pages_read_engagement**,
-   **leads_retrieval** — Explorer предложит их отметить.
-4. Скопируйте выданный токен (длинная строка на `EAA...`).
-5. Токены Explorer живут около часа. Для постоянной работы обменяйте его на
-   долгоживущий (кнопка с «i» рядом с токеном → Open in Access Token Tool →
-   Extend Access Token) — такой живёт ~60 дней, а токен страницы, полученный
-   через долгоживущий пользовательский, вовсе бессрочный. Если этот абзац звучит
-   мудрёно — просто передайте его тому, кто будет настраивать: это стандартная
-   процедура.
+1. Open Meta for Developers and create/use the Business app that owns the integration.
+2. In **Settings → Basic**, record App ID and App Secret.
+3. Add the Webhooks product.
+4. Subscribe the **Page** object to `leadgen`.
+5. Set the callback URL to:
 
-### Шаг 5. Вписать значения в CRM
+```text
+https://crm.itopsi.com/api/webhooks/facebook
+```
 
-Settings → **Intake channels** (экран «Настройки → Интеграции»):
+6. Use exactly the same value as `META_WEBHOOK_VERIFY_TOKEN` for the webhook verify token.
+7. Subscribe the Beaver Movers Facebook Page to the app for `leadgen`.
 
-- Секция **Facebook Lead Ads**:
-  - **Page access token** — токен из шага 4;
-  - **Facebook page id** — числовой ID вашей страницы;
-  - **Webhook secret** — App Secret из шага 1.
-  - Кнопка **Save channel**.
-- Секция **Instagram messages** (если нужен директ):
-  - **Instagram access token** — токен с доступом к Instagram-аккаунту;
-  - **Instagram business account id** — числовой ID бизнес-аккаунта Instagram
-    (он отличается от ID страницы Facebook; его показывает Graph API Explorer
-    запросом `me/accounts?fields=instagram_business_account`).
-  - **Save channel**.
+For Instagram messages, configure the Instagram business-account webhook separately and use:
 
-Page ID обязателен: по нему сервер понимает, чья это заявка. Заявка, пришедшая
-с другим ID страницы, откладывается в сторону — так лиды одной компании
-гарантированно никогда не попадут в CRM другой.
+```text
+https://crm.itopsi.com/api/webhooks/instagram
+```
 
-### Шаг 6. Подписать страницу на приложение
+## Permissions / token
 
-Через Graph API Explorer (или это сделает настройщик одной командой):
-запрос `POST /{page-id}/subscribed_apps?subscribed_fields=leadgen` с токеном
-страницы. Без этой подписки Meta знает про вебхук, но молчит про вашу страницу.
+The Page token used by HandyCRM must be able to retrieve Lead Ads data for the configured Page. The Meta app/account setup normally needs the relevant Page and lead-retrieval permissions, including `leads_retrieval` and the Page permissions required by the current Meta flow.
 
-## Проверка: тестовая заявка
+Do not paste tokens into Git, docs, tickets or this memory repository. Enter them only in the production environment / HandyCRM integration settings.
 
-У Meta есть штатный инструмент **Lead Ads Testing Tool**:
-<https://developers.facebook.com/tools/lead-ads-testing/>
+## HandyCRM tenant setup
 
-1. Выберите вашу страницу и лид-форму (или создайте тестовую форму).
-2. Нажмите **Preview form**, заполните, отправьте — либо сразу **Create lead**.
-3. Через несколько секунд откройте в CRM экран **Leads**: тестовая заявка должна
-   стоять первой, источник — FACEBOOK.
-4. Если настроены уведомления (Settings → Notifications) — придёт и пинг с именем
-   и телефоном.
+In the Beaver Movers workspace:
 
-Повторная отправка того же тестового лида второй строки в CRM не создаст: сервер
-узнаёт заявку по её номеру у Meta и дубликаты пропускает. Для повторного теста
-нажмите в инструменте **Delete lead** и создайте заново.
+**Settings → Intake channels → Facebook Lead Ads**
 
-## Как называть поля в лид-форме
+Set:
 
-CRM разбирает заявку по именам полей формы. Чтобы всё легло по местам, используйте
-в форме стандартные поля Meta:
+- Page access token;
+- Facebook Page ID;
+- active = on.
 
-| Поле формы | Куда попадает в CRM |
-|---|---|
-| Full name (или First + Last name) | Имя |
-| Email | Почта |
-| Phone number | Телефон |
-| Street address | Адрес |
-| City | Город |
-| Своё поле с «job type» или «service» в имени | Тип работы |
-| Своё поле с «message» или «comments» в имени | Заметки |
+The Page ID is the tenant-routing key. A Facebook lead is accepted only when its `page_id` matches one active Facebook integration. This prevents one customer's Page from feeding another tenant.
 
-## Если что-то не работает
+## What HandyCRM asks Graph API for
 
-| Симптом | Причина и что делать |
-|---|---|
-| Meta пишет «The callback URL or verify token couldn't be validated» | Строка Verify token в кабинете Meta и `META_WEBHOOK_VERIFY_TOKEN` в `.env` различаются (лишний пробел тоже считается). Сверьте буква в букву и повторите Verify and Save |
-| Тестовая заявка не появляется в Leads | Проверьте по порядку: 1) страница подписана на приложение (шаг 6); 2) **Facebook page id** в CRM совпадает с ID страницы, из которой шлёте тест; 3) токен в поле Page access token живой (см. ниже); 4) канал сохранён с зелёной галочкой Save |
-| В логах сервера «META_APP_SECRET is unset — delivery refused» | В `.env` пустой App Secret. Сервер в этом состоянии отклоняет всё подряд — заполните и перезапустите |
-| В логах «Invalid signature» на каждой доставке | App Secret в `.env` от другого приложения Meta. Возьмите Secret именно того приложения, где настроен вебхук |
-| В логах «arrived without a page id — skipped» | Заявка пришла без ID страницы — такое бывает у некоторых тестовых доставок из кабинета. Реальные заявки из рекламы ID несут всегда |
-| Заявки шли и перестали | Скорее всего истёк Page access token (60-дневный). Получите свежий (шаг 4) и пересохраните канал в CRM |
-| Повторный тест из Testing Tool «не приходит» | Это дубликат — он отсеян намеренно. Delete lead в инструменте, затем новый Create lead |
-| Сообщение в Instagram не стало заявкой | Фильтр пропускает только сообщения со словами о работе (repair, fix, install, quote…). Проверьте также, что **Instagram business account id** в CRM совпадает с ID аккаунта, куда пришло сообщение |
+The lead retrieval request includes:
 
-Журнал CRM (Settings → Журнал) показывает каждую принятую заявку и каждое
-уведомление, включая неудачные, — это первое место, куда стоит смотреть при споре
-«дошло / не дошло».
+```text
+field_data
+created_time
+campaign_id
+campaign_name
+adset_id
+adset_name
+ad_id
+ad_name
+form_id
+form_name
+is_organic
+platform
+```
+
+If Meta omits an optional attribution field, the lead is still accepted; only that attribution row stays absent.
+
+## Form-field mapping
+
+Prefer Meta's standard lead-form names:
+
+| Meta field | HandyCRM |
+| --- | --- |
+| `full_name`, or `first_name` + `last_name` | Name |
+| `email` | Email |
+| `phone_number` / `phone` | Phone |
+| `street_address` | Address |
+| `city` | City |
+| custom field containing `job_type` or `service` | Job type |
+| custom field containing `message` or `comments` | Notes |
+
+## Production acceptance test
+
+Use Meta's Lead Ads Testing Tool or a real unpublished/test campaign form.
+
+A successful Beaver acceptance is not merely “a row appeared”. Verify all of these:
+
+1. The lead appears once in `https://beaver-movers.itopsi.com/leads`.
+2. Name and phone are correct.
+3. Source is `FACEBOOK`.
+4. The lead card shows **Attribution**.
+5. Campaign / ad set / ad / form values match the Meta test source when Meta supplied them.
+6. A repeat delivery of the same Meta `leadgen_id` does not create a duplicate.
+7. Owner notification is delivered if configured.
+8. If Beaver SMS automation is enabled and the lead has a phone, the configured acknowledgement/SLA path starts without falsifying the human response clock.
+
+Do this acceptance before putting meaningful paid traffic through the form.
+
+## Website campaign attribution
+
+Beaver's own keyed website intake is separate from Meta Lead Ads. The website endpoint can store these structured values when the landing sends them:
+
+```text
+utm_source
+utm_medium
+utm_campaign
+utm_content
+utm_term
+event_source_url / page / landing_page
+referrer_url / referrer
+fbclid
+gclid
+```
+
+They appear in the same **Attribution** block on the lead card. This lets a Facebook ad that lands on Beaver's website be compared with a native Facebook Lead Ad without flattening both into a generic source label.
+
+## Troubleshooting
+
+**Webhook verification fails** — confirm callback URL and `META_WEBHOOK_VERIFY_TOKEN` match exactly.
+
+**Every POST is `Invalid signature`** — confirm `META_APP_SECRET` belongs to the exact Meta app delivering the webhook.
+
+**Lead arrives without Page ID** — HandyCRM skips it because it cannot route the lead to a tenant safely.
+
+**Webhook arrives but no lead is created** — confirm an active Facebook integration exists for that Page ID and has a usable Page access token.
+
+**Graph retrieval returns an error** — check token permissions/expiry first. If Meta has retired the configured Graph version, update `META_GRAPH_VERSION`, run CI, then re-test with a real lead.
+
+**Lead exists but Attribution is empty** — confirm the Graph response actually contains campaign/ad/form fields. The lead itself is deliberately not rejected when optional attribution fields are unavailable.
+
+**Testing Tool seems to stop creating duplicates** — a replay with the same `leadgen_id` is intentionally deduplicated. Create/delete/reset the test lead in Meta before testing again.
+
+## Security rules
+
+- Never log or persist Page access tokens in URLs.
+- Never disable webhook signature verification to “make testing work”.
+- Never route a lead by a user-controlled tenant slug; Facebook routing is by the configured Page ID.
+- Never put raw Meta credentials in lead notes or attribution metadata.
