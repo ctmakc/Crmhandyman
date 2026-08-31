@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, inject, it } from "vitest";
+import { twilioSignature } from "@/lib/sms";
 import { signedIn, type Workspace } from "./harness/client";
 
 /**
@@ -16,6 +17,24 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     alpha = inject("alpha");
     beta = inject("beta");
   }, 120_000);
+
+  async function twilioPost(
+    values: Record<string, string>,
+    token = "alpha-twilio-token",
+    signatureOverride?: string,
+  ) {
+    const url = new URL("/api/webhooks/twilio/sms", baseUrl).toString();
+    const form = new URLSearchParams(values);
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": signatureOverride ?? twilioSignature(url, form, token),
+      },
+      body: form.toString(),
+      redirect: "manual",
+    });
+  }
 
   it("lets a workspace claim a fresh inbound email address", async () => {
     const admin = await signedIn(baseUrl, alpha.admin);
@@ -74,6 +93,81 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
       isActive: true,
     });
     expect(collision.status).toBe(409);
+  });
+
+  it("accepts a signed Twilio reply, persists it on the lead, and enforces STOP/START", async () => {
+    const admin = await signedIn(baseUrl, alpha.admin);
+    const created = await admin.post("/api/leads", {
+      name: "Twilio Reply Test",
+      phone: "613-555-0198",
+      source: "MANUAL",
+      jobType: "Moving",
+    });
+    expect(created.status).toBe(201);
+    const leadId = created.body.id;
+
+    const reply = await twilioPost({
+      AccountSid: "AC-alpha-test",
+      MessageSid: "SM-alpha-reply-001",
+      From: "+16135550198",
+      To: "+16135550100",
+      Body: "Saturday morning works for us",
+    });
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("content-type")).toContain("text/xml");
+
+    const history = await admin.get(`/api/leads/${leadId}/sms`);
+    expect(history.status).toBe(200);
+    expect(history.body.history[0].action).toBe("lead.activity.sms_received");
+    expect(history.body.history[0].meta.message).toBe("Saturday morning works for us");
+    expect(history.body.optedOut).toBe(false);
+
+    const badSignature = await twilioPost(
+      {
+        AccountSid: "AC-alpha-test",
+        MessageSid: "SM-alpha-forged-001",
+        From: "+16135550198",
+        To: "+16135550100",
+        Body: "forged",
+      },
+      "alpha-twilio-token",
+      "definitely-not-a-signature",
+    );
+    expect(badSignature.status).toBe(401);
+
+    const stop = await twilioPost({
+      AccountSid: "AC-alpha-test",
+      MessageSid: "SM-alpha-stop-001",
+      From: "+16135550198",
+      To: "+16135550100",
+      Body: "STOP",
+      OptOutType: "STOP",
+    });
+    expect(stop.status).toBe(200);
+
+    const stopped = await admin.get(`/api/leads/${leadId}/sms`);
+    expect(stopped.body.optedOut).toBe(true);
+    expect(stopped.body.history[0].action).toBe("lead.activity.sms_opt_out");
+
+    // The refusal happens before any provider call, so this is safe in CI with no Twilio network.
+    const blocked = await admin.post(`/api/leads/${leadId}/sms`, {
+      message: "This must never leave the CRM",
+    });
+    expect(blocked.status).toBe(409);
+
+    const start = await twilioPost({
+      AccountSid: "AC-alpha-test",
+      MessageSid: "SM-alpha-start-001",
+      From: "+16135550198",
+      To: "+16135550100",
+      Body: "START",
+      OptOutType: "START",
+    });
+    expect(start.status).toBe(200);
+
+    const restarted = await admin.get(`/api/leads/${leadId}/sms`);
+    expect(restarted.body.optedOut).toBe(false);
+    expect(restarted.body.history[0].action).toBe("lead.activity.sms_opt_in");
   });
 
   it("refuses a malformed SMS sending number before it reaches the database", async () => {
