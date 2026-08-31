@@ -25,7 +25,7 @@ export type MetaAdSpendRow = {
   currency: string;
   impressions: number;
   clicks: number;
-  syncedAt: Date | string;
+  syncedAt: Date;
 };
 
 type InsightsRow = {
@@ -177,7 +177,6 @@ export async function replaceMetaAdSpend(input: {
   rows: Omit<MetaAdSpendRow, "id" | "tenantId" | "syncedAt">[];
 }) {
   const now = new Date();
-  const syncedAt = now.toISOString();
   const config: MetaAdsSyncConfig = {
     lastSyncSince: input.since,
     lastSyncUntil: input.until,
@@ -185,28 +184,23 @@ export async function replaceMetaAdSpend(input: {
   };
 
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`
-      DELETE FROM "MetaAdSpend"
-      WHERE "tenantId" = ${input.tenantId}
-        AND "accountId" = ${input.accountId}
-        AND "day" >= ${input.since}
-        AND "day" <= ${input.until}
-    `;
+    await tx.metaAdSpend.deleteMany({
+      where: {
+        tenantId: input.tenantId,
+        accountId: input.accountId,
+        day: { gte: input.since, lte: input.until },
+      },
+    });
 
-    for (const row of input.rows) {
-      await tx.$executeRaw`
-        INSERT INTO "MetaAdSpend" (
-          "id", "tenantId", "accountId", "day",
-          "campaignId", "campaignName", "adsetId", "adsetName",
-          "adId", "adName", "spendCents", "currency", "impressions", "clicks", "syncedAt"
-        ) VALUES (
-          ${cacheId(input.tenantId, input.accountId, row.day, row.adId)},
-          ${input.tenantId}, ${input.accountId}, ${row.day},
-          ${row.campaignId}, ${row.campaignName}, ${row.adsetId}, ${row.adsetName},
-          ${row.adId}, ${row.adName}, ${row.spendCents}, ${row.currency},
-          ${row.impressions}, ${row.clicks}, ${syncedAt}
-        )
-      `;
+    if (input.rows.length) {
+      await tx.metaAdSpend.createMany({
+        data: input.rows.map((row) => ({
+          id: cacheId(input.tenantId, input.accountId, row.day, row.adId),
+          tenantId: input.tenantId,
+          ...row,
+          syncedAt: now,
+        })),
+      });
     }
 
     await tx.channelIntegration.update({
@@ -222,21 +216,12 @@ export async function loadMetaAdSpend(input: {
   since: string;
   until: string;
 }): Promise<MetaAdSpendRow[]> {
-  if (input.accountId) {
-    return prisma.$queryRaw<MetaAdSpendRow[]>`
-      SELECT * FROM "MetaAdSpend"
-      WHERE "tenantId" = ${input.tenantId}
-        AND "accountId" = ${input.accountId}
-        AND "day" >= ${input.since}
-        AND "day" <= ${input.until}
-      ORDER BY "day" ASC, "adId" ASC
-    `;
-  }
-  return prisma.$queryRaw<MetaAdSpendRow[]>`
-    SELECT * FROM "MetaAdSpend"
-    WHERE "tenantId" = ${input.tenantId}
-      AND "day" >= ${input.since}
-      AND "day" <= ${input.until}
-    ORDER BY "day" ASC, "adId" ASC
-  `;
+  return prisma.metaAdSpend.findMany({
+    where: {
+      tenantId: input.tenantId,
+      ...(input.accountId ? { accountId: input.accountId } : {}),
+      day: { gte: input.since, lte: input.until },
+    },
+    orderBy: [{ day: "asc" }, { adId: "asc" }],
+  });
 }
