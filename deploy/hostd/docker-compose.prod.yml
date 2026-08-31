@@ -1,12 +1,15 @@
-# HandymanPro CRM on hostd.Canada — app container plus a Cloudflare Tunnel.
+# HandyCRM on hostd.Canada — app container plus a Cloudflare Tunnel.
 #
-# This box already runs aaPanel's nginx on :80/:443 for other sites, so nothing here
-# publishes a public port. The app is bound to the loopback for the operator's curl, and
-# the world comes in through cloudflared: an OUTBOUND connection from this box to
-# Cloudflare's edge, which forwards https://crm.agintent.com to http://crm:3000 over the
-# private compose network below. No inbound firewall rule, no fight over :443.
+# This box may already run nginx on :80/:443 for other sites, so nothing here publishes
+# a public CRM port. The app is bound to loopback for operator health checks; public
+# traffic arrives through cloudflared over the private compose network.
 #
-# Values come from the .env next to this file (start from .env.production.example).
+# Current public layout:
+#   crm.itopsi.com          — platform front door
+#   <slug>.itopsi.com       — customer workspaces
+#   try.itopsi.com          — public demo workspace
+#
+# Values come from .env next to this file (start from .env.production.example).
 # Run from the repo root on the box:
 #   docker compose -f deploy/hostd/docker-compose.prod.yml up -d
 
@@ -15,16 +18,10 @@ name: handyman-crm
 services:
   crm:
     build:
-      # The compose file lives two levels deep; the image is the repo's own Dockerfile.
       context: ../..
       args:
-        # Baked into the client bundle at build time, so a change here needs a rebuild.
-        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@handymanpro.ca}
-        # The front door where Google OAuth starts; inlined so the button knows where to
-        # send a subdomain visitor. Empty hides the Google button.
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@itopsi.com}
         NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-}
-        # Public demo tour: on <DEMO_SLUG>.<root>/login a "Look around" button signs in
-        # with these throwaway shared credentials. All empty → no tour button.
         NEXT_PUBLIC_DEMO_SLUG: ${NEXT_PUBLIC_DEMO_SLUG:-}
         NEXT_PUBLIC_DEMO_EMAIL: ${NEXT_PUBLIC_DEMO_EMAIL:-}
         NEXT_PUBLIC_DEMO_PASSWORD: ${NEXT_PUBLIC_DEMO_PASSWORD:-}
@@ -32,45 +29,29 @@ services:
     container_name: handyman-crm
     restart: unless-stopped
     ports:
-      # Loopback only: this port exists for `ssh … curl 127.0.0.1:3080/api/health` and
-      # for healthwatch.sh. Public traffic never touches it — cloudflared reaches the
-      # container over the compose network, without going through the host at all.
       - "127.0.0.1:${APP_PORT:-3080}:3000"
     volumes:
       - crm-var:/app/var
     networks:
       - tunnel
     environment:
-      # Inside the container the database always lives on the volume.
       DATABASE_URL: file:/app/var/crm.db
       UPLOADS_DIR: /app/var/uploads
 
-      # The «:?» form stops `docker compose up` when the value is missing, which is the
-      # difference between a loud failure at deploy time and a quiet one in production.
       NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:?generate with openssl rand -base64 32}"
       NEXTAUTH_URL: ${NEXTAUTH_URL:?public https address of the CRM}
-
-      # The host that shows the front door instead of being read as a tenant slug.
-      # crm.agintent.com is three labels deep, so without this the slug parser would
-      # treat «crm» as a workspace name and every visitor would land in a ghost tenant.
       CRM_HOME_HOST: ${CRM_HOME_HOST:-}
+      NEXTAUTH_COOKIE_DOMAIN: ${NEXTAUTH_COOKIE_DOMAIN:-}
 
-      # Super-admin panel. Empty PLATFORM_TENANT_SLUG keeps it switched off.
       SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
       PLATFORM_TENANT_SLUG: ${PLATFORM_TENANT_SLUG:-}
-
-      # Public /register. Unset means closed in production — see .env.production.example.
       SELF_SERVE_SIGNUP: ${SELF_SERVE_SIGNUP:-}
-      # Proxies in front of the app. Cloudflare's edge is the single trusted appender of
-      # X-Forwarded-For here (cloudflared forwards the header without adding a hop), so
-      # the right answer for this deployment is 1 — see .env.production.example.
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
 
       TRIAL_DAYS: ${TRIAL_DAYS:-7}
       LEAD_DEDUP_DAYS: ${LEAD_DEDUP_DAYS:-30}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-12}
       MAX_PHOTOS_PER_JOB: ${MAX_PHOTOS_PER_JOB:-40}
-      # Read by scripts/backup.sh when backup-cron.sh execs it inside the container.
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
 
       META_APP_ID: ${META_APP_ID:-}
@@ -78,9 +59,6 @@ services:
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      # Session cookie domain — ".<root>" so a Google login through the front door hands
-      # the session to the visitor's own workspace subdomain. Empty → host-only cookie.
-      NEXTAUTH_COOKIE_DOMAIN: ${NEXTAUTH_COOKIE_DOMAIN:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -88,8 +66,11 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       MAILGUN_WEBHOOK_SIGNING_KEY: ${MAILGUN_WEBHOOK_SIGNING_KEY:-}
 
-    # /api/health answers 200 only when the database replies and every shipped migration
-    # is applied, so an unhealthy container here means something real.
+      # Required only when lead automation is enabled. The GitHub scheduler sends this
+      # value as a Bearer token to /api/webhooks/lead-automation. Empty is deliberately
+      # fail-closed: the endpoint refuses to process due customer messages.
+      AUTOMATION_CRON_SECRET: ${AUTOMATION_CRON_SECRET:-}
+
     healthcheck:
       test:
         - CMD
@@ -107,25 +88,20 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # The tunnel — locally managed: its identity and routing live in files under
-  # /opt/handyman-crm/cloudflared on the box (config.yml + tunnel-creds.json, staged at
-  # provision time), not in the Zero Trust dashboard. Ingress there: crm.agintent.com
-  # and *.agintent.com → http://crm:3000 — «crm» resolves because both containers share
-  # the network below.
+  # Locally managed Cloudflare Tunnel. The host-mounted config must route:
+  #   crm.itopsi.com    -> http://crm:3000
+  #   *.itopsi.com      -> http://crm:3000
+  # The wildcard is what makes beaver-movers.itopsi.com and every future tenant work.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: handyman-cloudflared
     restart: unless-stopped
-    # --no-autoupdate: the image is replaced by `docker compose pull`, deliberately; a
-    # daemon that swaps its own binary mid-flight is how a tunnel dies unattended.
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
     volumes:
       - /opt/handyman-crm/cloudflared:/etc/cloudflared:ro
     networks:
       - tunnel
     depends_on:
-      # Wait for a healthy app before the edge starts sending visitors: without this the
-      # first minute of every deploy answers 502 from Cloudflare while migrations run.
       crm:
         condition: service_healthy
     logging:
@@ -135,8 +111,6 @@ services:
         max-file: "3"
 
 networks:
-  # Private bridge shared by exactly these two containers — the only path from the
-  # tunnel to the app, and the reason no public port exists.
   tunnel:
 
 volumes:
