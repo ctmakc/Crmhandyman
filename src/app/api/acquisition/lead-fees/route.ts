@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guard";
-import { leadFeeApiValue, leadFeeExpenseId } from "@/lib/lead-fee";
-
-const DIRECT_FEE_SOURCES = [
-  "GOOGLE_LSA",
-  "HOMESTARS",
-  "BARK",
-  "URBANTASKER",
-  "MOVINGWALDO",
-] as const;
+import {
+  DIRECT_FEE_SOURCES,
+  leadFeeApiValue,
+  leadFeeExpenseId,
+} from "@/lib/lead-fee";
 
 /**
  * Owner worksheet for sources where the marketplace can charge for an individual lead.
