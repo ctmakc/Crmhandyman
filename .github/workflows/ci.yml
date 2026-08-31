@@ -25,7 +25,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # package.json and the production image require Node 22. CI must exercise the
+          # same runtime rather than merely warning under Node 20 and testing another app.
+          node-version: 22
           cache: npm
 
       - run: npm ci
