@@ -4,7 +4,7 @@ import { Lane, Num, PageHead } from "@/components/ui/primitives";
 /**
  * DESK SETUP — the screen the owner walks down on his first morning, so the order
  * is the order of his day: what prints on paper, who gets a login, where leads land,
- * how they are contacted, what acquisition costs, then the read-only audit book.
+ * how they are contacted, what acquisition costs, then the launch verdict and audit book.
  */
 const SECTIONS = [
   {
@@ -56,8 +56,14 @@ const SECTIONS = [
     sub: "Read-only ad account connection for campaign spend, CPL and ROAS",
   },
   {
-    href: "/settings/log",
+    href: "/settings/go-live",
     code: "09",
+    title: "Go-live readiness",
+    sub: "One live launch verdict from workspace, intake, SMS, alerts, Meta and acceptance evidence",
+  },
+  {
+    href: "/settings/log",
+    code: "10",
     title: "Action log",
     sub: "Who changed a price, took a payment, voided an invoice",
   },
@@ -69,7 +75,7 @@ export default function SettingsPage() {
       <PageHead
         eyebrow="Desk setup"
         title="Settings"
-        sub="Work down the list once and the desk runs itself. The first eight change what it does; the last one only reports what it did."
+        sub="Work down the list once, then run Go-live readiness before paid traffic. The action log is read-only history."
       />
 
       <Lane>
