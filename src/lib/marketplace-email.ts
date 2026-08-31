@@ -164,26 +164,32 @@ export function detectInboundEmailSource(
   subject: string,
   body = ""
 ): InboundEmailSource {
-  const head = `${from}\n${subject}\n${body.slice(0, 2500)}`.toLowerCase();
+  // Source identity belongs to the envelope, not to arbitrary customer prose. A direct
+  // enquiry saying "I found you on Google" or "the dog barks" must stay EMAIL. LSA is the
+  // one exception where the Google sender is already established and the notification
+  // body may carry the Local Services / Google Guaranteed marker.
+  const routing = `${from}\n${subject}`.toLowerCase();
 
-  if (head.includes("movingwaldo")) return "MOVINGWALDO";
-  if (head.includes("urbantasker")) return "URBANTASKER";
-  if (head.includes("homestars")) return "HOMESTARS";
-  if (/\bbark\b/.test(head) || head.includes("bark.com")) return "BARK";
-  if (head.includes("kijiji")) return "KIJIJI";
+  if (routing.includes("movingwaldo")) return "MOVINGWALDO";
+  if (routing.includes("urbantasker")) return "URBANTASKER";
+  if (routing.includes("homestars")) return "HOMESTARS";
+  if (/\bbark\b/.test(routing) || routing.includes("bark.com")) return "BARK";
+  if (routing.includes("kijiji")) return "KIJIJI";
 
-  const google = head.includes("google");
-  if (
-    google &&
-    (head.includes("local services") ||
-      head.includes("local service ad") ||
-      head.includes("local services ad") ||
-      head.includes("google guaranteed") ||
-      /\blsa\b/.test(head))
-  ) {
-    return "GOOGLE_LSA";
+  const google = routing.includes("google");
+  if (google) {
+    const googleNotification = `${routing}\n${body.slice(0, 2500).toLowerCase()}`;
+    if (
+      googleNotification.includes("local services") ||
+      googleNotification.includes("local service ad") ||
+      googleNotification.includes("local services ad") ||
+      googleNotification.includes("google guaranteed") ||
+      /\blsa\b/.test(googleNotification)
+    ) {
+      return "GOOGLE_LSA";
+    }
+    return "GOOGLE";
   }
-  if (google) return "GOOGLE";
 
   return "EMAIL";
 }
