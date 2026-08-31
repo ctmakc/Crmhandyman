@@ -106,7 +106,7 @@ export default async function ActionLogPage({
       <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 07"
+        eyebrow="Desk setup · 08"
         title="Action log"
         sub="Every change to money, paper, access and lead communication, in the order it happened. Entries are written once and never edited."
       />
