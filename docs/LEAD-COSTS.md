@@ -15,6 +15,12 @@ Direct lead fees are supported for:
 
 They are not supported for Facebook/Instagram/general Google/manual leads because those normally use channel-level spend; entering both would double-count acquisition cost.
 
+## One payment, one accounting path
+
+Never record the same marketplace money twice. If a Bark/HomeStars/other marketplace invoice or credit purchase is already booked in Finance as channel spend, do **not** also distribute that same purchase across individual lead fees. Conversely, if the individual charged contacts are entered on **Lead costs**, do not book the corresponding marketplace purchase again as `Ad spend: <SOURCE>`.
+
+Use direct fees when the provider exposes a reliable cost for the individual contact and that granularity is useful. Use channel spend when only a period/package total is reliable. Meta/general Google remain channel-spend sources.
+
 ## Storage contract
 
 A direct fee is a real `Expense`, not a field on the customer-facing `Lead` record. The expense id is deterministic:
