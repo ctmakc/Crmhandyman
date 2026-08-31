@@ -2,11 +2,6 @@ import { beforeAll, describe, expect, inject, it } from "vitest";
 import { twilioSignature } from "@/lib/sms";
 import { signedIn, type Workspace } from "./harness/client";
 
-/**
- * Email inboxes and SMS numbers are workspace-owning routing facts, not preferences.
- * The database holds one normalizedAddress globally, so two tenants cannot both claim
- * the address a provider uses to decide where an inbound message belongs.
- */
 describe.sequential("channel addresses are claimed once, across all workspaces", () => {
   let baseUrl = "";
   let alpha: Workspace;
@@ -123,8 +118,6 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     expect(history.body.history[0].meta.message).toBe("Saturday morning works for us");
     expect(history.body.optedOut).toBe(false);
 
-    // A customer writing in is not the desk answering him. The response clock must keep
-    // running until a human works the lead, while the callback inbox gets an urgent task.
     const afterReply = await admin.get(`/api/leads/${leadId}`);
     expect(afterReply.status).toBe(200);
     expect(afterReply.body.status).toBe("NEW");
@@ -160,7 +153,6 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     expect(stopped.body.optedOut).toBe(true);
     expect(stopped.body.history[0].action).toBe("lead.activity.sms_opt_out");
 
-    // The refusal happens before any provider call, so this is safe in CI with no Twilio network.
     const blocked = await admin.post(`/api/leads/${leadId}/sms`, {
       message: "This must never leave the CRM",
     });
@@ -179,6 +171,31 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     const restarted = await admin.get(`/api/leads/${leadId}/sms`);
     expect(restarted.body.optedOut).toBe(false);
     expect(restarted.body.history[0].action).toBe("lead.activity.sms_opt_in");
+  });
+
+  it("fails closed on the lead-automation scheduler secret", async () => {
+    const url = new URL("/api/webhooks/lead-automation?limit=5", baseUrl);
+    const refused = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer wrong-secret",
+        "x-forwarded-for": "10.77.201.26",
+      },
+    });
+    expect(refused.status).toBe(401);
+
+    const accepted = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer e2e-automation-secret",
+        "x-forwarded-for": "10.77.201.27",
+      },
+    });
+    expect(accepted.status).toBe(200);
+    const body = await accepted.json();
+    expect(body.ok).toBe(true);
+    expect(typeof body.found).toBe("number");
+    expect(typeof body.sent).toBe("number");
   });
 
   it("refuses a malformed SMS sending number before it reaches the database", async () => {
