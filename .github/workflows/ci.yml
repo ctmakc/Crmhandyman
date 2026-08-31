@@ -25,8 +25,6 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # package.json and the production image require Node 22. CI must exercise the
-          # same runtime rather than merely warning under Node 20 and testing another app.
           node-version: 22
           cache: npm
 
@@ -43,8 +41,20 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # Unit suite plus e2e — the e2e project boots its own server on a throwaway
-      # database (tests/e2e/harness/global-setup.ts), nothing external to provide.
+      # Docker runtime intentionally omits ts-node. Prove the operator provisioner can be
+      # emitted as ordinary JS exactly the way the Dockerfile ships it into production.
+      - name: Compile production tenant provisioner
+        run: |
+          rm -rf /tmp/operator-scripts
+          npx tsc scripts/provision-tenant.ts \
+            --outDir /tmp/operator-scripts \
+            --module commonjs \
+            --target ES2022 \
+            --moduleResolution node \
+            --esModuleInterop \
+            --skipLibCheck
+          test -s /tmp/operator-scripts/provision-tenant.js
+
       - name: Tests
         run: npm test
 
