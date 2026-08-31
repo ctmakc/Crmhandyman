@@ -1,43 +1,42 @@
 #!/usr/bin/env bash
-# HandymanPro CRM — deploy from the workstation to hostd.Canada.
+# HandyCRM production deploy from an operator workstation.
 #
-# Idempotent: every step converges on the same state, so running it twice in a row is
-# safe and running it after a half-failed attempt is the recovery procedure.
+# Defaults preserve the last documented host, but every machine-specific fact can be
+# overridden without editing the repository. This matters because the old host may be
+# retired while the product/domain live on.
 #
-#   1. rsync the working tree to /opt/handyman-crm on the box (code only — the database,
-#      uploads and backups live on the crm-var volume and are never in the sync path);
-#   2. build the image and start/refresh both containers there;
-#   3. prove the result: /api/health through the box's loopback answers 200 only when
-#      the database replies AND every shipped migration is applied.
+# Examples:
+#   deploy/hostd/deploy.sh
+#   HANDYCRM_DEPLOY_BOX=root@203.0.113.10 HANDYCRM_DEPLOY_SSH_PORT=22 deploy/hostd/deploy.sh
 #
-# Migrations need no separate step: docker-entrypoint.sh runs `prisma migrate deploy`
-# on every container start, before the server binds — a failed migration keeps the old
-# container's last state instead of serving a half-migrated schema.
-#
-# Usage:  deploy/hostd/deploy.sh            # from anywhere; paths are self-anchored
-# First deploy only: put a filled .env at /opt/handyman-crm/deploy/hostd/.env on the
-# box (start from .env.production.example). The script stops with instructions if it
-# is missing — it never invents secrets.
 set -euo pipefail
 
-BOX="root@66.94.107.112"
-SSH_PORT=222
-DEST="/opt/handyman-crm"
+BOX="${HANDYCRM_DEPLOY_BOX:-root@66.94.107.112}"
+SSH_PORT="${HANDYCRM_DEPLOY_SSH_PORT:-222}"
+DEST="${HANDYCRM_DEPLOY_DEST:-/opt/handyman-crm}"
 COMPOSE="deploy/hostd/docker-compose.prod.yml"
-APP_PORT=3080
+APP_PORT="${HANDYCRM_DEPLOY_APP_PORT:-3080}"
+PUBLIC_URL="${HANDYCRM_PUBLIC_URL:-https://crm.itopsi.com}"
 
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 SSH=(ssh -p "$SSH_PORT" "$BOX")
 
 say() { printf '\n== %s\n' "$*"; }
 
+say "preflight: $BOX:$SSH_PORT"
+if ! "${SSH[@]}" "true"; then
+  cat >&2 <<EOF
+
+deploy: cannot reach $BOX on SSH port $SSH_PORT.
+Nothing was copied and no container was changed.
+
+If production moved, run again with the real target, for example:
+  HANDYCRM_DEPLOY_BOX=root@<new-ip> HANDYCRM_DEPLOY_SSH_PORT=<port> $0
+EOF
+  exit 1
+fi
+
 say "rsync $REPO -> $BOX:$DEST"
-# --delete keeps the box an exact mirror of the workstation tree, which is what makes
-# rollbacks honest: checkout the previous commit locally, deploy again. The excludes
-# are everything that must NOT travel: build output and node_modules (rebuilt in the
-# image), live data (var/, dev.db* — production data lives on the volume anyway, this
-# guards the workstation's own copies), and every .env — the box's secrets stay on the
-# box, excluded entries are also protected from --delete.
 rsync -az --delete \
   --exclude ".git" \
   --exclude "node_modules" \
@@ -57,27 +56,25 @@ say "checking $DEST/deploy/hostd/.env on the box"
 "${SSH[@]}" "test -f $DEST/deploy/hostd/.env" || {
   cat >&2 <<EOF
 
-deploy: no .env on the box yet. One-time setup:
+deploy: no production .env on the box yet. One-time setup:
 
   ssh -p $SSH_PORT $BOX
   cp $DEST/deploy/hostd/.env.production.example $DEST/deploy/hostd/.env
   chmod 600 $DEST/deploy/hostd/.env
-  # fill in NEXTAUTH_SECRET, MAILGUN_WEBHOOK_SIGNING_KEY
+  # fill NEXTAUTH_SECRET and the integration secrets actually used on this install
 
 then run this script again.
 EOF
   exit 1
 }
 
-say "building the image (10-20 min on first run: better-sqlite3 compiles from source)"
+say "building image"
 "${SSH[@]}" "cd $DEST && docker compose -f $COMPOSE build"
 
-say "starting containers (entrypoint applies migrations before serving)"
+say "starting containers"
 "${SSH[@]}" "cd $DEST && docker compose -f $COMPOSE up -d"
 
-say "waiting for /api/health on the box's loopback"
-# The container's own start_period is 40s; migrations on a big database can use all of
-# it. Poll rather than sleep-and-pray, fail loudly with the logs if it never comes up.
+say "waiting for local /api/health on the production box"
 if "${SSH[@]}" "
   for i in \$(seq 1 30); do
     body=\$(curl -fsS -m 5 http://127.0.0.1:$APP_PORT/api/health 2>/dev/null) && {
@@ -86,9 +83,22 @@ if "${SSH[@]}" "
   done
   exit 1
 "; then
-  say "deployed: https://crm.agintent.com is serving (via the tunnel)"
+  say "container healthy on $BOX"
 else
-  say "FAILED: /api/health never answered — container logs follow"
-  "${SSH[@]}" "cd $DEST && docker compose -f $COMPOSE ps && docker compose -f $COMPOSE logs --tail=80 crm" || true
+  say "FAILED: local /api/health never answered — container logs follow"
+  "${SSH[@]}" "cd $DEST && docker compose -f $COMPOSE ps && docker compose -f $COMPOSE logs --tail=100 crm" || true
   exit 1
+fi
+
+say "checking public route $PUBLIC_URL/api/health"
+if curl -fsS -m 12 "$PUBLIC_URL/api/health"; then
+  printf '\n'
+  say "deployed: $PUBLIC_URL is healthy through the public route"
+else
+  cat >&2 <<EOF
+
+WARNING: the container is healthy locally, but $PUBLIC_URL/api/health is not reachable
+from this workstation. The deploy itself succeeded; DNS/Cloudflare Tunnel still needs
+attention before a customer can use the CRM.
+EOF
 fi
