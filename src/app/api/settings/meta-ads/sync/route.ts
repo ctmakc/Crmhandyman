@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
         since: range.since,
         until: range.until,
         rows: rows.length,
-        spendByCurrencyCents: Array.from(byCurrency, ([currency, amountCents]) => ({
+        // The collection itself is not money; only each item's amountCents is. Keeping
+        // the outer key stable makes the client contract `spendByCurrency[].amount`.
+        spendByCurrency: Array.from(byCurrency, ([currency, amountCents]) => ({
           currency,
           amountCents,
         })),
