@@ -4,6 +4,12 @@ import { metaGraphVersion } from "@/lib/integrations/facebook";
 
 export const META_ADS_CHANNEL = "META_ADS";
 
+export type MetaAdsSyncConfig = {
+  lastSyncSince?: string;
+  lastSyncUntil?: string;
+  lastSyncRows?: number;
+};
+
 export type MetaAdSpendRow = {
   id: string;
   tenantId: string;
@@ -73,6 +79,22 @@ export function isIsoDay(raw: string): boolean {
   return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
 }
 
+export function metaAdsSyncConfig(raw: string | null | undefined): MetaAdsSyncConfig {
+  if (!raw) return {};
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object") return {};
+    const row = value as Record<string, unknown>;
+    return {
+      lastSyncSince: typeof row.lastSyncSince === "string" ? row.lastSyncSince : undefined,
+      lastSyncUntil: typeof row.lastSyncUntil === "string" ? row.lastSyncUntil : undefined,
+      lastSyncRows: Number.isInteger(row.lastSyncRows) ? Number(row.lastSyncRows) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 export function metaInsightsUrl(accountId: string, since: string, until: string, after?: string) {
   const params = new URLSearchParams({
     level: "ad",
@@ -103,8 +125,6 @@ export async function fetchMetaAdSpend(input: {
   const rows: Omit<MetaAdSpendRow, "id" | "tenantId" | "syncedAt">[] = [];
   let after: string | undefined;
 
-  // One year of one small-business account should be nowhere near 100 * 500 rows. The
-  // cap prevents a malformed cursor from turning an owner click into an endless request.
   for (let page = 0; page < 100; page += 1) {
     const res = await fetch(metaInsightsUrl(input.accountId, input.since, input.until, after), {
       headers: { Authorization: `Bearer ${input.accessToken}` },
@@ -157,6 +177,12 @@ export async function replaceMetaAdSpend(input: {
   rows: Omit<MetaAdSpendRow, "id" | "tenantId" | "syncedAt">[];
 }) {
   const now = new Date();
+  const config: MetaAdsSyncConfig = {
+    lastSyncSince: input.since,
+    lastSyncUntil: input.until,
+    lastSyncRows: input.rows.length,
+  };
+
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
       DELETE FROM "MetaAdSpend"
@@ -184,7 +210,7 @@ export async function replaceMetaAdSpend(input: {
 
     await tx.channelIntegration.update({
       where: { tenantId_channel: { tenantId: input.tenantId, channel: META_ADS_CHANNEL } },
-      data: { lastSyncAt: now },
+      data: { lastSyncAt: now, config: JSON.stringify(config) },
     });
   });
 }
