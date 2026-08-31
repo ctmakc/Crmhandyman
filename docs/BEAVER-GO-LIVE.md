@@ -69,6 +69,10 @@ For lead automation, also set a random `AUTOMATION_CRON_SECRET` in the app `.env
 same value in the GitHub Actions repository secret `AUTOMATION_CRON_SECRET`. Set repository
 secret `AUTOMATION_PROCESSOR_URL` to `https://crm.itopsi.com`.
 
+For Meta Lead Ads, the production app must also have `META_APP_SECRET` and
+`META_WEBHOOK_VERIFY_TOKEN`. `META_APP_ID` is useful operator metadata but the runtime
+webhook does not depend on it.
+
 ## Gate 3 — provision Beaver Movers in the production database
 
 The production image intentionally does not contain `ts-node`. During image build the
@@ -128,9 +132,9 @@ Acceptance:
 
 ## Gate 5 — Beaver website intake
 
-In Beaver workspace → Settings → Lead intake, create a key for the real Beaver lead form,
-source `OTHER` or the most accurate existing enum until attribution expansion lands.
-Store the generated intake URL only in the website/server configuration that needs it.
+In Beaver workspace → Settings → Landing intake, create a key for the real Beaver lead form
+with source `WEBSITE`. Store the generated intake URL only in the website/server
+configuration that needs it.
 
 Submit one named test lead from the real form and verify:
 
@@ -138,11 +142,12 @@ Submit one named test lead from the real form and verify:
 - response clock starts;
 - acknowledgement sends when SMS automation is enabled;
 - 5-minute SLA task is created;
-- the test appears in Leads, Activity and SMS history.
+- the test appears in Leads, Activity and SMS history;
+- the WEBSITE intake key shows a recent `lastUsedAt`.
 
 ## Gate 6 — Meta Lead Ads
 
-Configure the real Beaver Meta Page integration and app secrets. The webhook endpoint is:
+Configure the real Beaver Facebook Page integration and app secrets. The webhook endpoint is:
 
 ```text
 https://crm.itopsi.com/api/webhooks/facebook
@@ -152,11 +157,43 @@ Use Meta's Lead Ads testing tool, then a real form submission. Acceptance is the
 website intake: one lead, correct tenant, correct source, alert, acknowledgement, callback
 queue and no duplicate on webhook retry.
 
+Configure Settings → Meta Ads reporting separately with the ad-account id and an Ads Insights
+read token. Run a spend sync for the current month. This reporting connection is not allowed
+to block lead intake, but it is the source of campaign/ad-set/ad spend, CPL, cost/job and ROAS.
+
 ## Gate 7 — marketplace bridge
 
 Create a Beaver-specific inbound email address and route HomeStars / Google LSA / Bark
 notifications through the existing EMAIL integration. Do not share an inbound recipient
 with another tenant; `normalizedAddress` is globally exclusive for exactly this reason.
+
+## Gate 8 — final live readiness verdict
+
+After the real website/Meta acceptance lead has run through the live tenant, open:
+
+```text
+https://beaver-movers.itopsi.com/settings/go-live
+```
+
+or Settings → Go-live readiness.
+
+The screen reads live tenant/server facts; it does not accept manual checkboxes. It verifies:
+
+- workspace is active and identifies the paid/demo plan;
+- approved admin/crew access;
+- customer-facing business/payment details;
+- active WEBSITE intake and its usage evidence;
+- Twilio credentials/number;
+- lead automation and `AUTOMATION_CRON_SECRET` when delayed steps are enabled;
+- a deliverable lead-alert transport and recent delivery evidence;
+- Facebook Page Lead Ads routing plus server webhook secrets;
+- Meta Ads spend reporting/sync as advisory measurement readiness;
+- a non-manual lead from the last seven days;
+- SMS evidence tied to that exact latest acceptance lead.
+
+`BLOCKED` means do not turn on paid traffic. `WARN` does not itself block traffic, but every
+warning must be understood before launch. Meta Ads spend reporting is intentionally advisory:
+missing ROAS must never cause the CRM to reject a customer lead.
 
 ## First-day operating view
 
@@ -168,5 +205,5 @@ The dispatcher should be able to live almost entirely on Leads:
 - use the SMS composer for written follow-up;
 - convert only genuinely booked work into a Job.
 
-Do not turn on paid traffic until a real test lead has passed website/Meta → CRM → SMS →
-callback → booked-job flow end to end.
+Do not turn on paid traffic until the live Go-live readiness verdict is `READY` and the real
+website/Meta → CRM → alert → SMS → callback → booked-job flow has been exercised end to end.
