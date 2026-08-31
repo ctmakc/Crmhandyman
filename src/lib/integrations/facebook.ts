@@ -14,7 +14,6 @@ export interface FbLeadData {
   campaign_id?: string;
   campaign_name?: string;
   form_id?: string;
-  form_name?: string;
   is_organic?: boolean;
   platform?: string;
 }
@@ -30,7 +29,6 @@ const LEAD_FIELDS = [
   "campaign_id",
   "campaign_name",
   "form_id",
-  "form_name",
   "is_organic",
   "platform",
 ].join(",");
