@@ -112,10 +112,13 @@ describe("SMS consent words", () => {
 describe("moving lead templates", () => {
   it("renders the lead and business name and keeps STOP language on every quick template", () => {
     const templates = smsTemplates({ leadName: "Jane Smith", businessName: "Beaver Movers" });
-    expect(templates).toHaveLength(5);
+    expect(templates).toHaveLength(6);
     expect(templates.every((template) => template.message.includes("Reply STOP to opt out."))).toBe(true);
     expect(smsTemplate("MISSED_CALL", { leadName: "Jane Smith", businessName: "Beaver Movers" })?.message).toContain(
       "Hi Jane",
+    );
+    expect(smsTemplate("LAST_CHECK_IN", { leadName: "Jane Smith", businessName: "Beaver Movers" })?.message).toContain(
+      "still need help with your move",
     );
     expect(smsTemplate("MADE_UP", { leadName: "Jane", businessName: "Beaver" })).toBeNull();
   });

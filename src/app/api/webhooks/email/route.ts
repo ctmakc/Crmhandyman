@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyNewLead } from "@/lib/notify";
+import { startLeadAutomation } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
 import crypto from "crypto";
 import { declaredTooLarge } from "@/lib/request-body";
 import { throttle } from "../guard";
 
-/**
- * Fails closed. This used to return true when the signing key was absent, so a
- * deployment that simply forgot the variable accepted invented leads from anyone.
- */
 function verifyMailgunSignature(timestamp: string, token: string, signature: string): boolean {
   const key = process.env.MAILGUN_WEBHOOK_SIGNING_KEY;
   if (!key) return false;
@@ -22,7 +19,6 @@ function verifyMailgunSignature(timestamp: string, token: string, signature: str
   return digest.length === given.length && crypto.timingSafeEqual(digest, given);
 }
 
-/** The configured inbox, however the settings form happened to store it. */
 function configuredAddress(config: string | null): string | null {
   if (!config) return null;
   let value: unknown = config;
@@ -40,7 +36,6 @@ function configuredAddress(config: string | null): string | null {
   return null;
 }
 
-/** A repeat enquiry inside this window is the same lead; after it, it is new work. */
 const DEDUP_WINDOW_DAYS = Number(process.env.LEAD_DEDUP_DAYS || 30);
 
 function detectSource(from: string, subject: string): string {
@@ -61,13 +56,9 @@ function extractPhoneFromText(text: string): string | undefined {
   return match?.[0];
 }
 
-/** Mailgun refuses a message over 25 MB itself; past that the body is not a mail. */
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 
-// Mailgun inbound parse webhook
 export async function POST(req: NextRequest) {
-  // Before the multipart parse and before the signature: a refusal here costs a map
-  // lookup, while everything below it buffers a message and then queries the tenant.
   const limited = await throttle(req, "email");
   if (limited) return limited;
 
@@ -89,16 +80,12 @@ export async function POST(req: NextRequest) {
   const subject = formData.get("Subject")?.toString() || formData.get("subject")?.toString() || "";
   const bodyText = formData.get("body-plain")?.toString() || formData.get("stripped-text")?.toString() || "";
 
-  // Extract name from "Name <email>" format
   const nameMatch = from.match(/^(.+?)\s*<.+>$/) || from.match(/^(.+?)@/);
   const name = nameMatch?.[1]?.trim() || "Email Lead";
   const email = extractEmailFromText(from) || undefined;
   const phone = extractPhoneFromText(bodyText) || undefined;
   const source = detectSource(from, subject);
 
-  // Route by the address the mail was sent to. Taking the first active integration
-  // meant that with two customers on the email channel, every lead landed in whichever
-  // workspace happened to be created first.
   const recipient = (formData.get("recipient")?.toString() ||
     formData.get("To")?.toString() ||
     "")
@@ -112,7 +99,6 @@ export async function POST(req: NextRequest) {
     ? candidates.find((c) => configuredAddress(c.config) === recipientAddress)
     : undefined;
 
-  // Unroutable mail is dropped, and answered 200 so Mailgun stops retrying it.
   if (!emailIntegration) {
     console.warn(`Inbound lead for an unconfigured address: ${recipientAddress ?? "unknown"}`);
     return NextResponse.json({ ok: true, routed: false });
@@ -120,8 +106,6 @@ export async function POST(req: NextRequest) {
 
   const tenantId = emailIntegration.tenantId;
 
-  // Same sender inside a short window is the same enquiry arriving twice. Beyond it,
-  // a returning customer is a new job — an unbounded dedup silently swallowed those.
   if (email) {
     const since = new Date(Date.now() - DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const existing = await prisma.lead.findFirst({
@@ -142,9 +126,8 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // A HomeStars enquiry is worth the same as a quiz answer, and it arrives while the
-  // owner is under a truck. Delivery failures stay inside this call.
   await notifyNewLead(tenantId, created.id);
+  void startLeadAutomation(tenantId, created.id);
 
   return NextResponse.json({ ok: true });
 }

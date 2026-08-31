@@ -4,6 +4,7 @@ export const SMS_TEMPLATE_IDS = [
   "REQUEST_DETAILS",
   "QUOTE_FOLLOW_UP",
   "BOOKING_CONFIRMATION",
+  "LAST_CHECK_IN",
 ] as const;
 
 export type SmsTemplateId = (typeof SMS_TEMPLATE_IDS)[number];
@@ -57,6 +58,11 @@ export function smsTemplates(input: { leadName: string; businessName: string }):
       id: "BOOKING_CONFIRMATION",
       label: "Booking confirmation",
       message: `Hi ${name}, your move with ${business} is booked. We will confirm the final timing and details before the move. Reply here if anything changes.${stop}`,
+    },
+    {
+      id: "LAST_CHECK_IN",
+      label: "No reply · final check-in",
+      message: `Hi ${name}, just checking whether you still need help with your move. If yes, reply with your move date and pickup/drop-off areas and ${business} will get back to you.${stop}`,
     },
   ];
 }

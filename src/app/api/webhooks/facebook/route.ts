@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchFbLead, extractLeadField, verifyFbWebhookSignature } from "@/lib/integrations/facebook";
 import { notifyNewLead } from "@/lib/notify";
+import { startLeadAutomation } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
 import { readTextCapped } from "@/lib/request-body";
 import { throttle, throttleVerify, tokenMatches } from "../guard";
@@ -27,11 +28,6 @@ export async function POST(req: NextRequest) {
   const limited = await throttle(req, "facebook");
   if (limited) return limited;
 
-  /**
-   * Fails closed, the way .env.example has always described it. While the check was
-   * conditional, a deployment that simply left META_APP_SECRET empty accepted invented
-   * lead ids from anyone — and each one costs a Graph API call under our own token.
-   */
   const secret = process.env.META_APP_SECRET;
   if (!secret) {
     console.warn("[webhook] META_APP_SECRET is unset — Facebook delivery refused");
@@ -60,8 +56,6 @@ export async function POST(req: NextRequest) {
       if (!leadgenId) continue;
 
       try {
-        // Resolve tenant strictly by page. The old fallback — «no page id, take the
-        // first active Facebook integration» — delivered one company's leads to another.
         if (!pageId) {
           console.warn(`Facebook lead ${leadgenId} arrived without a page id — skipped`);
           continue;
@@ -102,9 +96,10 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        // A Lead Ad form is paid traffic: the call back is the product. Never allowed to
-        // fail the delivery — Meta would retry the whole batch over an SMTP hiccup.
+        // Alert and customer automation are independent courtesies after the row exists.
+        // Neither is allowed to make Meta retry a successfully saved lead.
         await notifyNewLead(integration.tenantId, created.id);
+        void startLeadAutomation(integration.tenantId, created.id);
       } catch (err) {
         console.error("Error processing FB lead:", err);
       }
