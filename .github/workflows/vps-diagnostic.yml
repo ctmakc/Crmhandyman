@@ -1,0 +1,89 @@
+name: VPS diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reachability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: External runner identity
+        shell: bash
+        run: |
+          set +e
+          echo "UTC: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo -n "Runner public IPv4: "
+          curl -4fsS --max-time 5 https://api.ipify.org || echo unavailable
+          echo
+
+      - name: DNS and PTR
+        shell: bash
+        run: |
+          set +e
+          echo '=== crm.itopsi.com ==='
+          getent ahostsv4 crm.itopsi.com || true
+          dig +short A crm.itopsi.com || true
+          dig +short AAAA crm.itopsi.com || true
+          echo '=== beaver-movers.itopsi.com ==='
+          getent ahostsv4 beaver-movers.itopsi.com || true
+          dig +short A beaver-movers.itopsi.com || true
+          dig +short AAAA beaver-movers.itopsi.com || true
+          echo '=== historical VPS PTR ==='
+          dig +short -x 66.94.107.112 || true
+
+      - name: Historical VPS reachability
+        shell: bash
+        run: |
+          set +e
+          echo '=== ICMP ==='
+          ping -c 3 -W 2 66.94.107.112 || true
+          echo '=== known TCP ports ==='
+          for port in 22 222 80 443 3080; do
+            echo "--- 66.94.107.112:${port} ---"
+            timeout 7 nc -vz -w 5 66.94.107.112 "$port" || true
+          done
+
+      - name: Public health endpoints
+        shell: bash
+        run: |
+          set +e
+          for url in \
+            https://crm.itopsi.com/api/health \
+            https://beaver-movers.itopsi.com/api/health \
+            http://66.94.107.112:3080/api/health
+          do
+            echo "=== GET ${url} ==="
+            curl -4sSvk --connect-timeout 5 --max-time 12 \
+              -o /tmp/health-body -D /tmp/health-headers "$url" || true
+            echo '-- headers --'
+            sed -n '1,40p' /tmp/health-headers 2>/dev/null || true
+            echo '-- body (first 2 KB) --'
+            head -c 2048 /tmp/health-body 2>/dev/null || true
+            echo
+          done
+
+      - name: Routing snapshot
+        shell: bash
+        run: |
+          set +e
+          echo '=== local route decision ==='
+          ip route get 66.94.107.112 || true
+          echo '=== short trace if available ==='
+          if command -v tracepath >/dev/null 2>&1; then
+            timeout 20 tracepath -n 66.94.107.112 || true
+          elif command -v traceroute >/dev/null 2>&1; then
+            timeout 20 traceroute -n -m 12 -w 1 66.94.107.112 || true
+          else
+            echo 'tracepath/traceroute not installed on runner'
+          fi
+
+      - name: Diagnostic conclusion marker
+        run: |
+          echo 'Diagnostic completed. This workflow is intentionally non-failing:'
+          echo 'the evidence is in the step logs and must not block product CI.'
