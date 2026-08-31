@@ -32,6 +32,7 @@ const TONE: Record<string, string> = {
   "estimate.reject": "var(--rose)",
   "estimate.status": "var(--sky)",
   "lead.convert": "var(--emerald)",
+  "lead.acquisition_cost": "var(--amber)",
   "lead.activity.sms_sent": "var(--sky)",
   "lead.activity.sms_received": "var(--sky)",
   "lead.activity.sms_failed": "var(--rose)",
