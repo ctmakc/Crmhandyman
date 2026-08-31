@@ -29,6 +29,7 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
+        "x-forwarded-for": "10.77.201.25",
         "x-twilio-signature": signatureOverride ?? twilioSignature(url, form, token),
       },
       body: form.toString(),
@@ -95,7 +96,7 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     expect(collision.status).toBe(409);
   });
 
-  it("accepts a signed Twilio reply, persists it on the lead, and enforces STOP/START", async () => {
+  it("accepts a signed Twilio reply, raises a callback, and enforces STOP/START", async () => {
     const admin = await signedIn(baseUrl, alpha.admin);
     const created = await admin.post("/api/leads", {
       name: "Twilio Reply Test",
@@ -121,6 +122,16 @@ describe.sequential("channel addresses are claimed once, across all workspaces",
     expect(history.body.history[0].action).toBe("lead.activity.sms_received");
     expect(history.body.history[0].meta.message).toBe("Saturday morning works for us");
     expect(history.body.optedOut).toBe(false);
+
+    // A customer writing in is not the desk answering him. The response clock must keep
+    // running until a human works the lead, while the callback inbox gets an urgent task.
+    const afterReply = await admin.get(`/api/leads/${leadId}`);
+    expect(afterReply.status).toBe(200);
+    expect(afterReply.body.status).toBe("NEW");
+    const callbacks = await admin.get("/api/leads/follow-ups");
+    const replyTask = callbacks.body.find((item: { lead?: { id?: string } }) => item.lead?.id === leadId);
+    expect(replyTask).toBeTruthy();
+    expect(replyTask.lead.name).toBe("Twilio Reply Test");
 
     const badSignature = await twilioPost(
       {
