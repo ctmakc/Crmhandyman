@@ -1,0 +1,37 @@
+name: Deploy auth probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+      DEPLOY_HOST_SECRET: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT_SECRET: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_USER_SECRET: ${{ secrets.DEPLOY_USER }}
+    steps:
+      - name: Report credential presence only
+        shell: bash
+        run: |
+          set -eu
+          present() {
+            local label="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              echo "${label}=PRESENT"
+            else
+              echo "${label}=MISSING"
+            fi
+          }
+          present DEPLOY_PASSWORD "$DEPLOY_PASSWORD"
+          present DEPLOY_HOST "$DEPLOY_HOST_SECRET"
+          present DEPLOY_PORT "$DEPLOY_PORT_SECRET"
+          present DEPLOY_USER "$DEPLOY_USER_SECRET"
+          echo 'No secret values are printed by this workflow.'
