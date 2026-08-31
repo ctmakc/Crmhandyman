@@ -104,7 +104,7 @@ export default function SmsSettingsPage() {
           hint={
             loaded?.hasAccessToken
               ? `A token ending ${loaded.accessTokenHint || "••••"} is already on file. Leave blank to keep it.`
-              : "Stored encrypted-at-rest with the application database; never returned by the API."
+              : "Stored server-side in the integration record and never returned by the API."
           }
         >
           {(f) => (
