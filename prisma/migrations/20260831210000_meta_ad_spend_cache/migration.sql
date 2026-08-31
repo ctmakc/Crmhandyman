@@ -1,6 +1,9 @@
 -- Provider reporting cache, deliberately separate from Expense.
 -- Finance remains the accounting book; these rows exist only to allocate real Meta spend
 -- to campaign/ad-set/ad outcome reporting without double-booking the Meta invoice.
+--
+-- tenantId is intentionally a scoped scalar rather than a relation: this is disposable
+-- provider cache, not business/accounting data, and every read/write carries tenantId.
 CREATE TABLE "MetaAdSpend" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "tenantId" TEXT NOT NULL,
@@ -16,8 +19,7 @@ CREATE TABLE "MetaAdSpend" (
   "currency" TEXT NOT NULL,
   "impressions" INTEGER NOT NULL DEFAULT 0,
   "clicks" INTEGER NOT NULL DEFAULT 0,
-  "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "MetaAdSpend_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX "MetaAdSpend_tenant_account_day_ad_key"
