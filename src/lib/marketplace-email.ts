@@ -23,15 +23,58 @@ export interface ParsedInboundLeadEmail {
 }
 
 const LABELS: Record<string, readonly string[]> = {
-  name: ["customer name", "homeowner name", "client name", "contact name", "customer", "homeowner", "client", "name"],
+  name: [
+    "customer name",
+    "homeowner name",
+    "client name",
+    "contact name",
+    "customer",
+    "homeowner",
+    "client",
+    "name",
+  ],
   firstName: ["first name", "firstname"],
   lastName: ["last name", "lastname", "surname"],
-  email: ["email address", "e-mail address", "customer email", "contact email", "email", "e-mail"],
-  phone: ["phone number", "telephone number", "mobile number", "customer phone", "contact phone", "phone", "telephone", "mobile", "tel"],
+  email: [
+    "email address",
+    "e-mail address",
+    "customer email",
+    "contact email",
+    "email",
+    "e-mail",
+  ],
+  phone: [
+    "phone number",
+    "telephone number",
+    "mobile number",
+    "customer phone",
+    "contact phone",
+    "phone",
+    "telephone",
+    "mobile",
+    "tel",
+  ],
   address: ["moving from", "from address", "service address", "street address", "address"],
   city: ["city", "town", "location", "service area"],
-  jobType: ["service requested", "service needed", "job type", "project type", "category", "service", "project"],
-  leadId: ["lead id", "lead #", "request id", "request #", "enquiry id", "inquiry id", "reference id", "reference #"],
+  jobType: [
+    "service requested",
+    "service needed",
+    "job type",
+    "project type",
+    "category",
+    "service",
+    "project",
+  ],
+  leadId: [
+    "lead id",
+    "lead #",
+    "request id",
+    "request #",
+    "enquiry id",
+    "inquiry id",
+    "reference id",
+    "reference #",
+  ],
 };
 
 const PLATFORM_DOMAINS = [
@@ -106,7 +149,9 @@ function customerEmail(body: string, from: string): string | undefined {
 
 function customerPhone(body: string): string | undefined {
   const labeled = labeledValue(body, LABELS.phone);
-  const fromLabel = labeled?.match(/(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}/)?.[0];
+  const fromLabel = labeled?.match(
+    /(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}/
+  )?.[0];
   if (fromLabel) return cleanValue(fromLabel);
 
   return cleanValue(
@@ -114,7 +159,11 @@ function customerPhone(body: string): string | undefined {
   );
 }
 
-export function detectInboundEmailSource(from: string, subject: string, body = ""): InboundEmailSource {
+export function detectInboundEmailSource(
+  from: string,
+  subject: string,
+  body = ""
+): InboundEmailSource {
   const head = `${from}\n${subject}\n${body.slice(0, 2500)}`.toLowerCase();
 
   if (head.includes("movingwaldo")) return "MOVINGWALDO";
@@ -183,10 +232,11 @@ export function parseInboundLeadEmail(input: {
   const address = labeledValue(body, LABELS.address);
   const city = labeledValue(body, LABELS.city);
   const jobType = labeledValue(body, LABELS.jobType);
+  const bodyCustomerEmail = customerEmail(body, from);
 
   // A marketplace's display name is not a customer. Only generic email falls back to the
-  // sender's display name; platform notifications use a truthful placeholder when the
-  // provider withholds the homeowner's name until the lead is purchased/unlocked.
+  // sender's identity; platform notifications use a truthful placeholder when the
+  // provider withholds the homeowner's details until the lead is purchased/unlocked.
   const name =
     explicitName ??
     splitName ??
@@ -196,7 +246,7 @@ export function parseInboundLeadEmail(input: {
   return {
     source,
     name,
-    email: customerEmail(body, from),
+    email: bodyCustomerEmail ?? (source === "EMAIL" ? senderEmail(from) : undefined),
     phone: customerPhone(body),
     address,
     city,
