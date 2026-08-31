@@ -63,7 +63,15 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         tenantId,
         entity: "Lead",
         entityId: lead.id,
-        action: { startsWith: "lead.activity.sms_" },
+        OR: [
+          { action: { startsWith: "lead.activity.sms_" } },
+          {
+            AND: [
+              { action: { startsWith: "lead.automation." } },
+              { OR: [{ action: { endsWith: "_sent" } }, { action: { endsWith: "_failed" } }] },
+            ],
+          },
+        ],
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 30,
