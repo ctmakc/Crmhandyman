@@ -79,7 +79,7 @@ export default function LeadSalesDock() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-40 rounded-[3px] bg-navy px-4 py-3 text-sm font-bold text-white shadow-none md:bottom-6 md:right-6"
+        className="fixed bottom-20 right-4 z-40 rounded bg-navy-900 px-4 py-3 t-body font-bold text-plate shadow-none md:bottom-6 md:right-6"
       >
         Log call outcome
       </button>
