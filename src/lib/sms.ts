@@ -155,14 +155,20 @@ export async function sendSms(
   };
 }
 
-/** Twilio signs the exact public URL plus alphabetically sorted form parameters. */
+/**
+ * Twilio signs the exact public URL plus alphabetically sorted form parameter names.
+ * Repeated values for one name are de-duplicated and sorted as well — this mirrors
+ * twilio-node's `toFormUrlEncodedParam`, so a newly added multi-value webhook field does
+ * not become a false 401 merely because the provider evolved its payload.
+ */
 export function twilioSignature(url: string, params: URLSearchParams, authToken: string): string {
   let data = url;
   const keys = Array.from(new Set(Array.from(params.keys()))).sort();
   for (const key of keys) {
-    for (const value of params.getAll(key)) data += `${key}${value}`;
+    const values = Array.from(new Set(params.getAll(key))).sort();
+    for (const value of values) data += `${key}${value}`;
   }
-  return crypto.createHmac("sha1", authToken).update(data).digest("base64");
+  return crypto.createHmac("sha1", authToken).update(Buffer.from(data, "utf-8")).digest("base64");
 }
 
 export function verifyTwilioSignature(
