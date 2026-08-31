@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import { LeadClock } from "@/components/LeadClock";
+import { decodeLeadAttribution, leadAttributionRows } from "@/lib/lead-attribution";
 // The stamp the response clock reads. Written in one place so the two cannot drift.
 import { logStamp } from "@/lib/lead-notes";
 
@@ -31,6 +32,7 @@ interface Lead {
   address?: string;
   city?: string;
   source: string;
+  sourceMeta?: string;
   jobType?: string;
   notes?: string;
   status: string;
@@ -88,8 +90,6 @@ function readNotes(notes: string | undefined | null): Enquiry {
       out.calls.push({ stamp: stamped[1], text: stamped[2] });
       continue;
     }
-    /* A quiz answer is a short label, a colon and the customer's words. The label
-       is capped so a sentence with a colon in it stays a sentence. */
     const pair = line.match(/^([^:]{1,48}):\s*(.+)$/);
     if (pair) {
       out.answers.push({ label: pair[1], value: pair[2] });
@@ -97,19 +97,12 @@ function readNotes(notes: string | undefined | null): Enquiry {
     }
     out.prose.push(line);
   }
-  /* The channel headline only exists when a form wrote the block. A hand-typed
-     note stays prose instead of being promoted to a heading. */
   if (out.answers.length && out.prose.length && lines[0] === out.prose[0]) {
     out.channel = out.prose.shift();
   }
   return out;
 }
 
-/**
- * The status ladder — a horizontal rail of mono eyebrows joined by hairline
- * segments. Done steps read emerald with a filled segment; the current step is
- * bold in its own semantic tone; the future is dim.
- */
 function StatusLadder({ status }: { status: string }) {
   const idx = LADDER.findIndex((s) => s.status === status);
   return (
@@ -123,16 +116,10 @@ function StatusLadder({ status }: { status: string }) {
               <span
                 aria-hidden="true"
                 className="h-px min-w-[20px] flex-1"
-                style={{
-                  background:
-                    idx >= i ? "var(--emerald-ink)" : "var(--line)",
-                }}
+                style={{ background: idx >= i ? "var(--emerald-ink)" : "var(--line)" }}
               />
             )}
             <span
-              /* The steps ahead used to be dimmed to 55%, which put ink-3 at 2.9:1 —
-                 a rail whose far end could not be read in daylight. They are ink-3
-                 at full strength: quiet against the bold current step, still legible. */
               className={`eyebrow shrink-0 ${current ? "font-bold" : ""}`}
               style={{
                 color: done
@@ -152,18 +139,11 @@ function StatusLadder({ status }: { status: string }) {
   );
 }
 
-/** A fact about the lead: mono label, then the words themselves. */
-function DetailRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 border-b border-line px-1 py-3 sm:flex-row sm:gap-4">
       <span className="eyebrow shrink-0 pt-0.5 sm:w-[168px]">{label}</span>
-      <span className="t-lede measure text-ink">{children}</span>
+      <span className="t-lede measure break-words text-ink">{children}</span>
     </div>
   );
 }
@@ -172,8 +152,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [lead, setLead] = useState<Lead | null>(null);
-  /* «missing» — the record is gone or belongs to another workspace; «server» — the
-     desk could not reach it. Either way the screen has to say so out loud. */
   const [failed, setFailed] = useState<"missing" | "server" | null>(null);
   const [editing, setEditing] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -193,9 +171,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
 
   async function fetchLead() {
     const res = await fetch(`/api/leads/${params.id}`);
-    /* A 404 body used to be stored as the lead itself, and the header plate then
-       threw on `lead.id.slice(-4)`: a stale link out of a Telegram alert, or a lead
-       a colleague deleted, produced a crashed page with nothing on it. */
     if (!res.ok) {
       setFailed(res.status === 404 ? "missing" : "server");
       return;
@@ -216,7 +191,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Arriving from the sheet's "OPEN JOB →": the convert modal opens itself. */
   useEffect(() => {
     if (
       lead &&
@@ -231,8 +205,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
 
   const closeConvert = useCallback(() => {
     setShowConvertModal(false);
-    /* Back to the button that opened it — a keyboard that lands at the top of the
-       document after closing a layer has lost its place in the record. */
     openerRef.current?.focus();
     openerRef.current = null;
   }, []);
@@ -242,11 +214,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     setShowConvertModal(true);
   }
 
-  /**
-   * The layer keeps the keyboard inside itself: Esc closes, Tab cycles, and the
-   * first field takes focus on open. Without it Tab walked out of the dialog and
-   * down the record underneath, where every control was still live.
-   */
   useEffect(() => {
     if (!showConvertModal) return;
     const box = modalRef.current;
@@ -311,7 +278,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     fetchLead();
   }
 
-  /** Append a stamped line to the call log without touching the rest of notes. */
   async function handleLogCall(e: React.FormEvent) {
     e.preventDefault();
     const text = logText.trim();
@@ -345,8 +311,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     });
     setSaving(false);
 
-    // The button used to fail silently: a 500 has no JSON body, res.json() threw, the
-    // catch swallowed it and the modal just sat there. Say what happened.
     if (!res.ok) {
       const reason = await res.text();
       toast(reason.includes("Already converted") ? "This lead already has a job" : "Could not open the job");
@@ -391,16 +355,13 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   if (!lead) return <Skeleton lines={4} />;
 
   const notes = readNotes(lead.notes);
-  /* The customer already said when he wants it. The date field cannot fill itself
-     from prose, so his own words sit under it instead of being retyped from memory. */
+  const attributionRows = leadAttributionRows(decodeLeadAttribution(lead.sourceMeta));
   const whenAsked = notes.answers.find((a) => /when|date|day|time/i.test(a.label));
 
   return (
     <div className="page-doc space-y-6 pb-24 md:pb-0">
       <BackLink href="/leads" label="All leads" />
 
-      {/* THE CALL CARD — the header plate. The phone number is the instrument;
-          everything else on the plate exists to make this call. */}
       <div
         className="plate px-5 py-5"
         style={{ borderLeft: `4px solid ${spineFor(toneKey(lead.status))}` }}
@@ -410,17 +371,11 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
             <span className="mono eyebrow text-ink-3">
               LD-{new Date(lead.createdAt).getFullYear()}-{lead.id.slice(-4).toUpperCase()}
             </span>
-            <h1 className="t-record mt-1.5 font-black tracking-tight text-ink">
-              {lead.name}
-            </h1>
+            <h1 className="t-record mt-1.5 font-black tracking-tight text-ink">{lead.name}</h1>
             <p className="t-lede mt-2 text-ink-2">
               {[lead.jobType, lead.city].filter(Boolean).join(" · ") || "General inquiry"}
             </p>
           </div>
-          {/* THE RESPONSE CLOCK — the age of the lead was decoration; this is the number
-              the owner is judged by, and it runs while nobody has called back. */}
-          {/* Right-aligned beside the name on the desk; on a phone the plate is one
-              column, so the reading joins the stack instead of hanging off it. */}
           <div className="text-left md:text-right">
             <LeadClock lead={lead} />
             <p className="eyebrow mt-2">via {lead.source}</p>
@@ -453,8 +408,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* WHERE IT WENT. The job used to sit at the very bottom, under the call log,
-          so the first question about a converted lead was answered last. */}
       {lead.project && (
         <Link
           href={`/projects/${lead.project.id}`}
@@ -467,8 +420,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </Link>
       )}
 
-      {/* THE LADDER — where this lead stands, and the moves available from here.
-          A rejected lead gets a stamp instead of a rail. */}
       <section>
         <LaneHead title="Pipeline" />
         <div className="border-t border-line pt-4">
@@ -511,7 +462,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </div>
       </section>
 
-      {/* WHAT THE CUSTOMER ASKED FOR — the quiz, read as a form and not as prose. */}
       <section>
         <LaneHead
           title="What they asked for"
@@ -538,6 +488,19 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           )}
         </div>
       </section>
+
+      {attributionRows.length > 0 && (
+        <section>
+          <LaneHead title="Attribution" right={<Chip>{lead.source}</Chip>} />
+          <div className="border-t border-line">
+            {attributionRows.map((row) => (
+              <DetailRow key={row.label} label={row.label}>
+                {row.value}
+              </DetailRow>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <LaneHead
@@ -609,8 +572,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           </div>
         ) : (
           <div className="border-t border-line">
-            {/* The phone lives at the top of the plate, at twice this size and under
-                a thumb; printing it again here was the same fact twice. */}
             {lead.email && (
               <DetailRow label="Email">
                 <a
@@ -633,7 +594,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         )}
       </section>
 
-      {/* THE CALL LOG — what the desk has done about this lead, and nothing else. */}
       <section>
         <LaneHead
           title="Call log"
@@ -690,8 +650,6 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
 
       {showConvertModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/70 p-4">
-          {/* Announced as a dialog and named by its own heading, so a reader is told a
-              layer opened over the lead rather than that the page changed under them. */}
           <div
             ref={modalRef}
             role="dialog"
