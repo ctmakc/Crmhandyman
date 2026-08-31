@@ -81,6 +81,23 @@ describe("Twilio webhook signature", () => {
     params.set("Body", "changed");
     expect(verifyTwilioSignature(url, params, signature, "token")).toBe(false);
   });
+
+  it("canonicalizes repeated form values the same way as twilio-node", () => {
+    const a = new URLSearchParams();
+    a.append("Foo", "z");
+    a.append("Foo", "a");
+    a.append("Foo", "z");
+    a.append("Body", "Hello");
+
+    const b = new URLSearchParams();
+    b.append("Body", "Hello");
+    b.append("Foo", "a");
+    b.append("Foo", "z");
+
+    expect(twilioSignature("https://crm.example.com/hook", a, "token")).toBe(
+      twilioSignature("https://crm.example.com/hook", b, "token"),
+    );
+  });
 });
 
 describe("SMS consent words", () => {
