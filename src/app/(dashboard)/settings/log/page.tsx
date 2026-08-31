@@ -21,7 +21,7 @@ const PAGE_SIZE = 60;
 
 /**
  * Colour means one thing only: emerald money arrived or a job was won, rose something
- * was removed or lost, sky new paper exists, amber a state moved.
+ * was removed or lost, sky new paper/communication exists, amber a state moved.
  */
 const TONE: Record<string, string> = {
   "invoice.issue": "var(--sky)",
@@ -32,13 +32,18 @@ const TONE: Record<string, string> = {
   "estimate.reject": "var(--rose)",
   "estimate.status": "var(--sky)",
   "lead.convert": "var(--emerald)",
+  "lead.activity.sms_sent": "var(--sky)",
+  "lead.activity.sms_received": "var(--sky)",
+  "lead.activity.sms_failed": "var(--rose)",
+  "lead.activity.sms_opt_out": "var(--rose)",
+  "lead.activity.sms_opt_in": "var(--emerald)",
   "payment.record": "var(--emerald)",
   "payment.delete": "var(--rose)",
   "user.add": "var(--sky)",
   "user.remove": "var(--rose)",
 };
 
-const ENTITIES = ["Invoice", "Payment", "Estimate", "Project", "User"];
+const ENTITIES = ["Invoice", "Payment", "Estimate", "Project", "Lead", "User"];
 
 const timeOf = (d: Date) =>
   d.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -101,9 +106,9 @@ export default async function ActionLogPage({
       <BackLink href="/settings" label="Settings" />
 
       <PageHead
-        eyebrow="Desk setup · 06"
+        eyebrow="Desk setup · 07"
         title="Action log"
-        sub="Every change to money, paper and access, in the order it happened. Entries are written once and never edited."
+        sub="Every change to money, paper, access and lead communication, in the order it happened. Entries are written once and never edited."
       />
 
       {/* Ruled filter line — a frame is the last resort, and this one has not earned it. */}
@@ -153,7 +158,7 @@ export default async function ActionLogPage({
           hint={
             q || entity
               ? "Nothing here answers that. Clear the filter to read the whole book."
-              : "The log fills itself. Issue an invoice, take a payment or add a crew member and the entry appears here with a name and a time against it."
+              : "The log fills itself. Issue an invoice, take a payment, text a lead or add a crew member and the entry appears here with a name and a time against it."
           }
         >
           {q || entity ? "No entries match" : "Nothing recorded yet"}

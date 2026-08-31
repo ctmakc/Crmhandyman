@@ -7,9 +7,8 @@ import { Lane, Num, PageHead } from "@/components/ui/primitives";
  * gets a login, where leads land, how he hears about them, and only then the book
  * that records what everyone did.
  *
- * The number in front of a section is the same number the section's own page
- * carries in its eyebrow. They had drifted — the index called the action log 04
- * while the log called itself 03 and the team page also called itself 01.
+ * The number in front of a section is the same number the section's own page carries
+ * in its eyebrow.
  */
 const SECTIONS = [
   {
@@ -43,8 +42,14 @@ const SECTIONS = [
     sub: "Telegram and email the moment a lead lands, with quiet hours overnight",
   },
   {
-    href: "/settings/log",
+    href: "/settings/sms",
     code: "06",
+    title: "SMS",
+    sub: "Twilio number and credentials for two-way lead texting, callbacks and booking messages",
+  },
+  {
+    href: "/settings/log",
+    code: "07",
     title: "Action log",
     sub: "Who changed a price, took a payment, voided an invoice",
   },
@@ -56,15 +61,9 @@ export default function SettingsPage() {
       <PageHead
         eyebrow="Desk setup"
         title="Settings"
-        sub="Work down the list once and the desk runs itself. The first five change what it does; the last one only reports what it did."
+        sub="Work down the list once and the desk runs itself. The first six change what it does; the last one only reports what it did."
       />
 
-      {/* Ruled rows. The list used to sit inside a closed rectangle, which is the box
-          the 2026-07-27 revision took out of every other list in the product. */}
-      {/* A ruled row without a spine. `Row` paints a slate one when a record carries no
-          status, and slate means «neutral / archived» — on a menu of six settings that
-          is a colour saying nothing, six times. The flex sits on an inner element
-          because `.row` declares display:block and beats a utility class. */}
       <Lane>
         {SECTIONS.map((s) => (
           <Link key={s.href} href={s.href} className="row">
