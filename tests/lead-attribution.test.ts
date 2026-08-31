@@ -6,6 +6,7 @@ import {
   leadAttributionRows,
   metaLeadAttribution,
 } from "@/lib/lead-attribution";
+import { parseIntakePayload } from "@/lib/intake";
 
 describe("lead attribution metadata", () => {
   it("extracts website UTM, landing and referrer facts", () => {
@@ -31,6 +32,29 @@ describe("lead attribution metadata", () => {
       referrer: "https://www.facebook.com/",
       fbclid: "fb-click-123",
     });
+  });
+
+  it("keeps tracking fields out of the customer enquiry transcript", () => {
+    const parsed = parseIntakePayload({
+      name: "Jane Smith",
+      phone: "613-555-0188",
+      q_from: "Kanata",
+      q_to: "Barrhaven",
+      utm_source: "facebook",
+      utm_campaign: "ottawa-moving-september",
+      utm_content: "video-a",
+      event_source_url: "https://beavermovers.com/quote",
+      referrer: "https://facebook.com/",
+      fbclid: "fb-click-123",
+      gclid: "google-click-456",
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.lead.answers).toEqual([
+      { label: "Moving from", value: "Kanata" },
+      { label: "Moving to", value: "Barrhaven" },
+    ]);
   });
 
   it("maps Meta Lead Ads campaign hierarchy", () => {
