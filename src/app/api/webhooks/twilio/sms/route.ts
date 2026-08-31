@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { record } from "@/lib/audit";
+import { cancelLeadAutomations } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
 import { leadTaskMarker } from "@/lib/lead-sales";
 import { readTextCapped } from "@/lib/request-body";
@@ -26,12 +27,6 @@ function firstForwarded(value: string | null): string | null {
   return value?.split(",")[0]?.trim() || null;
 }
 
-/**
- * Twilio signs the public URL configured on the phone number. Behind Caddy, Next may see
- * the internal socket URL, so reconstruct the public origin from the proxy headers. A
- * forged host still cannot forge the HMAC; this only makes the legitimate signature and
- * the request agree about the URL they are signing.
- */
 function publicRequestUrl(req: NextRequest): string {
   const internal = new URL(req.url);
   const proto = firstForwarded(req.headers.get("x-forwarded-proto")) || internal.protocol.replace(":", "");
@@ -46,19 +41,13 @@ function twiml() {
   });
 }
 
-/**
- * An inbound customer message is work due NOW. Reuse the existing lead callback task
- * rather than creating a second queue: if a callback already exists, pull it forward and
- * replace its context with the new message; otherwise create one for the lead owner (or
- * the workspace admin). This makes replies visible on the Leads desk immediately.
- */
 async function raiseReplyTask(tenantId: string, lead: SmsLead, message: string) {
   const marker = leadTaskMarker(lead.id);
   const open = await prisma.task.findFirst({
     where: {
       tenantId,
       status: { in: ["TODO", "IN_PROGRESS"] },
-      description: { contains: marker },
+      description: { startsWith: "[[LEAD:", contains: marker },
     },
     orderBy: { dueDate: "asc" },
     select: { id: true },
@@ -122,8 +111,6 @@ export async function POST(req: NextRequest) {
 
   if (!to || !from) return NextResponse.json({ error: "Missing SMS addresses" }, { status: 400 });
 
-  // The receiving number is globally unique in ChannelIntegration.normalizedAddress, so
-  // this lookup resolves one workspace without trusting anything the sender typed in Body.
   const integration = await prisma.channelIntegration.findFirst({
     where: { channel: "SMS", normalizedAddress: to, isActive: true },
   });
@@ -135,8 +122,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  // Twilio retries deliveries. The provider id is already written into the append-only
-  // meta JSON; a retry returns empty TwiML rather than creating a second message/lead/task.
   if (providerMessageId) {
     const duplicate = await prisma.auditLog.findFirst({
       where: { tenantId: integration.tenantId, meta: { contains: providerMessageId } },
@@ -159,9 +144,6 @@ export async function POST(req: NextRequest) {
       ? (optOutType as "STOP" | "START")
       : smsConsentCommand(message);
 
-  // A random inbound number becomes a lead so a paid-for business number never has a
-  // customer conversation that exists only in Twilio. Pure STOP/START from an unknown
-  // sender is not promoted to the sales desk; Twilio itself keeps that number suppressed.
   if (!lead && !consent) {
     lead = await prisma.lead.create({
       data: {
@@ -210,6 +192,11 @@ export async function POST(req: NextRequest) {
       : consent === "START"
         ? `${lead.name} opted back in to SMS`
         : `SMS received from ${lead.name}`;
+
+  // A reply or STOP is an explicit customer signal: generic no-reply nurture is no
+  // longer true. Cancel those steps before looking for a human callback task, otherwise
+  // the reply handler could accidentally mutate an automation row into a callback row.
+  if (consent !== "START") await cancelLeadAutomations(integration.tenantId, lead.id);
 
   // Inbound is not the same thing as the desk answering. Leave NEW alone so the response
   // clock keeps running until a human actually sends/calls; the urgent task is the signal.
