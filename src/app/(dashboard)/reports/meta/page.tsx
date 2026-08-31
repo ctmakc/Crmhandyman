@@ -22,11 +22,18 @@ function pct(part: number, whole: number) {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 }
 
-function flatten(nodes: MetaBreakdownNode[], depth = 0): Array<{ node: MetaBreakdownNode; depth: number }> {
-  const rows: Array<{ node: MetaBreakdownNode; depth: number }> = [];
+type FlatRow = { node: MetaBreakdownNode; depth: number; path: string };
+
+function flatten(
+  nodes: MetaBreakdownNode[],
+  depth = 0,
+  parentPath = ""
+): FlatRow[] {
+  const rows: FlatRow[] = [];
   for (const node of nodes) {
-    rows.push({ node, depth });
-    rows.push(...flatten(node.children, depth + 1));
+    const path = `${parentPath}/${node.level}:${node.key}`;
+    rows.push({ node, depth, path });
+    rows.push(...flatten(node.children, depth + 1, path));
   }
   return rows;
 }
@@ -108,7 +115,7 @@ export default async function MetaCampaignReportPage({
         </button>
       </form>
 
-      <div className="grid gap-4 border-y border-line py-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid gap-4 border-y border-line py-4 sm:grid-cols-3 lg:grid-cols-7">
         <div>
           <div className="eyebrow">Period</div>
           <div className="t-row mt-1 font-bold text-ink">{period}</div>
@@ -130,6 +137,13 @@ export default async function MetaCampaignReportPage({
             <Num>{report.total.qualified}</Num>
           </div>
           <div className="eyebrow mt-1">{pct(report.total.qualified, report.total.leads)}</div>
+        </div>
+        <div>
+          <div className="eyebrow">Rejected</div>
+          <div className="t-record mt-1 font-black text-ink">
+            <Num>{report.total.rejected}</Num>
+          </div>
+          <div className="eyebrow mt-1">{pct(report.total.rejected, report.total.leads)}</div>
         </div>
         <div>
           <div className="eyebrow">Jobs</div>
@@ -158,13 +172,14 @@ export default async function MetaCampaignReportPage({
         </Empty>
       ) : (
         <div className="overflow-x-auto border-y border-line">
-          <table className="w-full min-w-[1040px] border-collapse">
+          <table className="w-full min-w-[1120px] border-collapse">
             <thead>
               <tr className="border-b border-line text-left">
                 <th className="eyebrow px-2 py-3 font-normal">Campaign structure</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Leads</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Reached</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Qualified</th>
+                <th className="eyebrow px-2 py-3 text-right font-normal">Rejected</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Jobs</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Quoted</th>
                 <th className="eyebrow px-2 py-3 text-right font-normal">Invoiced</th>
@@ -173,10 +188,10 @@ export default async function MetaCampaignReportPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ node, depth }) => (
+              {rows.map(({ node, depth, path }) => (
                 <tr
-                  key={`${node.level}:${node.key}:${depth}:${node.id ?? node.name}`}
-                  className={depth === 0 ? "border-y border-line bg-sunk/40" : "border-b border-line"}
+                  key={path}
+                  className={depth === 0 ? "border-y border-line bg-sunk" : "border-b border-line"}
                 >
                   <td className="px-2 py-3 align-top">
                     <div className="flex min-w-[300px] items-start gap-2" style={{ paddingLeft: depth * 20 }}>
@@ -197,6 +212,7 @@ export default async function MetaCampaignReportPage({
                   <td className="px-2 py-3 align-top"><Count value={node.leads} /></td>
                   <td className="px-2 py-3 align-top"><Count value={node.reached} rate={pct(node.reached, node.leads)} /></td>
                   <td className="px-2 py-3 align-top"><Count value={node.qualified} rate={pct(node.qualified, node.leads)} /></td>
+                  <td className="px-2 py-3 align-top"><Count value={node.rejected} rate={pct(node.rejected, node.leads)} /></td>
                   <td className="px-2 py-3 align-top"><Count value={node.jobs} rate={pct(node.jobs, node.leads)} /></td>
                   <td className="px-2 py-3 text-right align-top"><Money cents={node.quotedCents} /></td>
                   <td className="px-2 py-3 text-right align-top"><Money cents={node.invoicedCents} /></td>
