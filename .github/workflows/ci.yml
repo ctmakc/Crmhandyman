@@ -53,20 +53,24 @@ jobs:
             deploy/hostd/healthwatch.sh
           docker compose -f deploy/hostd/docker-compose.prod.yml config >/dev/null
 
-      # Docker runtime intentionally omits ts-node. Prove the operator provisioner can be
-      # emitted and actually started as ordinary JS exactly the way the Dockerfile ships it.
+      # Docker runtime intentionally omits ts-node. Compile the operator provisioner as
+      # ordinary CommonJS and run it from a directory beneath the repository root, which
+      # mirrors /app/scripts -> /app/node_modules in the production image. Running the same
+      # file from /tmp would intentionally break Node's parent-directory module lookup and
+      # test a filesystem shape the container never has.
       - name: Compile production tenant provisioner
         run: |
-          rm -rf /tmp/operator-scripts
+          rm -rf .ci/operator-scripts
+          mkdir -p .ci/operator-scripts
           npx tsc scripts/provision-tenant.ts \
-            --outDir /tmp/operator-scripts \
+            --outDir .ci/operator-scripts \
             --module commonjs \
             --target ES2022 \
             --moduleResolution node \
             --esModuleInterop \
             --skipLibCheck
-          test -s /tmp/operator-scripts/provision-tenant.js
-          node /tmp/operator-scripts/provision-tenant.js --help | grep -q "provision-tenant"
+          test -s .ci/operator-scripts/provision-tenant.js
+          node .ci/operator-scripts/provision-tenant.js --help | grep -q "provision-tenant"
 
       - name: Tests
         run: npm test
