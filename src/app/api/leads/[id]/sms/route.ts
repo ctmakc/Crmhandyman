@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
 import { record } from "@/lib/audit";
+import { cancelLeadAutomations } from "@/lib/lead-automation";
 import { sendSms, SmsProviderError, twilioConfig } from "@/lib/sms";
 import { smsTemplate, smsTemplates } from "@/lib/sms-templates";
 
@@ -150,6 +151,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         data: { status: "CONTACTED" },
       });
     }
+
+    // A human has taken ownership of the conversation. Generic no-reply nurture must
+    // disappear immediately; promised callback tasks are not automation and stay put.
+    await cancelLeadAutomations(tenantId, lead.id);
 
     await record({
       tenantId,
