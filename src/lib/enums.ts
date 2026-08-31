@@ -17,8 +17,13 @@ export const LEAD_SOURCES = [
   "FACEBOOK",
   "INSTAGRAM",
   "GOOGLE",
+  "GOOGLE_LSA",
   "HOMESTARS",
+  "BARK",
+  "URBANTASKER",
+  "MOVINGWALDO",
   "KIJIJI",
+  "WEBSITE",
   "EMAIL",
   "MANUAL",
   "OTHER",
@@ -58,7 +63,7 @@ export function choice<T extends readonly string[]>(
   return (allowed as readonly string[]).includes(raw) ? (raw as Choice<T>) : null;
 }
 
-/** The 400 body — it names the field and lists what the shop actually offers. */
+/** The 400 body — it names the field and lists what is on offer. */
 export function badChoice(field: string, allowed: readonly string[]) {
   return { error: `That ${field} is not one this desk offers`, field, allowed: [...allowed] };
 }
