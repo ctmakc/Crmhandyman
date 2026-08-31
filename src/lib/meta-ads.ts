@@ -177,6 +177,7 @@ export async function replaceMetaAdSpend(input: {
   rows: Omit<MetaAdSpendRow, "id" | "tenantId" | "syncedAt">[];
 }) {
   const now = new Date();
+  const syncedAt = now.toISOString();
   const config: MetaAdsSyncConfig = {
     lastSyncSince: input.since,
     lastSyncUntil: input.until,
@@ -203,7 +204,7 @@ export async function replaceMetaAdSpend(input: {
           ${input.tenantId}, ${input.accountId}, ${row.day},
           ${row.campaignId}, ${row.campaignName}, ${row.adsetId}, ${row.adsetName},
           ${row.adId}, ${row.adName}, ${row.spendCents}, ${row.currency},
-          ${row.impressions}, ${row.clicks}, ${now}
+          ${row.impressions}, ${row.clicks}, ${syncedAt}
         )
       `;
     }
