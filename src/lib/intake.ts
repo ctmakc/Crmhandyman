@@ -50,7 +50,7 @@ export type IntakeLead = {
 
 export type ParsedIntake = { ok: true; lead: IntakeLead } | { ok: false; error: string };
 
-/** Fields the CRM stores in its own columns, plus the ad-tracking noise nobody reads. */
+/** Fields stored in CRM columns or structured attribution, not customer-facing notes. */
 const CONSUMED = new Set([
   "name",
   "full_name",
@@ -66,6 +66,23 @@ const CONSUMED = new Set([
   "fbp",
   "fbc",
   "fbclid",
+  "gclid",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "utmsource",
+  "utmmedium",
+  "utmcampaign",
+  "utmcontent",
+  "utmterm",
+  "event_source_url",
+  "page",
+  "landing_page",
+  "landingpage",
+  "referrer_url",
+  "referrer",
   "user_agent",
   "ua",
   "ip",
@@ -91,12 +108,8 @@ const LABELS: Record<string, string> = {
   q_packing: "Packing",
   q_heavy: "Heavy items",
   // Common
-  page: "Page",
-  event_source_url: "Page",
   comment: "Comment",
   message: "Message",
-  utm_source: "UTM source",
-  utm_campaign: "UTM campaign",
 };
 
 function labelFor(key: string): string {

@@ -4,6 +4,7 @@ import { fetchFbLead, extractLeadField, verifyFbWebhookSignature } from "@/lib/i
 import { notifyNewLead } from "@/lib/notify";
 import { startLeadAutomation } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
+import { encodeLeadAttribution, metaLeadAttribution } from "@/lib/lead-attribution";
 import { readTextCapped } from "@/lib/request-body";
 import { throttle, throttleVerify, tokenMatches } from "../guard";
 
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
             city: extractLeadField(fields, "city"),
             source: "FACEBOOK",
             sourceLeadId: leadgenId,
+            sourceMeta: encodeLeadAttribution(metaLeadAttribution(leadData)),
             jobType: extractLeadField(fields, "job_type") || extractLeadField(fields, "service"),
             notes: defangStamps(
               extractLeadField(fields, "message") || extractLeadField(fields, "comments") || ""

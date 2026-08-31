@@ -38,7 +38,7 @@ model Tenant {
   tasks               Task[]
   invoices            Invoice[]
   payments            Payment[]
-  expenses            Expense[]
+  expenses             Expense[]
   integrations        ChannelIntegration[]
   auditLogs           AuditLog[]
   photos              JobPhoto[]
@@ -237,6 +237,8 @@ model Lead {
   city         String?
   source       LeadSource @default(MANUAL)
   sourceLeadId String?
+  /// Structured JSON attribution (campaign/ad/form/UTM), separate from human notes.
+  sourceMeta   String?
   jobType      String?
   notes        String?
   status       LeadStatus @default(NEW)
