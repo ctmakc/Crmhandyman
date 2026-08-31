@@ -110,19 +110,32 @@ function identity(
   meta: LeadAttribution | undefined,
   level: MetaBreakdownLevel
 ): { key: string; id: string | null; name: string } {
-  const pair =
-    level === "campaign"
-      ? [meta?.campaignId, meta?.campaignName, "Campaign unavailable"]
-      : level === "adset"
-        ? [meta?.adsetId, meta?.adsetName, "Ad set unavailable"]
-        : level === "ad"
-          ? [meta?.adId, meta?.adName, "Ad unavailable"]
-          : [meta?.formId, meta?.formName, "Form unavailable"];
+  let rawId: string | undefined;
+  let rawName: string | undefined;
+  let fallback: string;
 
-  const id = pair[0] || null;
-  const label = pair[1] || id || pair[2];
-  const key = id ? `id:${id}` : pair[1] ? `name:${pair[1]}` : "unknown";
-  return { key, id, name: label };
+  if (level === "campaign") {
+    rawId = meta?.campaignId;
+    rawName = meta?.campaignName;
+    fallback = "Campaign unavailable";
+  } else if (level === "adset") {
+    rawId = meta?.adsetId;
+    rawName = meta?.adsetName;
+    fallback = "Ad set unavailable";
+  } else if (level === "ad") {
+    rawId = meta?.adId;
+    rawName = meta?.adName;
+    fallback = "Ad unavailable";
+  } else {
+    rawId = meta?.formId;
+    rawName = meta?.formName;
+    fallback = "Form unavailable";
+  }
+
+  const id = rawId || null;
+  const name = rawName || id || fallback;
+  const key = id ? `id:${id}` : rawName ? `name:${rawName}` : "unknown";
+  return { key, id, name };
 }
 
 function touch(
