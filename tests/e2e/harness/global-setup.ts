@@ -59,7 +59,6 @@ async function waitForHealth(baseUrl: string, child: ChildProcess | null, log: (
     }
     try {
       const res = await fetch(new URL("/api/health", baseUrl));
-      // 503 means the app is up and the database is not — a real failure, not a wait.
       if (res.status === 200) return;
       const body = await res.text();
       throw new Error(`/api/health answered ${res.status}: ${body}`);
@@ -94,24 +93,12 @@ export default async function setup(project: TestProject) {
       DATABASE_URL: `file:${dbPath}`,
       NEXTAUTH_SECRET: "e2e-secret-not-a-real-one",
       NEXTAUTH_URL: baseUrl,
+      AUTOMATION_CRON_SECRET: "e2e-automation-secret",
       UPLOADS_DIR: path.join(workdir, "uploads"),
-      // Trials must not expire mid-run, and the intake dedup window has to be known.
       TRIAL_DAYS: "7",
       LEAD_DEDUP_DAYS: "30",
-      // The suite computes its calendar-day expectations in America/Toronto (see
-      // vitest.config.mts) — the server has to count days on the same wall clock, or a
-      // CI runner sitting in UTC crosses midnight hours early and every overdue rung
-      // slips by one.
       TZ: "America/Toronto",
       NODE_ENV: "development" as const,
-      /**
-       * The suite never edits a file while it runs, so hot reload is pure cost — and on
-       * a busy machine it is worse than that. `inotify` instances are a per-user kernel
-       * quota; with other work already holding them, the watcher fails with EMFILE, reads
-       * the failure as "everything changed", and restarts the server in a loop that never
-       * answers /api/health. Polling at a lazy interval touches no kernel watches and
-       * notices nothing, which is exactly what is wanted here.
-       */
       WATCHPACK_POLLING: "60000",
     };
 
@@ -127,8 +114,6 @@ export default async function setup(project: TestProject) {
     const server = spawn(process.execPath, [nextBin, "dev", "-p", String(PORT)], {
       cwd: PROJECT_DIR,
       env,
-      // Own process group: `next dev` forks a worker, and killing only the parent
-      // leaves that worker holding the port for the next run.
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -139,8 +124,6 @@ export default async function setup(project: TestProject) {
 
   await waitForHealth(baseUrl, child, log);
 
-  // Two workspaces, opened the way a customer opens one. Both are DEMO trials, so each
-  // arrives with sample data and a worker account whose password is shown exactly once.
   const alpha = await registerWorkspace(baseUrl, "Alpha");
   const beta = await registerWorkspace(baseUrl, "Beta");
 
