@@ -23,7 +23,7 @@ Do not provision against a laptop database and do not assume the historical host
 production. From the repository root:
 
 ```bash
-deploy/hostd/status.sh
+bash deploy/hostd/status.sh
 ```
 
 The last documented host defaults to `root@66.94.107.112:222`. If production moved:
@@ -31,7 +31,7 @@ The last documented host defaults to `root@66.94.107.112:222`. If production mov
 ```bash
 HANDYCRM_DEPLOY_BOX=root@<real-ip> \
 HANDYCRM_DEPLOY_SSH_PORT=<real-port> \
-deploy/hostd/status.sh
+bash deploy/hostd/status.sh
 ```
 
 Required before continuing:
@@ -71,14 +71,16 @@ secret `AUTOMATION_PROCESSOR_URL` to `https://crm.itopsi.com`.
 
 ## Gate 3 — provision Beaver Movers in the production database
 
-Run **inside the production app container** so `DATABASE_URL=file:/app/var/crm.db` is the
-same database the live application uses:
+The production image intentionally does not contain `ts-node`. During image build the
+operator provisioner is compiled to `scripts/provision-tenant.js`. Run that compiled JS
+**inside the production app container** so it sees the live
+`DATABASE_URL=file:/app/var/crm.db`:
 
 ```bash
 cd /opt/handyman-crm
 
 docker compose -f deploy/hostd/docker-compose.prod.yml exec crm \
-  npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/provision-tenant.ts \
+  node scripts/provision-tenant.js \
   --business "Beaver Movers" \
   --slug beaver-movers \
   --owner darryl@beavermovers.com \
