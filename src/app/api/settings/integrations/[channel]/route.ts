@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/guard";
 import { tokenHint } from "@/lib/notify";
 import { normalizeChannelAddress } from "@/lib/channel-address";
 import { smsFromNumber } from "@/lib/sms";
+import { META_ADS_CHANNEL, normalizeMetaAdAccountId } from "@/lib/meta-ads";
 
 /**
  * The unique-index violation, read the way invoice-number.ts reads it: by code, not by
@@ -70,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: { channel: str
 
   const accessToken = keep(body.accessToken);
   const webhookSecret = keep(body.webhookSecret);
-  const pageId = keep(body.pageId);
+  let pageId = keep(body.pageId);
   const config =
     body.config === undefined || body.config === ""
       ? undefined
@@ -79,11 +80,24 @@ export async function PUT(req: NextRequest, { params }: { params: { channel: str
         : JSON.stringify(body.config);
   const isActive = typeof body.isActive === "boolean" ? body.isActive : undefined;
 
+  // Ads Manager commonly prints `act_123…`, while Graph routes need the digits. Fail on
+  // save rather than letting a malformed account id sit quietly until the first spend sync.
+  if (channel === META_ADS_CHANNEL && typeof pageId === "string") {
+    const normalized = normalizeMetaAdAccountId(pageId);
+    if (!normalized) {
+      return NextResponse.json(
+        { error: "Meta ad account ID must be digits or act_<digits>", field: "pageId" },
+        { status: 400 },
+      );
+    }
+    pageId = normalized;
+  }
+
   /**
    * Two channels route inbound traffic by an address owned by exactly one workspace:
    * email by recipient address, SMS by the Twilio number the customer replied to.
    * `normalizedAddress` has a global unique index, so even two simultaneous saves cannot
-   * make two tenants claim the same inbox/number.
+   * make two tenants claim one inbox/number.
    *
    * undefined = don't touch the stored claim; null = explicitly release it.
    */

@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { jobMoney, type JobMoneyInput } from "@/lib/margin";
 import { decodeLeadAttribution, type LeadAttribution } from "@/lib/lead-attribution";
+import {
+  META_ADS_CHANNEL,
+  loadMetaAdSpend,
+  normalizeMetaAdAccountId,
+  type MetaAdSpendRow,
+} from "@/lib/meta-ads";
 
 export type MetaBreakdownLevel = "campaign" | "adset" | "ad" | "form";
 
@@ -18,7 +24,19 @@ export interface MetaOutcome {
   marginCents: number;
 }
 
-export interface MetaBreakdownNode extends MetaOutcome {
+export interface MetaSpendMetrics {
+  spendCents: number | null;
+  spendCurrency: string | null;
+  mixedCurrency: boolean;
+  impressions: number;
+  clicks: number;
+  /** Collected CAD / spend CAD. Null for non-CAD, mixed currency or zero/unknown spend. */
+  roas: number | null;
+  costPerLeadCents: number | null;
+  costPerJobCents: number | null;
+}
+
+export interface MetaBreakdownNode extends MetaOutcome, MetaSpendMetrics {
   level: MetaBreakdownLevel;
   key: string;
   id: string | null;
@@ -31,14 +49,16 @@ export interface MetaCampaignReport {
   year: number;
   month: number | null;
   total: MetaOutcome;
+  spend: MetaSpendMetrics & {
+    configured: boolean;
+    accountId: string | null;
+    lastSyncAt: Date | null;
+    coverageSince: string | null;
+    coverageUntil: string | null;
+  };
   campaigns: MetaBreakdownNode[];
-  /**
-   * Campaign outcome is real; campaign spend is deliberately absent. A general Meta
-   * invoice cannot be split across campaigns without Ads Insights or another trusted
-   * campaign-level source, and inventing that split would make ROAS look precise while
-   * being false.
-   */
-  spendAllocated: false;
+  /** Backward-readable flag: true only when trusted Ads Insights rows exist for the period. */
+  spendAllocated: boolean;
 }
 
 type MetaProject = JobMoneyInput;
@@ -49,7 +69,27 @@ export type MetaReportLead = {
   project: MetaProject | null;
 };
 
-type MutableNode = MetaOutcome & {
+export type MetaReportSpend = Pick<
+  MetaAdSpendRow,
+  | "campaignId"
+  | "campaignName"
+  | "adsetId"
+  | "adsetName"
+  | "adId"
+  | "adName"
+  | "spendCents"
+  | "currency"
+  | "impressions"
+  | "clicks"
+>;
+
+type SpendAccumulator = {
+  spendByCurrency: Map<string, number>;
+  impressions: number;
+  clicks: number;
+};
+
+type MutableNode = MetaOutcome & SpendAccumulator & {
   level: MetaBreakdownLevel;
   key: string;
   id: string | null;
@@ -72,6 +112,12 @@ const emptyOutcome = (): MetaOutcome => ({
   marginCents: 0,
 });
 
+const emptySpend = (): SpendAccumulator => ({
+  spendByCurrency: new Map<string, number>(),
+  impressions: 0,
+  clicks: 0,
+});
+
 function emptyNode(
   level: MetaBreakdownLevel,
   key: string,
@@ -86,6 +132,7 @@ function emptyNode(
     platforms: new Set<string>(),
     children: new Map<string, MutableNode>(),
     ...emptyOutcome(),
+    ...emptySpend(),
   };
 }
 
@@ -104,6 +151,16 @@ function addOutcome(target: MetaOutcome, lead: MetaReportLead) {
   target.collectedCents += money.collectedCents;
   target.costsCents += money.costsCents;
   target.marginCents += money.marginCents;
+}
+
+function addSpend(target: SpendAccumulator, row: MetaReportSpend) {
+  const currency = row.currency?.trim().toUpperCase() || "UNKNOWN";
+  target.spendByCurrency.set(
+    currency,
+    (target.spendByCurrency.get(currency) ?? 0) + Math.max(0, row.spendCents),
+  );
+  target.impressions += Math.max(0, row.impressions);
+  target.clicks += Math.max(0, row.clicks);
 }
 
 function identity(
@@ -138,6 +195,17 @@ function identity(
   return { key, id, name };
 }
 
+function spendAttribution(row: MetaReportSpend): LeadAttribution {
+  return {
+    campaignId: row.campaignId,
+    campaignName: row.campaignName || undefined,
+    adsetId: row.adsetId,
+    adsetName: row.adsetName || undefined,
+    adId: row.adId,
+    adName: row.adName || undefined,
+  };
+}
+
 function touch(
   map: Map<string, MutableNode>,
   level: MetaBreakdownLevel,
@@ -148,8 +216,43 @@ function touch(
   if (!node) {
     node = emptyNode(level, row.key, row.id, row.name);
     map.set(row.key, node);
+  } else if ((!node.name || node.name === node.id) && row.name) {
+    node.name = row.name;
   }
   return node;
+}
+
+function spendMetrics(
+  source: SpendAccumulator,
+  outcome: MetaOutcome,
+  allowAllocation: boolean
+): MetaSpendMetrics {
+  const currencies = Array.from(source.spendByCurrency.entries()).filter(([, cents]) => cents >= 0);
+  const mixedCurrency = currencies.length > 1;
+  const single = currencies.length === 1 ? currencies[0] : null;
+  const spendCurrency = single?.[0] ?? null;
+  const spendCents = allowAllocation && single ? single[1] : null;
+  const comparableCad = spendCurrency === "CAD" && spendCents !== null;
+
+  return {
+    spendCents,
+    spendCurrency: allowAllocation ? spendCurrency : null,
+    mixedCurrency: allowAllocation ? mixedCurrency : false,
+    impressions: allowAllocation ? source.impressions : 0,
+    clicks: allowAllocation ? source.clicks : 0,
+    roas:
+      comparableCad && spendCents > 0
+        ? outcome.collectedCents / spendCents
+        : null,
+    costPerLeadCents:
+      comparableCad && outcome.leads > 0
+        ? Math.round(spendCents / outcome.leads)
+        : null,
+    costPerJobCents:
+      comparableCad && outcome.jobs > 0
+        ? Math.round(spendCents / outcome.jobs)
+        : null,
+  };
 }
 
 function sortNodes(a: MetaBreakdownNode, b: MetaBreakdownNode) {
@@ -158,18 +261,13 @@ function sortNodes(a: MetaBreakdownNode, b: MetaBreakdownNode) {
     b.jobs - a.jobs ||
     b.qualified - a.qualified ||
     b.leads - a.leads ||
+    (b.spendCents ?? 0) - (a.spendCents ?? 0) ||
     a.name.localeCompare(b.name)
   );
 }
 
 function freeze(node: MutableNode): MetaBreakdownNode {
-  return {
-    level: node.level,
-    key: node.key,
-    id: node.id,
-    name: node.name,
-    platforms: Array.from(node.platforms).sort(),
-    children: Array.from(node.children.values()).map(freeze).sort(sortNodes),
+  const outcome: MetaOutcome = {
     leads: node.leads,
     reached: node.reached,
     qualified: node.qualified,
@@ -182,14 +280,31 @@ function freeze(node: MutableNode): MetaBreakdownNode {
     costsCents: node.costsCents,
     marginCents: node.marginCents,
   };
+  return {
+    level: node.level,
+    key: node.key,
+    id: node.id,
+    name: node.name,
+    platforms: Array.from(node.platforms).sort(),
+    children: Array.from(node.children.values()).map(freeze).sort(sortNodes),
+    ...outcome,
+    // Ads Insights supplies spend at ad level. Rolling it up to ad set/campaign is exact;
+    // pushing it down to a lead form would be an allocation Meta did not report.
+    ...spendMetrics(node, outcome, node.level !== "form"),
+  };
 }
 
-/** Pure hierarchy builder, exported so the campaign arithmetic is regression-testable. */
-export function buildMetaCampaignBreakdown(leads: MetaReportLead[]): {
+/** Pure hierarchy builder, exported so outcome + Ads Insights arithmetic is regression-testable. */
+export function buildMetaCampaignBreakdown(
+  leads: MetaReportLead[],
+  spendRows: MetaReportSpend[] = []
+): {
   total: MetaOutcome;
+  spend: MetaSpendMetrics;
   campaigns: MetaBreakdownNode[];
 } {
   const total = emptyOutcome();
+  const totalSpend = emptySpend();
   const roots = new Map<string, MutableNode>();
 
   for (const lead of leads) {
@@ -208,9 +323,38 @@ export function buildMetaCampaignBreakdown(leads: MetaReportLead[]): {
     }
   }
 
+  for (const row of spendRows) {
+    const meta = spendAttribution(row);
+    const campaign = touch(roots, "campaign", meta);
+    const adset = touch(campaign.children, "adset", meta);
+    const ad = touch(adset.children, "ad", meta);
+    addSpend(totalSpend, row);
+    for (const node of [campaign, adset, ad]) addSpend(node, row);
+  }
+
   return {
     total,
+    spend: spendMetrics(totalSpend, total, true),
     campaigns: Array.from(roots.values()).map(freeze).sort(sortNodes),
+  };
+}
+
+function rangeFor(year: number, month: number | null) {
+  const mm = (n: number) => String(n).padStart(2, "0");
+  if (month) {
+    const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return {
+      from: new Date(year, month - 1, 1),
+      to: new Date(year, month, 0, 23, 59, 59, 999),
+      since: `${year}-${mm(month)}-01`,
+      until: `${year}-${mm(month)}-${mm(last)}`,
+    };
+  }
+  return {
+    from: new Date(year, 0, 1),
+    to: new Date(year, 11, 31, 23, 59, 59, 999),
+    since: `${year}-01-01`,
+    until: `${year}-12-31`,
   };
 }
 
@@ -220,37 +364,62 @@ export async function loadMetaCampaignReport(
 ): Promise<MetaCampaignReport> {
   const year = opts.year;
   const month = opts.month && opts.month >= 1 && opts.month <= 12 ? opts.month : null;
-  const from = month ? new Date(year, month - 1, 1) : new Date(year, 0, 1);
-  const to = month
-    ? new Date(year, month, 0, 23, 59, 59, 999)
-    : new Date(year, 11, 31, 23, 59, 59, 999);
+  const range = rangeFor(year, month);
 
-  const leads = await prisma.lead.findMany({
-    where: {
-      tenantId,
-      // Native Meta Lead Ads currently enter through the Facebook leadgen webhook even
-      // when the placement/platform field says Instagram. Instagram DM leads use another
-      // webhook and intentionally do not pollute this paid-lead campaign report.
-      source: "FACEBOOK",
-      createdAt: { gte: from, lte: to },
+  const money = {
+    estimates: {
+      select: { totalCents: true, status: true },
+      orderBy: { createdAt: "desc" as const },
     },
-    select: {
-      status: true,
-      sourceMeta: true,
-      project: {
-        select: {
-          estimates: {
-            select: { totalCents: true, status: true },
-            orderBy: { createdAt: "desc" },
-          },
-          invoices: { select: { totalCents: true, status: true } },
-          payments: { select: { amountCents: true } },
-          expenses: { select: { amountCents: true } },
-        },
+    invoices: { select: { totalCents: true, status: true } },
+    payments: { select: { amountCents: true } },
+    expenses: { select: { amountCents: true } },
+  } as const;
+
+  const [leads, integration] = await Promise.all([
+    prisma.lead.findMany({
+      where: {
+        tenantId,
+        source: "FACEBOOK",
+        createdAt: { gte: range.from, lte: range.to },
       },
-    },
-  });
+      select: {
+        status: true,
+        sourceMeta: true,
+        project: { select: money },
+      },
+    }),
+    prisma.channelIntegration.findUnique({
+      where: { tenantId_channel: { tenantId, channel: META_ADS_CHANNEL } },
+      select: {
+        pageId: true,
+        accessToken: true,
+        isActive: true,
+        lastSyncAt: true,
+      },
+    }),
+  ]);
 
-  const built = buildMetaCampaignBreakdown(leads);
-  return { year, month, ...built, spendAllocated: false };
+  const accountId = normalizeMetaAdAccountId(integration?.pageId);
+  const spendRows = accountId
+    ? await loadMetaAdSpend({ tenantId, accountId, since: range.since, until: range.until })
+    : [];
+
+  const built = buildMetaCampaignBreakdown(leads, spendRows);
+  const days = spendRows.map((row) => row.day).sort();
+  return {
+    year,
+    month,
+    total: built.total,
+    campaigns: built.campaigns,
+    spend: {
+      ...built.spend,
+      configured: Boolean(integration?.isActive && integration.accessToken && accountId),
+      accountId,
+      lastSyncAt: integration?.lastSyncAt ?? null,
+      coverageSince: days[0] ?? null,
+      coverageUntil: days[days.length - 1] ?? null,
+    },
+    spendAllocated: spendRows.length > 0,
+  };
 }

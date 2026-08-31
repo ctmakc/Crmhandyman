@@ -1,0 +1,30 @@
+/// Read-only provider reporting cache populated from Meta Ads Insights.
+///
+/// This is deliberately not related to Expense: Finance owns the accounting invoice,
+/// while these rows answer which campaign/ad actually consumed that spend. `tenantId`
+/// remains a required scalar and every query is tenant-scoped, but the disposable cache
+/// has no Tenant relation/FK so deleting or rebuilding provider cache cannot become a
+/// business-data dependency.
+model MetaAdSpend {
+  id           String   @id
+  tenantId     String
+  accountId    String
+  /// Meta's account-local reporting day, stored as YYYY-MM-DD so range comparisons are
+  /// lexical and do not reinterpret a provider day through the server timezone.
+  day          String
+  campaignId   String
+  campaignName String?
+  adsetId      String
+  adsetName    String?
+  adId         String
+  adName       String?
+  spendCents   Int
+  currency     String
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  syncedAt     DateTime @default(now())
+
+  @@unique([tenantId, accountId, day, adId], map: "MetaAdSpend_tenant_account_day_ad_key")
+  @@index([tenantId, day], map: "MetaAdSpend_tenant_day_idx")
+  @@index([tenantId, campaignId, day], map: "MetaAdSpend_tenant_campaign_day_idx")
+}
