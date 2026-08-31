@@ -1,6 +1,27 @@
 import { parseCents, toDollars } from "@/lib/money";
 
 /**
+ * Sources whose commercial model can charge for one concrete lead/contact. Meta and
+ * ordinary Google campaign spend stay in monthly/general ad spend instead — putting a
+ * per-lead fee on those would count the same media dollars twice.
+ */
+export const DIRECT_FEE_SOURCES = [
+  "GOOGLE_LSA",
+  "HOMESTARS",
+  "BARK",
+  "URBANTASKER",
+  "MOVINGWALDO",
+] as const;
+
+export type DirectFeeSource = (typeof DIRECT_FEE_SOURCES)[number];
+
+const DIRECT_FEE_SOURCE_SET = new Set<string>(DIRECT_FEE_SOURCES);
+
+export function supportsDirectLeadFee(source: string): source is DirectFeeSource {
+  return DIRECT_FEE_SOURCE_SET.has(source);
+}
+
+/**
  * A fee paid for one specific marketplace lead is a real expense, not a property of the
  * customer's contact record. Store it in Expense with a deterministic id: this keeps it
  * owner-only with the rest of the books, makes retries an upsert instead of duplicates,
@@ -23,7 +44,7 @@ export function leadIdFromFeeExpenseId(expenseId: string): string | null {
  * CPL / cost per job / return without a second accounting pipeline. The lead marker makes
  * the provenance explicit and the deterministic Expense id prevents duplicate booking.
  */
-export function leadFeeDescription(source: string, leadId: string): string {
+export function leadFeeDescription(source: DirectFeeSource, leadId: string): string {
   return `Ad spend: ${source} — direct lead fee [lead:${leadId}]`;
 }
 
