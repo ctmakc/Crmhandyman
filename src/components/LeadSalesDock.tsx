@@ -22,6 +22,14 @@ function tomorrowMorning(): string {
   return localInput(d);
 }
 
+/** A datetime-local value is in the dispatcher's wall clock. Give the server an
+ * unambiguous instant so a UTC host cannot turn 15:00 Ottawa into 11:00 Ottawa. */
+function followUpIso(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 /**
  * Beaver's dispatcher should not turn every phone call into three forms. This dock lives
  * only on a lead record and records the outcome + the next promise in one action. The
@@ -40,7 +48,7 @@ export default function LeadSalesDock() {
   const leadId = match[1];
 
   async function work(outcome: LeadOutcome, suggestedFollowUp?: string) {
-    const due = followUpAt || suggestedFollowUp || "";
+    const due = followUpIso(followUpAt || suggestedFollowUp || "");
     setSending(outcome);
     const res = await fetch(`/api/leads/${leadId}/activity`, {
       method: "POST",
