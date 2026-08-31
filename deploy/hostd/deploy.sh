@@ -7,9 +7,14 @@
 #
 # Examples:
 #   deploy/hostd/deploy.sh
+#   HANDYCRM_DEPLOY_AUTH=password deploy/hostd/deploy.sh
 #   HANDYCRM_DEPLOY_BOX=root@203.0.113.10 HANDYCRM_DEPLOY_SSH_PORT=22 deploy/hostd/deploy.sh
 #
 set -euo pipefail
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=deploy/hostd/ssh-auth.sh
+source "$SCRIPT_DIR/ssh-auth.sh"
 
 BOX="${HANDYCRM_DEPLOY_BOX:-root@66.94.107.112}"
 SSH_PORT="${HANDYCRM_DEPLOY_SSH_PORT:-222}"
@@ -18,8 +23,8 @@ COMPOSE="deploy/hostd/docker-compose.prod.yml"
 APP_PORT="${HANDYCRM_DEPLOY_APP_PORT:-3080}"
 PUBLIC_URL="${HANDYCRM_PUBLIC_URL:-https://crm.itopsi.com}"
 
-REPO=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-SSH=(ssh -p "$SSH_PORT" "$BOX")
+REPO=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+handycrm_init_ssh "$BOX" "$SSH_PORT"
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -27,11 +32,14 @@ say "preflight: $BOX:$SSH_PORT"
 if ! "${SSH[@]}" "true"; then
   cat >&2 <<EOF
 
-deploy: cannot reach $BOX on SSH port $SSH_PORT.
+deploy: cannot authenticate to $BOX on SSH port $SSH_PORT.
 Nothing was copied and no container was changed.
 
 If production moved, run again with the real target, for example:
   HANDYCRM_DEPLOY_BOX=root@<new-ip> HANDYCRM_DEPLOY_SSH_PORT=<port> $0
+
+For a legacy password-only host:
+  HANDYCRM_DEPLOY_AUTH=password $0
 EOF
   exit 1
 fi
@@ -49,7 +57,7 @@ rsync -az --delete \
   --exclude "dev.db*" \
   --exclude "cookies.txt" \
   --exclude "*.tsbuildinfo" \
-  -e "ssh -p $SSH_PORT" \
+  -e "$RSYNC_SSH" \
   "$REPO/" "$BOX:$DEST/"
 
 say "checking $DEST/deploy/hostd/.env on the box"

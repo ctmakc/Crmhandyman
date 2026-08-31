@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Read-only HandyCRM production diagnostic. Makes no server changes.
+#
+# Examples:
+#   deploy/hostd/status.sh
+#   HANDYCRM_DEPLOY_AUTH=password deploy/hostd/status.sh
 set -u
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=deploy/hostd/ssh-auth.sh
+source "$SCRIPT_DIR/ssh-auth.sh"
 
 BOX="${HANDYCRM_DEPLOY_BOX:-root@66.94.107.112}"
 SSH_PORT="${HANDYCRM_DEPLOY_SSH_PORT:-222}"
@@ -8,15 +16,15 @@ DEST="${HANDYCRM_DEPLOY_DEST:-/opt/handyman-crm}"
 COMPOSE="deploy/hostd/docker-compose.prod.yml"
 APP_PORT="${HANDYCRM_DEPLOY_APP_PORT:-3080}"
 PUBLIC_URL="${HANDYCRM_PUBLIC_URL:-https://crm.itopsi.com}"
-SSH=(ssh -o ConnectTimeout=8 -p "$SSH_PORT" "$BOX")
+handycrm_init_ssh "$BOX" "$SSH_PORT" || exit $?
 
 printf 'HandyCRM production status\n'
 printf '  SSH target:  %s:%s\n' "$BOX" "$SSH_PORT"
 printf '  Public URL:  %s\n\n' "$PUBLIC_URL"
 
 if ! "${SSH[@]}" "true" >/dev/null 2>&1; then
-  printf 'SSH        FAIL  cannot reach %s:%s\n' "$BOX" "$SSH_PORT"
-  printf 'Result     STOP  host is wrong/offline/firewalled, or SSH credentials are unavailable\n'
+  printf 'SSH        FAIL  cannot authenticate to %s:%s\n' "$BOX" "$SSH_PORT"
+  printf 'Result     STOP  target/port/credentials are wrong, or SSH is unavailable\n'
   exit 2
 fi
 printf 'SSH        OK\n'

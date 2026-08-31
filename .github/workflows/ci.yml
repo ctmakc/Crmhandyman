@@ -47,6 +47,7 @@ jobs:
           NEXTAUTH_URL: https://crm.itopsi.com
         run: |
           bash -n \
+            deploy/hostd/ssh-auth.sh \
             deploy/hostd/deploy.sh \
             deploy/hostd/status.sh \
             deploy/hostd/backup-cron.sh \
