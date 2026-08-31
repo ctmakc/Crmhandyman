@@ -1,140 +1,150 @@
-# HandymanPro CRM на hostd.Canada
+# HandyCRM production on hostd / Cloudflare Tunnel
 
-Комплект для конкретной машины: Contabo VPS `66.94.107.112`, SSH-порт `222`, Ubuntu,
-aaPanel уже занимает :80/:443 своим nginx для чужих сайтов. Мы его обходим целиком:
-приложение слушает только `127.0.0.1:3080`, наружу смотрит Cloudflare Tunnel —
-исходящее соединение с этой машины к Cloudflare, публичных портов у CRM ноль.
+This directory is the production deployment kit. The application itself does not bind a
+public port: Docker exposes it only on host loopback and Cloudflare Tunnel carries public
+traffic to the `crm` service on the private compose network.
 
+Current public host layout:
+
+```text
+https://crm.itopsi.com             platform front door / shared webhooks
+https://<slug>.itopsi.com          customer workspace
+https://try.itopsi.com             demo workspace
 ```
-  интернет ──▶ Cloudflare (crm.agintent.com, TLS) ──▶ туннель ──▶ crm:3000
-                                                        │
-  оператор ──▶ ssh -p 222 ──▶ curl 127.0.0.1:3080 ──────┘
+
+Cloudflare ingress must contain both:
+
+```text
+crm.itopsi.com   -> http://crm:3000
+*.itopsi.com     -> http://crm:3000
 ```
 
-## Файлы
+The wildcard is mandatory. A tenant such as Beaver Movers resolves as
+`beaver-movers.itopsi.com`; there is no extra `.crm.` label in the current domain scheme.
 
-| Файл | Что делает |
-|---|---|
-| `docker-compose.prod.yml` | Два контейнера: `handyman-crm` (loopback :3080, том `crm-var`) и `handyman-cloudflared` (туннель). Общая приватная сеть, туннель ходит на `http://crm:3000` |
-| `.env.production.example` | Шаблон секретов и настроек; рабочая копия — `.env` рядом с compose-файлом на машине |
-| `deploy.sh` | Деплой с рабочей станции: rsync кода → build → up → проверка `/api/health`. Идемпотентен, миграции применяет entrypoint контейнера |
-| `backup-cron.sh` | Ночной снимок базы (запускает `scripts/backup.sh` внутри контейнера) плюс копия свежего снимка на диск хоста, ротация 14 суток в обоих местах; провал бэкапа или копии наружу шлёт алерт в Telegram (раздел «Оповещения») |
-| `healthwatch.sh` | Каждые 5 минут щупает `/api/health`; при отказе один рестарт контейнера и запись в `/var/log/handyman-healthwatch.log`; не вылечившийся отказ шлёт алерт в Telegram (раздел «Оповещения») |
+## Files
 
-## Первый запуск
+- `docker-compose.prod.yml` — app + cloudflared, persistent `crm-var` volume.
+- `.env.production.example` — canonical production variables; filled `.env` stays only on the host.
+- `deploy.sh` — rsync, image build, container restart, local health and public health checks.
+- `status.sh` — read-only SSH/container/tunnel/public-health diagnostic.
+- `backup-cron.sh` — nightly SQLite snapshot and rotation.
+- `healthwatch.sh` — five-minute health check/restart/optional Telegram alert.
 
-1. **Docker на машине** (одноразово): `curl -fsSL https://get.docker.com | sh`.
+## Production host
 
-2. **Туннель в Cloudflare** (одноразово): Zero Trust → Networks → Tunnels → создать
-   туннель, забрать токен. Public hostnames:
-   - `crm.agintent.com` → `http://crm:3000`
-   - `*.crm.agintent.com` → `http://crm:3000` — рабочие пространства живут на
-     поддоменах, wildcard обязателен (для wildcard-имени в зоне agintent.com нужна
-     CNAME-запись `*.crm` на `<tunnel-id>.cfargotunnel.com`).
+The repository still remembers the last historical host as a convenience default:
+`root@66.94.107.112:222`. Do not treat that address as authoritative forever.
 
-3. **Первый прогон деплоя** с рабочей станции:
-   ```bash
-   deploy/hostd/deploy.sh
-   ```
-   Он зальёт код и остановится с инструкцией: на машине создать
-   `/opt/handyman-crm/deploy/hostd/.env` из `.env.production.example`, вписать
-   `NEXTAUTH_SECRET`, `MAILGUN_WEBHOOK_SIGNING_KEY` (тот же ключ, что
-   у почтового воркера). Затем запустить `deploy.sh` ещё раз — он соберёт образ,
-   поднимет оба контейнера и покажет ответ `/api/health`.
-
-4. **Кроны на машине** (root, `crontab -e`):
-   ```cron
-   15 3 * * *  /opt/handyman-crm/deploy/hostd/backup-cron.sh >> /var/log/handyman-backup.log 2>&1
-   */5 * * * * /opt/handyman-crm/deploy/hostd/healthwatch.sh
-   ```
-   Права на скрипты приезжают вместе с rsync; если cron жалуется —
-   `chmod +x /opt/handyman-crm/deploy/hostd/*.sh`.
-
-## Обновление версии
-
-Тот же `deploy/hostd/deploy.sh` с рабочей станции. Перед крупным обновлением — снимок
-руками: `ssh -p 222 root@66.94.107.112 docker exec handyman-crm /app/scripts/backup.sh`.
-Откат: `git checkout <прошлый коммит>` локально и снова `deploy.sh`.
-
-## Бэкапы и учение по восстановлению
-
-Снимки лежат в двух местах: внутри тома (`/app/var/backups`, ротация `BACKUP_KEEP=14`)
-и на диске хоста (`/var/backups/handyman-crm`, те же 14 суток). Копию с машины наружу
-(rclone/scp на третий носитель) стоит добавить, когда база станет ценной — диск одного
-VPS считается одной точкой отказа.
-
-**Учение раз в месяц.** Восстановление, которое ни разу не прогоняли, — предположение.
-Прогон честный, на этой же машине, занимает пять минут:
+All host-specific values are overridable without editing code:
 
 ```bash
-ssh -p 222 root@66.94.107.112
-cd /opt/handyman-crm
-
-docker compose -f deploy/hostd/docker-compose.prod.yml stop crm
-docker compose -f deploy/hostd/docker-compose.prod.yml run --rm \
-  --entrypoint /app/scripts/restore.sh crm --latest        # спросит слово RESTORE
-docker compose -f deploy/hostd/docker-compose.prod.yml start crm
-curl -s http://127.0.0.1:3080/api/health                   # {"status":"ok",...}
+export HANDYCRM_DEPLOY_BOX=root@<production-ip>
+export HANDYCRM_DEPLOY_SSH_PORT=<ssh-port>
+export HANDYCRM_DEPLOY_DEST=/opt/handyman-crm
+export HANDYCRM_DEPLOY_APP_PORT=3080
+export HANDYCRM_PUBLIC_URL=https://crm.itopsi.com
 ```
 
-`restore.sh` перед заменой сам снимает копию текущей базы (`pre-restore-*.db.gz`), так
-что учение обратимо. После проверки приложения файлы `crm.db.replaced-*` и
-`pre-restore-*` удаляются руками. Дата последнего учения — в
-`/app/var/backups/backup.log` (строки `restore:`).
+Before any deploy or tenant provisioning:
 
-## Оповещения
+```bash
+bash deploy/hostd/status.sh
+```
 
-`healthwatch.sh` и `backup-cron.sh` по умолчанию пишут только в свой лог, а лог
-на пятиминутном кроне никто не читает — лежачая коробка или упавший бэкап могут
-простоять незамеченными всю оплаченную неделю. Впиши в `.env` две строки, и провал
-прилетит в Telegram одним коротким сообщением:
+If SSH fails, stop. If local health is green and public health is red, repair DNS/tunnel
+before creating customer credentials.
+
+## First deployment
+
+1. Install Docker on the host.
+2. Place the locally managed Cloudflare tunnel files under `/opt/handyman-crm/cloudflared`.
+3. Configure tunnel ingress for `crm.itopsi.com` and `*.itopsi.com`.
+4. Run `deploy/hostd/deploy.sh` once. It syncs code and stops if production `.env` is absent.
+5. On the host:
+
+```bash
+cd /opt/handyman-crm
+cp deploy/hostd/.env.production.example deploy/hostd/.env
+chmod 600 deploy/hostd/.env
+```
+
+6. Fill required secrets. At minimum `NEXTAUTH_SECRET`; add integration secrets only for
+   channels actually enabled. Lead automation additionally needs `AUTOMATION_CRON_SECRET`.
+7. Run `deploy/hostd/deploy.sh` again.
+
+A successful deploy proves the container's `/api/health`. It then checks
+`https://crm.itopsi.com/api/health` separately. Public failure is reported as a tunnel/DNS
+warning rather than pretending the customer can reach a locally healthy container.
+
+## Lead automation scheduler
+
+The app `.env` contains:
 
 ```dotenv
-ALERT_TELEGRAM_BOT_TOKEN="123456:AA…"     # токен бота
-ALERT_TELEGRAM_CHAT_ID="123456789"        # куда слать
-ALERT_MIN_INTERVAL_MIN="60"               # антиспам healthwatch, мин (по умолчанию 60)
+AUTOMATION_CRON_SECRET="<random-secret>"
 ```
 
-Обе пустые — скрипты работают как раньше, только в лог. При успехе оба молчат.
-Шлют ровно на провалах:
+GitHub Actions repository secrets contain the same token and public base URL:
 
-- **healthwatch** — CRM не отвечает на `/api/health` и уже прошла загрузку (рестарт
-  её не вылечил либо контейнер упал на ходу); отдельное сообщение, если и сам
-  `docker restart` не отработал. Не чаще раза в `ALERT_MIN_INTERVAL_MIN`, чтобы крон
-  каждые 5 минут не завалил телефон.
-- **backup-cron** — ночной снимок не снялся (падение уводит скрипт в ненулевой
-  выход) и, отдельным сообщением, если снимок лёг на диск, но копия наружу
-  (`OFFSITE_RCLONE_REMOTE`) не подтвердилась.
-
-Отправка — best-effort: нет сети или Telegram лёг — скрипт всё равно доводит своё
-дело и не падает из-за неудавшегося алерта. Токен уходит через `curl --config` со
-stdin, не через argv, — в `ps` и логах его не видно.
-
-**Где взять токен и chat id.** Бот: написать [@BotFather](https://t.me/BotFather)
-→ `/newbot` → скопировать `HTTP API token` (это `ALERT_TELEGRAM_BOT_TOKEN`). Chat
-id: один раз написать новому боту любое сообщение (иначе он не имеет права писать
-первым), затем открыть
-`https://api.telegram.org/bot<ТОКЕН>/getUpdates` и взять `message.chat.id` —
-для личного чата это твой numeric id, для группы отрицательное число. Проверка:
-
-```bash
-curl -s "https://api.telegram.org/bot<ТОКЕН>/sendMessage" \
-  --data-urlencode chat_id=<CHAT_ID> --data-urlencode text="handyman alert test"
+```text
+AUTOMATION_CRON_SECRET=<same-random-secret>
+AUTOMATION_PROCESSOR_URL=https://crm.itopsi.com
 ```
 
-## Диагностика
+`.github/workflows/lead-automation.yml` calls the protected processor every five minutes.
+Empty/mismatched secrets fail closed; no due customer SMS is processed.
+
+## Provisioning a paying tenant
+
+The runtime image does not ship `ts-node`. The Docker builder compiles
+`scripts/provision-tenant.ts` into `scripts/provision-tenant.js`, so provisioning against
+the live database is explicit and does not require a compiler in production:
 
 ```bash
-ssh -p 222 root@66.94.107.112
-curl -s http://127.0.0.1:3080/api/health        # что видит watchdog
+cd /opt/handyman-crm
+docker compose -f deploy/hostd/docker-compose.prod.yml exec crm \
+  node scripts/provision-tenant.js \
+  --business "Example Movers" \
+  --slug example-movers \
+  --owner owner@example.com \
+  --owner-name "Owner" \
+  --plan paid \
+  --domain itopsi.com
+```
+
+Run tenant-specific launch instructions from `docs/BEAVER-GO-LIVE.md` for Beaver Movers.
+Passwords generated by the provisioner are displayed once; never commit or paste them into
+shared logs/chats.
+
+## Cron jobs on the host
+
+```cron
+15 3 * * *  /opt/handyman-crm/deploy/hostd/backup-cron.sh >> /var/log/handyman-backup.log 2>&1
+*/5 * * * * /opt/handyman-crm/deploy/hostd/healthwatch.sh
+```
+
+Optional Telegram failure alerts are configured in production `.env` with
+`ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` and `ALERT_MIN_INTERVAL_MIN`.
+
+## Recovery / diagnostics
+
+Read-only first:
+
+```bash
+bash deploy/hostd/status.sh
+```
+
+On the host:
+
+```bash
 cd /opt/handyman-crm
 docker compose -f deploy/hostd/docker-compose.prod.yml ps
 docker compose -f deploy/hostd/docker-compose.prod.yml logs --tail=100 crm
-docker logs --tail=50 handyman-cloudflared      # состояние туннеля
-tail -20 /var/log/handyman-healthwatch.log
-tail -20 /var/log/handyman-backup.log
+docker logs --tail=50 handyman-cloudflared
+curl -fsS http://127.0.0.1:3080/api/health
 ```
 
-Локально health отвечает, а снаружи 502/530 — смотреть туннель: `docker logs
-handyman-cloudflared` и статус туннеля в Zero Trust. Расшифровка кодов `/api/health` —
-таблица «Диагностика» в корневом `DEPLOY.md`.
+Nightly backups live inside the persistent volume and are copied to the host by
+`backup-cron.sh`. Restore procedures remain in the root `DEPLOY.md` / backup scripts; test
+restore periodically rather than assuming a backup file is usable.
