@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyFbWebhookSignature } from "@/lib/integrations/facebook";
 import { notifyNewLead } from "@/lib/notify";
+import { startLeadAutomation } from "@/lib/lead-automation";
 import { defangStamps } from "@/lib/lead-notes";
 import { readTextCapped } from "@/lib/request-body";
 import { throttle, throttleVerify, tokenMatches } from "../guard";
@@ -9,7 +10,6 @@ import { throttle, throttleVerify, tokenMatches } from "../guard";
 /** A messaging delivery is a few kilobytes of JSON; this is orders of magnitude over it. */
 const MAX_BODY_BYTES = 256 * 1024;
 
-// Instagram webhook verification (same Meta platform)
 export async function GET(req: NextRequest) {
   const limited = await throttleVerify(req, "instagram");
   if (limited) return limited;
@@ -24,14 +24,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
-// Instagram message webhook
 export async function POST(req: NextRequest) {
   const limited = await throttle(req, "instagram");
   if (limited) return limited;
 
-  // Instagram rides the same Meta app as the Facebook hook, and was the one of the two
-  // that never checked the signature — anyone could post invented enquiries into it.
-  // Missing secret means refuse: an unverifiable delivery is an anonymous one.
   const secret = process.env.META_APP_SECRET;
   if (!secret) {
     console.warn("[webhook] META_APP_SECRET is unset — Instagram delivery refused");
@@ -63,9 +59,6 @@ export async function POST(req: NextRequest) {
   }
 
   for (const entry of body.entry || []) {
-    // The entry id is the Instagram business account the message reached — the same
-    // value the settings form stores as `pageId`. Without it there is no way to know
-    // whose workspace this belongs in, so the message is left alone.
     const accountId = entry.id;
     if (!accountId) continue;
 
@@ -76,7 +69,6 @@ export async function POST(req: NextRequest) {
       const senderId = event.sender?.id;
       if (!senderId) continue;
 
-      // Simple keyword detection for service interest
       const isServiceInquiry =
         text.includes("repair") ||
         text.includes("fix") ||
@@ -91,14 +83,11 @@ export async function POST(req: NextRequest) {
 
       if (!isServiceInquiry) continue;
 
-      // Resolve tenant by the account that received the message, never «the first
-      // active one» — that put one shop's enquiries into another shop's inbox.
       const integration = await prisma.channelIntegration.findFirst({
         where: { channel: "INSTAGRAM", isActive: true, pageId: accountId },
       });
       if (!integration) continue;
 
-      // Check for duplicate
       const existing = await prisma.lead.findFirst({
         where: { sourceLeadId: `ig_${senderId}`, tenantId: integration.tenantId },
       });
@@ -115,8 +104,10 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Somebody is typing in a DM right now — this is the most perishable lead of all.
       await notifyNewLead(integration.tenantId, created.id);
+      // Usually no phone exists on an IG DM, so the automation engine safely no-ops;
+      // if Meta begins supplying one later, the same lead path is already ready for it.
+      void startLeadAutomation(integration.tenantId, created.id);
     }
   }
 
