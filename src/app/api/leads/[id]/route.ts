@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
 import { scopedUserId } from "@/lib/scope";
+import { LEAD_STATUSES, badChoice, choice } from "@/lib/enums";
+import { leadTaskMarker } from "@/lib/lead-sales";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireUser();
@@ -33,6 +35,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const assignee = await scopedUserId(tenantId, body.assignedToId);
   if (!assignee.ok) return NextResponse.json({ error: "That crew member is not on this desk" }, { status: 400 });
 
+  // This route used to hand an arbitrary string straight to Prisma. A typo from a
+  // client or stale UI then became a 500 instead of an honest 400.
+  const status = choice(LEAD_STATUSES, body.status);
+  if (status === null) {
+    return NextResponse.json(badChoice("lead status", LEAD_STATUSES), { status: 400 });
+  }
+
   const lead = await prisma.lead.update({
     where: { id: params.id },
     data: {
@@ -43,7 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       city: body.city,
       jobType: body.jobType,
       notes: body.notes,
-      status: body.status,
+      status,
       assignedToId: assignee.value,
     },
   });
@@ -59,6 +68,20 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   const existing = await prisma.lead.findFirst({ where: { id: params.id, tenantId } });
   if (!existing) return NextResponse.json({ error: "That record is gone — it was deleted, or the link points at another workspace" }, { status: 404 });
 
-  await prisma.lead.delete({ where: { id: params.id } });
+  // Follow-up tasks deliberately have no foreign key yet: this wave reuses the existing
+  // Task table to avoid a launch-week migration. Close them before the lead disappears so
+  // the crew never gets an overdue callback for a record that no longer exists.
+  await prisma.$transaction([
+    prisma.task.updateMany({
+      where: {
+        tenantId,
+        status: { in: ["TODO", "IN_PROGRESS"] },
+        description: { contains: leadTaskMarker(params.id) },
+      },
+      data: { status: "DONE" },
+    }),
+    prisma.lead.delete({ where: { id: params.id } }),
+  ]);
+
   return NextResponse.json({ ok: true });
 }
