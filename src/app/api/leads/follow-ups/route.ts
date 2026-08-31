@@ -25,7 +25,9 @@ export async function GET(_: NextRequest) {
     .map((task) => ({ task, leadId: MARKER.exec(task.description || "")?.[1] || null }))
     .filter((row): row is { task: (typeof tasks)[number]; leadId: string } => !!row.leadId);
 
-  const leadIds = [...new Set(parsed.map((row) => row.leadId))];
+  // Array.from works under the repository's current TypeScript target without asking
+  // the whole app to opt into downlevel Set iteration just for this small dedupe.
+  const leadIds = Array.from(new Set(parsed.map((row) => row.leadId)));
   const leads = leadIds.length
     ? await prisma.lead.findMany({
         where: { tenantId, id: { in: leadIds } },
