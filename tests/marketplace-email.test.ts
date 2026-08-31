@@ -97,6 +97,7 @@ describe("parseInboundLeadEmail", () => {
 
     expect(parsed.source).toBe("EMAIL");
     expect(parsed.name).toBe("Mary Brown");
+    expect(parsed.email).toBe("mary@example.ca");
     expect(parsed.phone).toBe("613-555-0171");
   });
 });
