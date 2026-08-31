@@ -11,6 +11,7 @@ import {
   phoneDigits,
   renderIntakeNotes,
 } from "@/lib/intake";
+import { encodeLeadAttribution, intakeLeadAttribution } from "@/lib/lead-attribution";
 import { LEAD_SOURCES, choice } from "@/lib/enums";
 
 const DEDUP_WINDOW_DAYS = Number(process.env.LEAD_DEDUP_DAYS || 30);
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
     const parsed = parseIntakePayload(body);
     if (!parsed.ok) return json({ ok: false, error: parsed.error }, 422);
     const lead = parsed.lead;
+    const rawObject = body as Record<string, unknown>;
 
     await prisma.intakeKey.update({
       where: { id: key.id },
@@ -122,6 +124,9 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
         jobType: lead.jobType,
         source: source as never,
         sourceLeadId: lead.externalId,
+        sourceMeta: encodeLeadAttribution(
+          intakeLeadAttribution(rawObject, req.headers.get("referer"))
+        ),
         notes: renderIntakeNotes(key.label, lead),
         status: "NEW",
       },
