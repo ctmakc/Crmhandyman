@@ -31,7 +31,20 @@ interface FreshKey extends IntakeKey {
   path: string;
 }
 
-const SOURCES = ["OTHER", "FACEBOOK", "INSTAGRAM", "GOOGLE", "HOMESTARS", "KIJIJI", "EMAIL"];
+const SOURCES = [
+  "WEBSITE",
+  "FACEBOOK",
+  "INSTAGRAM",
+  "GOOGLE",
+  "GOOGLE_LSA",
+  "HOMESTARS",
+  "BARK",
+  "URBANTASKER",
+  "MOVINGWALDO",
+  "KIJIJI",
+  "EMAIL",
+  "OTHER",
+];
 
 /** The owner's real question here is «is this channel still alive». */
 function whenText(value: string | null): string {
@@ -46,7 +59,7 @@ export default function IntakePage() {
   const [keys, setKeys] = useState<IntakeKey[]>([]);
   const [origin, setOrigin] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ label: "", source: "OTHER" });
+  const [form, setForm] = useState({ label: "", source: "WEBSITE" });
   const [fresh, setFresh] = useState<FreshKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -76,7 +89,7 @@ export default function IntakePage() {
     if (res.ok) {
       setFresh(await res.json());
       setShowForm(false);
-      setForm({ label: "", source: "OTHER" });
+      setForm({ label: "", source: "WEBSITE" });
       setCopied(false);
       fetchKeys();
     } else {
@@ -131,7 +144,7 @@ export default function IntakePage() {
                     {...f}
                     value={form.label}
                     onChange={(e) => setForm({ ...form, label: e.target.value })}
-                    placeholder="Kitchen quiz — korvex.ca"
+                    placeholder="Moving quote — beavermovers.com"
                     className={`${f.className} max-w-[320px]`}
                   />
                 )}
@@ -185,9 +198,6 @@ export default function IntakePage() {
           <label className="sr-only" htmlFor="fresh-key-url">
             Intake address for {fresh.label}
           </label>
-          {/* A textarea rather than an input: the address is longer than a phone is
-              wide, and in a single line the half that matters scrolled out of sight on
-              the one screen where it is ever readable. Tapping it selects the lot. */}
           <textarea
             id="fresh-key-url"
             readOnly
@@ -209,7 +219,7 @@ export default function IntakePage() {
 
           <p className="measure t-body mt-3 text-ink-2">
             {copied
-              ? "It is on the clipboard. Paste it into send_lead.php on the landing page before you leave this screen."
+              ? "It is on the clipboard. Paste it into the form handler on the landing page before you leave this screen."
               : "Paste it into the form handler on your landing page. Whoever built the page needs this address and nothing else."}{" "}
             <span className="text-ink">
               Leaving this screen closes the only view of the key — a lost one means creating
@@ -235,25 +245,23 @@ export default function IntakePage() {
           </Empty>
         )}
 
-        {/* No spine: a key is either there or revoked, and the line under the name
-            already reports whether it is delivering. */}
         {keys.map((key) => (
           <div key={key.id} className="row">
             <div className="flex items-center gap-3 sm:gap-4">
-            <span className="min-w-0 flex-1">
-              <span className="t-row block truncate font-bold leading-tight text-ink">
-                {key.label}
+              <span className="min-w-0 flex-1">
+                <span className="t-row block truncate font-bold leading-tight text-ink">
+                  {key.label}
+                </span>
+                <span className="mono t-meta mt-1.5 block text-ink-3">{whenText(key.lastUsedAt)}</span>
               </span>
-              <span className="mono t-meta mt-1.5 block text-ink-3">{whenText(key.lastUsedAt)}</span>
-            </span>
-            <Chip className="hidden sm:inline-flex">{key.source}</Chip>
-            <button
-              type="button"
-              onClick={() => handleDelete(key.id, key.label)}
-              className={`${buttonClass("quiet")} shrink-0`}
-            >
-              Revoke
-            </button>
+              <Chip className="hidden sm:inline-flex">{key.source}</Chip>
+              <button
+                type="button"
+                onClick={() => handleDelete(key.id, key.label)}
+                className={`${buttonClass("quiet")} shrink-0`}
+              >
+                Revoke
+              </button>
             </div>
           </div>
         ))}
