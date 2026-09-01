@@ -107,7 +107,33 @@ Acceptance:
 - workspace starts empty;
 - login URL printed by the script is `https://beaver-movers.itopsi.com`.
 
-## Gate 4 — Twilio
+## Gate 4 — Beaver moving rate card
+
+Before anybody creates a customer moving estimate, open Beaver workspace → Settings →
+Moving rate card and enter **Beaver's actual sell rates** for:
+
+- 2 movers + 20ft truck / hour;
+- 3 movers + 26ft truck / hour;
+- 4 movers + 26ft truck / hour;
+- stair carry per flight;
+- packing materials kit;
+- wardrobe box rental;
+- piano / safe handling.
+
+Do not copy the generic Ottawa starting values from the source price book and do not invent
+rates for launch. Darryl (or another authorized Beaver operator) must supply the commercial
+numbers. Crew rates must be greater than zero; an add-on may be zero if Beaver does not
+charge it.
+
+Acceptance:
+
+- Settings → Moving rate card shows `LIVE RATES`;
+- a moving template/calculator uses Beaver's saved crew/add-on prices;
+- a moving estimate cannot be saved while the rate card is absent or invalid;
+- changing a moving line quantity is allowed, but server-side save re-prices recognized
+  moving rate lines from the tenant card so stale demo prices cannot become an EST document.
+
+## Gate 5 — Twilio
 
 Open Beaver workspace → Settings → SMS and enter Beaver's actual Twilio Account SID,
 write-only Auth Token and Canadian sending number. Then enable, in this order:
@@ -130,7 +156,7 @@ Acceptance:
 - START restores consent;
 - automatic acknowledgement does not change `NEW` to `CONTACTED`.
 
-## Gate 5 — Beaver website intake
+## Gate 6 — Beaver website intake
 
 In Beaver workspace → Settings → Landing intake, create a key for the real Beaver lead form
 with source `WEBSITE`. Store the generated intake URL only in the website/server
@@ -145,7 +171,7 @@ Submit one named test lead from the real form and verify:
 - the test appears in Leads, Activity and SMS history;
 - the WEBSITE intake key shows a recent `lastUsedAt`.
 
-## Gate 6 — Meta Lead Ads
+## Gate 7 — Meta Lead Ads
 
 Configure the real Beaver Facebook Page integration and app secrets. The webhook endpoint is:
 
@@ -161,13 +187,13 @@ Configure Settings → Meta Ads reporting separately with the ad-account id and 
 read token. Run a spend sync for the current month. This reporting connection is not allowed
 to block lead intake, but it is the source of campaign/ad-set/ad spend, CPL, cost/job and ROAS.
 
-## Gate 7 — marketplace bridge
+## Gate 8 — marketplace bridge
 
 Create a Beaver-specific inbound email address and route HomeStars / Google LSA / Bark
 notifications through the existing EMAIL integration. Do not share an inbound recipient
 with another tenant; `normalizedAddress` is globally exclusive for exactly this reason.
 
-## Gate 8 — final live readiness verdict
+## Gate 9 — final live readiness verdict
 
 After the real website/Meta acceptance lead has run through the live tenant, open:
 
@@ -191,6 +217,10 @@ The screen reads live tenant/server facts; it does not accept manual checkboxes.
 - a non-manual lead from the last seven days;
 - SMS evidence tied to that exact latest acceptance lead.
 
+The generic go-live gateboard is cross-vertical and therefore does not currently infer that a
+tenant is a mover. For Beaver, Gate 4 above is an additional operator requirement even if the
+generic gateboard itself does not list it.
+
 `BLOCKED` means do not turn on paid traffic. `WARN` does not itself block traffic, but every
 warning must be understood before launch. Meta Ads spend reporting is intentionally advisory:
 missing ROAS must never cause the CRM to reject a customer lead.
@@ -205,5 +235,6 @@ The dispatcher should be able to live almost entirely on Leads:
 - use the SMS composer for written follow-up;
 - convert only genuinely booked work into a Job.
 
-Do not turn on paid traffic until the live Go-live readiness verdict is `READY` and the real
-website/Meta → CRM → alert → SMS → callback → booked-job flow has been exercised end to end.
+Do not turn on paid traffic until the live Go-live readiness verdict is `READY`, Beaver's
+moving rate card is live, and the real website/Meta → CRM → alert → SMS → callback →
+booked-job flow has been exercised end to end.
