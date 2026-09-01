@@ -53,7 +53,14 @@ EOF
       export SSHPASS="$password"
       unset HANDYCRM_DEPLOY_PASSWORD
       password=''
-      trap 'unset SSHPASS' EXIT HUP INT TERM
+
+      # EXIT always scrubs the inherited credential. Signals must also terminate the
+      # operator script: a Ctrl+C during rsync/build must never merely clear SSHPASS and
+      # then continue changing production.
+      trap 'unset SSHPASS' EXIT
+      trap 'unset SSHPASS; exit 129' HUP
+      trap 'unset SSHPASS; exit 130' INT
+      trap 'unset SSHPASS; exit 143' TERM
 
       SSH=(
         sshpass -e ssh
