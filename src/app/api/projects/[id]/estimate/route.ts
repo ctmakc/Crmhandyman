@@ -13,6 +13,12 @@ import {
 } from "@/lib/money";
 import { docRef } from "@/lib/document";
 import { ESTIMATE_STATUSES, badChoice, choice } from "@/lib/enums";
+import {
+  MOVING_RATE_CARD_CHANNEL,
+  containsMovingRateLines,
+  decodeMovingRateCard,
+  repriceMovingLinesCents,
+} from "@/lib/moving-rate-card";
 
 /** One door out: amounts in dollars, lines in dollars, the shape the desk has always read. */
 const estimateOut = <T extends { lineItems: string }>(estimate: T) => ({
@@ -55,7 +61,29 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // The form posts dollars; this is where they stop being dollars. Every amount below,
   // and every amount stored, is a whole number of cents.
-  const lineItems = lineItemsFromInput(body.lineItems);
+  let lineItems = lineItemsFromInput(body.lineItems);
+
+  // The generic price book ships with illustrative moving numbers for demos. They are
+  // never authoritative. Any recognisable moving line is re-priced from this workspace's
+  // own rate card here at the server edge, so a stale browser or crafted POST cannot save
+  // somebody else's demo rate under a real estimate number.
+  if (containsMovingRateLines(lineItems)) {
+    const config = await prisma.channelIntegration.findUnique({
+      where: { tenantId_channel: { tenantId, channel: MOVING_RATE_CARD_CHANNEL } },
+      select: { config: true, isActive: true },
+    });
+    const card = config?.isActive ? decodeMovingRateCard(config.config) : null;
+    if (!card) {
+      return NextResponse.json(
+        {
+          error: "Set the moving rate card before saving a moving estimate",
+          settingsUrl: "/settings/moving-rates",
+        },
+        { status: 409 }
+      );
+    }
+    lineItems = repriceMovingLinesCents(lineItems, card);
+  }
 
   // A fraction, never a percentage. `13` here means 1300% and once produced a real
   // invoice with $1,300.00 of tax on $100.00 of work.

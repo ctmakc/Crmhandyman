@@ -4,7 +4,8 @@ import { Lane, Num, PageHead } from "@/components/ui/primitives";
 /**
  * DESK SETUP — the screen the owner walks down on his first morning, so the order
  * is the order of his day: what prints on paper, who gets a login, where leads land,
- * how they are contacted, what acquisition costs, then the launch verdict and audit book.
+ * how they are contacted, what the shop charges, what acquisition costs, then the
+ * launch verdict and audit book.
  */
 const SECTIONS = [
   {
@@ -44,26 +45,32 @@ const SECTIONS = [
     sub: "Twilio number and credentials for two-way lead texting, callbacks and booking messages",
   },
   {
-    href: "/settings/lead-costs",
+    href: "/settings/moving-rates",
     code: "07",
+    title: "Moving rate card",
+    sub: "Your real crew, truck and add-on rates — the only prices the moving calculator is allowed to quote",
+  },
+  {
+    href: "/settings/lead-costs",
+    code: "08",
     title: "Lead costs",
     sub: "What Google LSA, HomeStars, Bark and other marketplaces charged for individual contacts",
   },
   {
     href: "/settings/meta-ads",
-    code: "08",
+    code: "09",
     title: "Meta Ads reporting",
     sub: "Read-only ad account connection for campaign spend, CPL and ROAS",
   },
   {
     href: "/settings/go-live",
-    code: "09",
+    code: "10",
     title: "Go-live readiness",
     sub: "One live launch verdict from workspace, intake, SMS, alerts, Meta and acceptance evidence",
   },
   {
     href: "/settings/log",
-    code: "10",
+    code: "11",
     title: "Action log",
     sub: "Who changed a price, took a payment, voided an invoice",
   },

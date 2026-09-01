@@ -1,18 +1,5 @@
 "use client";
 
-/**
- * THE ESTIMATE — priced standing in somebody's kitchen, on a phone, while the client
- * watches. Two things follow from that and drive this screen:
- *
- *   1. The price book has to be reachable in one tap and has to be SHORT. It used to
- *      be thirteen framed boxes inside a framed recessed panel inside the plate —
- *      three nested rectangles, and 700px of scrolling on a phone before the first
- *      line of the estimate. The templates are recessed chips now, one line each.
- *   2. The running total has to stay in sight while lines are typed, because that is
- *      the number being discussed out loud. It rides in the builder's head, which
- *      sticks to the top of the screen.
- */
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Printer, Send, Scissors, Calculator } from "lucide-react";
@@ -53,6 +40,11 @@ import {
   type Trade,
 } from "@/lib/price-book";
 import {
+  movingRateCardFromForm,
+  repriceMovingLines,
+  type MovingRateCard,
+} from "@/lib/moving-rate-card";
+import {
   RENO_FLOORING,
   RENO_SCOPES,
   quoteRenovation,
@@ -63,7 +55,6 @@ import {
 } from "@/lib/renovation";
 import { SPLIT_PLANS } from "@/lib/margin";
 
-/** A line while it is being typed. The form is an edge, so it holds dollars. */
 interface LineItem {
   description: string;
   qty: number;
@@ -71,7 +62,6 @@ interface LineItem {
   unitPrice: number;
 }
 
-/** A saved estimate as the API serves it: dollars. */
 interface ApiEstimate {
   id: string;
   status: string;
@@ -105,9 +95,10 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { description: "", qty: 1, unit: "hr", unitPrice: 0 },
   ]);
-  /** Which vertical's shelf of the price book is open. */
   const [trade, setTrade] = useState<Trade | "ALL">("ALL");
   const [calc, setCalc] = useState<"MOVE" | "RENO" | null>(null);
+  const [movingRateCard, setMovingRateCard] = useState<MovingRateCard | null>(null);
+  const [movingRatesLoaded, setMovingRatesLoaded] = useState(false);
   const [move, setMove] = useState<MoveInputs>({
     bedrooms: 2,
     flights: 0,
@@ -122,14 +113,24 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     flooring: "VINYL",
   });
 
-  /** A whole job in one click — the price book, not forty keystrokes. */
-  function applyTemplate(t: JobTemplate) {
-    setLineItems(t.lineItems.map((l) => ({ ...l })));
-    setCalc(null);
-    toast(`${t.label} — ${t.lineItems.length} lines added`);
+  function movingRatesRequired() {
+    toast("Set the moving rate card before quoting a move", "bad");
   }
 
-  /** A calculator belongs to its vertical; changing shelves closes the wrong one. */
+  function applyTemplate(t: JobTemplate) {
+    if (t.trade === "MOVING" && !movingRateCard) {
+      movingRatesRequired();
+      return;
+    }
+    const lines =
+      t.trade === "MOVING" && movingRateCard
+        ? repriceMovingLines(t.lineItems, movingRateCard)
+        : t.lineItems.map((line) => ({ ...line }));
+    setLineItems(lines);
+    setCalc(null);
+    toast(`${t.label} — ${lines.length} lines added`);
+  }
+
   function pickTrade(next: Trade | "ALL") {
     setTrade(next);
     if (calc === "MOVE" && next !== "ALL" && next !== "MOVING") setCalc(null);
@@ -139,17 +140,29 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
   const templates = JOB_TEMPLATES.filter((t) => trade === "ALL" || t.trade === trade);
   const showMoveCalc = trade === "ALL" || trade === "MOVING";
   const showRenoCalc = trade === "ALL" || trade === "RENOVATION";
+  const pricedPriceItems = PRICE_ITEMS.map((item) =>
+    item.trade === "MOVING" && movingRateCard
+      ? { ...item, ...repriceMovingLines([item], movingRateCard)[0] }
+      : item
+  );
 
   async function fetchData() {
-    const [projRes, estRes] = await Promise.all([
+    const [projRes, estRes, movingRatesRes] = await Promise.all([
       fetch(`/api/projects/${params.id}`),
       fetch(`/api/projects/${params.id}/estimate`),
+      fetch("/api/settings/moving-rates"),
     ]);
     setProject(await projRes.json());
-    // The one door on this screen: saved estimates arrive in dollars and are held in
-    // cents. The builder above works the other way — it is a form, so it holds dollars
-    // until they are priced.
     setEstimates(inCents((await estRes.json()) as ApiEstimate[]));
+
+    if (movingRatesRes.ok) {
+      const payload = (await movingRatesRes.json()) as { rateCard?: unknown };
+      const parsed = payload.rateCard ? movingRateCardFromForm(payload.rateCard) : null;
+      setMovingRateCard(parsed?.ok ? parsed.card : null);
+    } else {
+      setMovingRateCard(null);
+    }
+    setMovingRatesLoaded(true);
   }
 
   useEffect(() => {
@@ -157,8 +170,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Priced by the same function the API prices the saved estimate with, so the number
-  // on this screen is the number the client is billed — down to the cent.
   const { subtotalCents, taxCents, totalCents } = quoteTotals(
     lineItemsFromInput(lineItems),
     taxRate
@@ -180,12 +191,20 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
 
   async function handleSave() {
     setSaving(true);
-    await fetch(`/api/projects/${params.id}/estimate`, {
+    const res = await fetch(`/api/projects/${params.id}/estimate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lineItems, taxRate, notes }),
     });
     setSaving(false);
+
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => ({}))) as { error?: string; settingsUrl?: string };
+      toast(payload.error || "Estimate was not saved", "bad");
+      if (payload.settingsUrl === "/settings/moving-rates") setMovingRateCard(null);
+      return;
+    }
+
     setCreating(false);
     setLineItems([{ description: "", qty: 1, unit: "hr", unitPrice: 0 }]);
     setNotes("");
@@ -203,7 +222,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     fetchData();
   }
 
-  /** Tear off the stub: an accepted estimate becomes an invoice, lines intact. */
   async function issueInvoice(estimateId: string) {
     setIssuing(estimateId);
     const plan = SPLIT_PLANS.find((p) => p.id === split);
@@ -230,16 +248,12 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
     }
   }
 
-  const lineCount = lineItems.filter((l) => l.description).length;
+  const lineCount = lineItems.filter((line) => line.description).length;
 
   return (
     <div className="page-doc space-y-6 pb-24 md:pb-0">
       <BackLink href={`/projects/${params.id}`} label="Back to job" />
 
-      {/* A record title, 22px, the same as the lead, the client, the job and the
-          invoice this page sits between. It used to carry a 44px PAGE title, so
-          walking the owner's road the heading went 22 → 22 → 44 → 22 and the
-          estimate read as a different product for one screen. */}
       <div className="plate px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -261,8 +275,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
 
       {creating && (
         <div className="plate">
-          {/* The head rides with the screen: the total under discussion stays on
-              view while the lines are typed under it. */}
           <div className="sticky top-0 z-10 flex flex-wrap items-end justify-between gap-4 border-b border-line bg-plate px-5 py-4">
             <div>
               <div className="eyebrow">Draft estimate</div>
@@ -281,7 +293,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="px-5 py-5">
-            {/* THE PRICE BOOK — a shelf, not a wall of boxes. */}
             <section>
               <LaneHead
                 title="Start from a template"
@@ -291,7 +302,15 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       <button
                         type="button"
                         aria-pressed={calc === "MOVE"}
-                        onClick={() => setCalc((v) => (v === "MOVE" ? null : "MOVE"))}
+                        disabled={movingRatesLoaded && !movingRateCard}
+                        title={!movingRateCard ? "Set the moving rate card first" : undefined}
+                        onClick={() => {
+                          if (!movingRateCard) {
+                            movingRatesRequired();
+                            return;
+                          }
+                          setCalc((value) => (value === "MOVE" ? null : "MOVE"));
+                        }}
                         className={buttonClass("quiet")}
                         style={
                           calc === "MOVE"
@@ -306,7 +325,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       <button
                         type="button"
                         aria-pressed={calc === "RENO"}
-                        onClick={() => setCalc((v) => (v === "RENO" ? null : "RENO"))}
+                        onClick={() => setCalc((value) => (value === "RENO" ? null : "RENO"))}
                         className={buttonClass("quiet")}
                         style={
                           calc === "RENO"
@@ -321,91 +340,101 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                 }
               />
 
-              {/* The shelf switch: one book, four verticals. */}
               <div
                 className="flex flex-wrap items-center gap-x-4 border-b border-line"
                 role="tablist"
                 aria-label="Trade"
               >
-                {(["ALL", ...TRADES] as const).map((t) => (
+                {(["ALL", ...TRADES] as const).map((item) => (
                   <button
-                    key={t}
+                    key={item}
                     role="tab"
-                    aria-selected={trade === t}
-                    onClick={() => pickTrade(t)}
+                    aria-selected={trade === item}
+                    onClick={() => pickTrade(item)}
                     className="eyebrow pb-2 transition-colors duration-fast ease-instrument hover:text-ink"
                     style={{
-                      color: trade === t ? "var(--ink)" : undefined,
+                      color: trade === item ? "var(--ink)" : undefined,
                       borderBottom:
-                        trade === t ? "2px solid var(--navy-900)" : "2px solid transparent",
+                        trade === item ? "2px solid var(--navy-900)" : "2px solid transparent",
                       marginBottom: "-1px",
                     }}
                   >
-                    {t}
+                    {item}
                   </button>
                 ))}
               </div>
+
+              {showMoveCalc && movingRatesLoaded && !movingRateCard && (
+                <div className="mt-3 border-l-4 border-amber bg-sunk px-4 py-3">
+                  <p className="t-body font-bold text-ink">Moving prices are locked</p>
+                  <p className="measure t-meta mt-1 text-ink-2">
+                    Generic Ottawa demo rates are never used for a customer quote. Set this workspace&apos;s crew, truck and add-on rates first.
+                  </p>
+                  <a href="/settings/moving-rates" className="eyebrow mt-2 inline-block hover:text-ink">
+                    Set moving rate card →
+                  </a>
+                </div>
+              )}
 
               <div className="mt-3 flex flex-wrap gap-2">
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => applyTemplate(t)}
-                    title={t.hint}
-                    className="chip transition-colors duration-fast ease-instrument hover:bg-line"
-                  >
-                    {/* The label is written on the child, where a direct declaration
-                        beats what `.chip` hands down: mono uppercase at 13px runs one
-                        template per line on a phone, and the shelf is a wall again. */}
-                    <span className="t-meta font-sans font-bold normal-case tracking-normal text-ink">
-                      {t.label}
-                    </span>
-                    <span className="eyebrow hidden sm:inline">{t.trade}</span>
-                  </button>
-                ))}
+                {templates.map((template) => {
+                  const locked = template.trade === "MOVING" && movingRatesLoaded && !movingRateCard;
+                  return (
+                    <button
+                      key={template.id}
+                      onClick={() => applyTemplate(template)}
+                      disabled={locked}
+                      title={locked ? "Set the moving rate card first" : template.hint}
+                      className="chip transition-colors duration-fast ease-instrument hover:bg-line disabled:cursor-not-allowed disabled:bg-sunk disabled:text-ink-3"
+                    >
+                      <span className="t-meta font-sans font-bold normal-case tracking-normal text-ink">
+                        {template.label}
+                      </span>
+                      <span className="eyebrow hidden sm:inline">{template.trade}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              {calc === "MOVE" && (
+              {calc === "MOVE" && movingRateCard && (
                 <div className="mt-4 border-t border-line pt-4">
                   <div className="flex flex-wrap items-end gap-3">
                     <Field id="move-bedrooms" label="Bedrooms" className="w-[92px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="1"
                           max="8"
                           value={move.bedrooms}
-                          onChange={(e) => setMove({ ...move, bedrooms: Number(e.target.value) })}
-                          className={`${f.className} mono`}
+                          onChange={(event) => setMove({ ...move, bedrooms: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
                     <Field id="move-flights" label="Stair flights" className="w-[110px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="0"
                           max="12"
                           value={move.flights}
-                          onChange={(e) => setMove({ ...move, flights: Number(e.target.value) })}
-                          className={`${f.className} mono`}
+                          onChange={(event) => setMove({ ...move, flights: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
                     <Field id="move-travel" label="Travel hrs" className="w-[100px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="0"
                           step="0.5"
                           value={move.travelHours}
-                          onChange={(e) =>
-                            setMove({ ...move, travelHours: Number(e.target.value) })
-                          }
-                          className={`${f.className} mono`}
+                          onChange={(event) => setMove({ ...move, travelHours: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
@@ -413,7 +442,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       <input
                         type="checkbox"
                         checked={move.packing}
-                        onChange={(e) => setMove({ ...move, packing: e.target.checked })}
+                        onChange={(event) => setMove({ ...move, packing: event.target.checked })}
                         className="h-4 w-4"
                       />
                       Packing
@@ -422,7 +451,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       <Button
                         variant="ghost"
                         onClick={() => {
-                          setLineItems(quoteMove(move));
+                          setLineItems(repriceMovingLines(quoteMove(move), movingRateCard));
                           toast(
                             `Crew of ${crewFor(move.bedrooms).size} · ${baseHoursFor(move.bedrooms)} h quoted`
                           );
@@ -439,77 +468,77 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                 <div className="mt-4 border-t border-line pt-4">
                   <div className="flex flex-wrap items-end gap-3">
                     <Field id="reno-area" label="Area sq ft" className="w-[104px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="40"
                           step="10"
                           value={reno.areaSqFt}
-                          onChange={(e) => setReno({ ...reno, areaSqFt: Number(e.target.value) })}
-                          className={`${f.className} mono`}
+                          onChange={(event) => setReno({ ...reno, areaSqFt: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
                     <Field id="reno-ceiling" label="Ceiling ft" className="w-[100px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="7"
                           max="16"
                           step="0.5"
                           value={reno.ceilingFt}
-                          onChange={(e) => setReno({ ...reno, ceilingFt: Number(e.target.value) })}
-                          className={`${f.className} mono`}
+                          onChange={(event) => setReno({ ...reno, ceilingFt: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
                     <Field id="reno-rooms" label="Rooms" className="w-[92px]">
-                      {(f) => (
+                      {(field) => (
                         <input
-                          {...f}
+                          {...field}
                           type="number"
                           min="1"
                           max="20"
                           value={reno.rooms}
-                          onChange={(e) => setReno({ ...reno, rooms: Number(e.target.value) })}
-                          className={`${f.className} mono`}
+                          onChange={(event) => setReno({ ...reno, rooms: Number(event.target.value) })}
+                          className={`${field.className} mono`}
                         />
                       )}
                     </Field>
                     <Field id="reno-scope" label="Work" className="w-[168px]">
-                      {(f) => (
+                      {(field) => (
                         <select
-                          {...f}
+                          {...field}
                           value={reno.scope}
-                          onChange={(e) =>
-                            setReno({ ...reno, scope: e.target.value as RenoScope })
+                          onChange={(event) =>
+                            setReno({ ...reno, scope: event.target.value as RenoScope })
                           }
-                          className={`${f.className} mono`}
+                          className={`${field.className} mono`}
                         >
-                          {RENO_SCOPES.map((s) => (
-                            <option key={s.id} value={s.id} title={s.hint}>
-                              {s.label}
+                          {RENO_SCOPES.map((scope) => (
+                            <option key={scope.id} value={scope.id} title={scope.hint}>
+                              {scope.label}
                             </option>
                           ))}
                         </select>
                       )}
                     </Field>
                     <Field id="reno-floor" label="Floor" className="w-[150px]">
-                      {(f) => (
+                      {(field) => (
                         <select
-                          {...f}
+                          {...field}
                           value={reno.flooring}
                           disabled={reno.scope === "PAINT"}
-                          onChange={(e) =>
-                            setReno({ ...reno, flooring: e.target.value as RenoFlooring })
+                          onChange={(event) =>
+                            setReno({ ...reno, flooring: event.target.value as RenoFlooring })
                           }
-                          className={`${f.className} mono disabled:text-ink-3`}
+                          className={`${field.className} mono disabled:text-ink-3`}
                         >
-                          {RENO_FLOORING.map((fl) => (
-                            <option key={fl.id} value={fl.id}>
-                              {fl.label}
+                          {RENO_FLOORING.map((flooring) => (
+                            <option key={flooring.id} value={flooring.id}>
+                              {flooring.label}
                             </option>
                           ))}
                         </select>
@@ -519,10 +548,10 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       <Button
                         variant="ghost"
                         onClick={() => {
-                          const g = renoGeometry(reno);
+                          const geometry = renoGeometry(reno);
                           setLineItems(quoteRenovation(reno));
                           toast(
-                            `${g.wallSqFt} sq ft of wall · ${g.trimLf} lf trim · ${g.doors} doors`
+                            `${geometry.wallSqFt} sq ft of wall · ${geometry.trimLf} lf trim · ${geometry.doors} doors`
                           );
                         }}
                       >
@@ -531,14 +560,12 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                     </div>
                   </div>
                   <p className="measure t-body mt-3 text-ink-2">
-                    Quantities are inferred from the floor area — walk the site and correct
-                    them before this goes to the client.
+                    Quantities are inferred from the floor area — walk the site and correct them before this goes to the client.
                   </p>
                 </div>
               )}
             </section>
 
-            {/* THE LINES */}
             <section className="mt-10">
               <LaneHead title="Lines" />
               <div className="hidden grid-cols-12 gap-2 px-1 pb-1.5 sm:grid">
@@ -556,7 +583,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       placeholder="Furnace install, labour, disposal…"
                       aria-label={`Line ${index + 1} description`}
                       value={item.description}
-                      onChange={(e) => updateLineItem(index, "description", e.target.value)}
+                      onChange={(event) => updateLineItem(index, "description", event.target.value)}
                     />
                     <input
                       className={controlClass("mono col-span-3 sm:col-span-2")}
@@ -565,14 +592,14 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       step="0.5"
                       aria-label={`Line ${index + 1} quantity`}
                       value={item.qty}
-                      onChange={(e) => updateLineItem(index, "qty", Number(e.target.value))}
+                      onChange={(event) => updateLineItem(index, "qty", Number(event.target.value))}
                     />
                     <input
                       className={controlClass("col-span-3 sm:col-span-2")}
                       placeholder="hr"
                       aria-label={`Line ${index + 1} unit`}
                       value={item.unit}
-                      onChange={(e) => updateLineItem(index, "unit", e.target.value)}
+                      onChange={(event) => updateLineItem(index, "unit", event.target.value)}
                     />
                     <input
                       className={controlClass("mono col-span-4 text-right sm:col-span-2")}
@@ -582,7 +609,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                       placeholder="0.00"
                       aria-label={`Line ${index + 1} rate`}
                       value={item.unitPrice || ""}
-                      onChange={(e) => updateLineItem(index, "unitPrice", Number(e.target.value))}
+                      onChange={(event) => updateLineItem(index, "unitPrice", Number(event.target.value))}
                     />
                     <button
                       onClick={() => removeLineItem(index)}
@@ -609,29 +636,38 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                   <select
                     id="price-book"
                     value=""
-                    onChange={(e) => {
-                      const item = PRICE_ITEMS.find((p) => p.description === e.target.value);
-                      if (item) {
-                        // Drop the `trade` tag — it groups the picker, it is not a line field.
-                        const line = {
-                          description: item.description,
-                          qty: item.qty,
-                          unit: item.unit,
-                          unitPrice: item.unitPrice,
-                        };
-                        setLineItems((prev) => [...prev.filter((l) => l.description), line]);
+                    onChange={(event) => {
+                      const item = pricedPriceItems.find((priceItem) => priceItem.description === event.target.value);
+                      if (!item) return;
+                      if (item.trade === "MOVING" && !movingRateCard) {
+                        movingRatesRequired();
+                        return;
                       }
+                      const line = {
+                        description: item.description,
+                        qty: item.qty,
+                        unit: item.unit,
+                        unitPrice: item.unitPrice,
+                      };
+                      setLineItems((previous) => [...previous.filter((existing) => existing.description), line]);
                     }}
                     className={controlClass("mono w-auto max-w-[220px]")}
                   >
                     <option value="">Pick a line…</option>
-                    {TRADES.map((t) => (
-                      <optgroup key={t} label={t}>
-                        {PRICE_ITEMS.filter((p) => p.trade === t).map((p) => (
-                          <option key={p.description} value={p.description}>
-                            {p.description} — {p.unitPrice}/{p.unit}
-                          </option>
-                        ))}
+                    {TRADES.map((bookTrade) => (
+                      <optgroup key={bookTrade} label={bookTrade}>
+                        {pricedPriceItems
+                          .filter((priceItem) => priceItem.trade === bookTrade)
+                          .map((priceItem) => {
+                            const locked = priceItem.trade === "MOVING" && movingRatesLoaded && !movingRateCard;
+                            return (
+                              <option key={priceItem.description} value={priceItem.description} disabled={locked}>
+                                {locked
+                                  ? `${priceItem.description} — set rate card`
+                                  : `${priceItem.description} — ${priceItem.unitPrice}/${priceItem.unit}`}
+                              </option>
+                            );
+                          })}
                       </optgroup>
                     ))}
                   </select>
@@ -639,7 +675,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
               </div>
             </section>
 
-            {/* WHAT IT COMES TO */}
             <div className="mt-10 flex justify-end border-t border-line pt-4">
               <dl className="t-body w-full max-w-[300px] space-y-2">
                 <div className="flex justify-between gap-6">
@@ -654,7 +689,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                     <select
                       id="tax-rate"
                       value={taxRate}
-                      onChange={(e) => setTaxRate(Number(e.target.value))}
+                      onChange={(event) => setTaxRate(Number(event.target.value))}
                       className={controlClass("mono w-auto")}
                     >
                       <option value={0}>0%</option>
@@ -682,11 +717,11 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
               hint="Printed on the sheet the client reads."
               className="mt-6"
             >
-              {(f) => (
+              {(field) => (
                 <textarea
-                  {...f}
+                  {...field}
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(event) => setNotes(event.target.value)}
                   rows={2}
                   placeholder="Payment terms, warranty, access notes…"
                 />
@@ -696,7 +731,7 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
             <div className="actions mt-6">
               <Button
                 onClick={handleSave}
-                disabled={saving || lineItems.every((i) => !i.description)}
+                disabled={saving || lineItems.every((item) => !item.description)}
               >
                 {saving ? "Saving…" : "Save estimate"}
               </Button>
@@ -724,7 +759,6 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
             >
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
                 <div>
-                  {/* The same reference the printed sheet and the journal carry. */}
                   <WoNumber id={estimate.id} prefix="EST" date={estimate.createdAt} />
                   <p className="t-meta mt-1.5 text-ink-2">
                     <Stamp date={estimate.createdAt} />
@@ -748,13 +782,8 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
               </div>
 
               <div className="px-5 py-4">
-                {/* Desk: description · qty · amount in three columns. Phone: the
-                    same shape the invoice card and the printed sheet take — the
-                    description keeps the line, the quantity and the money share
-                    the next one. Three columns at 390px cut every description
-                    into three ragged lines. */}
-                {items.map((item, j) => (
-                  <div key={j} className="border-b border-line py-2 last:border-b-0">
+                {items.map((item, index) => (
+                  <div key={index} className="border-b border-line py-2 last:border-b-0">
                     <div className="sm:flex sm:items-baseline sm:gap-3">
                       <span className="t-body min-w-0 flex-1 text-ink">{item.description}</span>
                       <span className="mono t-meta hidden w-[92px] shrink-0 text-right text-ink-3 sm:inline">
@@ -819,13 +848,11 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                 )}
               </div>
 
-              {/* The tear-off: accepted estimate → invoice, same lines, new number. */}
               {estimate.status === "ACCEPTED" && (
                 <>
                   <div className="perf mx-5" />
                   <div className="px-5 py-4">
                     <p className="t-body text-ink-2">Accepted — tear off the stub and bill it.</p>
-                    {/* An install is billed as a deposit plus a balance, not one lump. */}
                     <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
                       <div>
                         <div className="eyebrow" id={`billing-${estimate.id}`}>
@@ -836,17 +863,17 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                           role="radiogroup"
                           aria-labelledby={`billing-${estimate.id}`}
                         >
-                          {SPLIT_PLANS.map((pl) => (
+                          {SPLIT_PLANS.map((plan) => (
                             <button
-                              key={pl.id}
+                              key={plan.id}
                               type="button"
                               role="radio"
-                              aria-checked={split === pl.id}
-                              onClick={() => setSplit(pl.id)}
-                              title={pl.hint}
+                              aria-checked={split === plan.id}
+                              onClick={() => setSplit(plan.id)}
+                              title={plan.hint}
                               className={buttonClass("ghost")}
                               style={
-                                split === pl.id
+                                split === plan.id
                                   ? {
                                       borderColor: "var(--navy-900)",
                                       background: "var(--sunk)",
@@ -855,12 +882,12 @@ export default function EstimatePage({ params }: { params: { id: string } }) {
                                   : undefined
                               }
                             >
-                              {pl.label}
+                              {plan.label}
                             </button>
                           ))}
                         </div>
                         <p className="measure t-meta mt-2 text-ink-2">
-                          {SPLIT_PLANS.find((pl) => pl.id === split)?.hint}
+                          {SPLIT_PLANS.find((plan) => plan.id === split)?.hint}
                         </p>
                       </div>
                       <div className="actions">
