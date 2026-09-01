@@ -50,6 +50,7 @@ jobs:
             deploy/hostd/ssh-auth.sh \
             deploy/hostd/deploy.sh \
             deploy/hostd/status.sh \
+            deploy/hostd/beaver-rollout.sh \
             deploy/hostd/backup-cron.sh \
             deploy/hostd/healthwatch.sh
           docker compose -f deploy/hostd/docker-compose.prod.yml config >/dev/null
