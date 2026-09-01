@@ -1,5 +1,3 @@
-import type { PriceItem } from "@/lib/price-book";
-
 /**
  * A mover's sell rates belong to the shop, never to a generic Ottawa price book.
  * Values are stored as integer cents inside ChannelIntegration.config and converted
@@ -48,6 +46,10 @@ const FIELDS = [
 ] as const;
 
 type StoredField = (typeof FIELDS)[number];
+
+type DescribedLine = { description: string };
+type DollarLine = DescribedLine & { unitPrice: number };
+type CentsLine = DescribedLine & { unitPriceCents: number };
 
 function validCents(value: unknown, requiredPositive = false): value is number {
   return (
@@ -125,10 +127,14 @@ export function movingRateCardToForm(card: MovingRateCard): MovingRateCardForm {
   };
 }
 
+export function movingCrewRateCents(card: MovingRateCard, size: number): number {
+  if (size <= 2) return card.crew2HourlyCents;
+  if (size === 3) return card.crew3HourlyCents;
+  return card.crew4HourlyCents;
+}
+
 export function movingCrewRateDollars(card: MovingRateCard, size: number): number {
-  if (size <= 2) return card.crew2HourlyCents / 100;
-  if (size === 3) return card.crew3HourlyCents / 100;
-  return card.crew4HourlyCents / 100;
+  return movingCrewRateCents(card, size) / 100;
 }
 
 function crewSizeFromDescription(description: string): number | null {
@@ -148,38 +154,48 @@ export function isMovingRateLine(description: string): boolean {
   );
 }
 
-export function containsMovingRateLines(lines: Array<Pick<PriceItem, "description">>): boolean {
+export function containsMovingRateLines(lines: DescribedLine[]): boolean {
   return lines.some((line) => isMovingRateLine(line.description));
 }
 
-/**
- * Reprices only moving-specific lines. It preserves quantities/descriptions and leaves
- * unrelated custom lines alone. A generic travel line inherits the crew rate from the
- * preceding crew line, which matches quoteMove and every built-in moving template.
- */
-export function repriceMovingLines(lines: PriceItem[], card: MovingRateCard): PriceItem[] {
-  let currentCrewRate: number | null = null;
+function centsForMovingLine(description: string, card: MovingRateCard, currentCrewCents: number | null) {
+  const explicitCrew = crewSizeFromDescription(description);
+  if (/^crew of\s+(2|3|4)\b/i.test(description) && explicitCrew) {
+    return movingCrewRateCents(card, explicitCrew);
+  }
+  if (/^travel time\b/i.test(description)) {
+    return explicitCrew ? movingCrewRateCents(card, explicitCrew) : currentCrewCents;
+  }
+  if (/^stair carry surcharge/i.test(description)) return card.stairFlightCents;
+  if (/^packing materials kit/i.test(description)) return card.packingKitCents;
+  if (/^wardrobe box rental/i.test(description)) return card.wardrobeBoxCents;
+  if (/^piano \/ safe handling/i.test(description)) return card.pianoSafeCents;
+  return null;
+}
+
+/** Reprice browser/form lines while preserving every non-price field. */
+export function repriceMovingLines<T extends DollarLine>(lines: T[], card: MovingRateCard): T[] {
+  let currentCrewCents: number | null = null;
   return lines.map((line) => {
     const description = line.description.trim();
-    const explicitCrew = crewSizeFromDescription(description);
-    if (explicitCrew) currentCrewRate = movingCrewRateDollars(card, explicitCrew);
+    const crew = crewSizeFromDescription(description);
+    if (crew) currentCrewCents = movingCrewRateCents(card, crew);
+    const cents = centsForMovingLine(description, card, currentCrewCents);
+    return cents === null ? { ...line } : { ...line, unitPrice: cents / 100 };
+  });
+}
 
-    let unitPrice = line.unitPrice;
-    if (/^crew of\s+(2|3|4)\b/i.test(description) && currentCrewRate !== null) {
-      unitPrice = currentCrewRate;
-    } else if (/^travel time\b/i.test(description)) {
-      const travelCrew = explicitCrew ? movingCrewRateDollars(card, explicitCrew) : currentCrewRate;
-      if (travelCrew !== null) unitPrice = travelCrew;
-    } else if (/^stair carry surcharge/i.test(description)) {
-      unitPrice = card.stairFlightCents / 100;
-    } else if (/^packing materials kit/i.test(description)) {
-      unitPrice = card.packingKitCents / 100;
-    } else if (/^wardrobe box rental/i.test(description)) {
-      unitPrice = card.wardrobeBoxCents / 100;
-    } else if (/^piano \/ safe handling/i.test(description)) {
-      unitPrice = card.pianoSafeCents / 100;
-    }
-
-    return { ...line, unitPrice };
+/**
+ * The API repeats the repricing in cents. Client-side preview is convenience; this is the
+ * authority that prevents a stale browser or crafted POST from saving the old demo rates.
+ */
+export function repriceMovingLinesCents<T extends CentsLine>(lines: T[], card: MovingRateCard): T[] {
+  let currentCrewCents: number | null = null;
+  return lines.map((line) => {
+    const description = line.description.trim();
+    const crew = crewSizeFromDescription(description);
+    if (crew) currentCrewCents = movingCrewRateCents(card, crew);
+    const cents = centsForMovingLine(description, card, currentCrewCents);
+    return cents === null ? { ...line } : { ...line, unitPriceCents: cents };
   });
 }
