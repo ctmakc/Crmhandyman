@@ -55,6 +55,23 @@ jobs:
             deploy/hostd/healthwatch.sh
           docker compose -f deploy/hostd/docker-compose.prod.yml config >/dev/null
 
+          # Password mode must be reusable by child scripts without prompting, and Ctrl+C
+          # must terminate rather than merely scrub SSHPASS and continue a production deploy.
+          mockbin="$(mktemp -d)"
+          printf '#!/bin/sh\nexit 0\n' > "$mockbin/sshpass"
+          chmod +x "$mockbin/sshpass"
+          set +e
+          PATH="$mockbin:$PATH" HANDYCRM_DEPLOY_AUTH=password SSHPASS=ci-secret bash -c '
+            source deploy/hostd/ssh-auth.sh
+            handycrm_init_ssh root@example.invalid 222
+            kill -INT $$
+            echo SHOULD_NOT_CONTINUE
+          '
+          signal_status=$?
+          set -e
+          rm -rf "$mockbin"
+          test "$signal_status" -eq 130
+
       # Docker runtime intentionally omits ts-node. Compile the operator provisioner as
       # ordinary CommonJS and run it from a directory beneath the repository root, which
       # mirrors /app/scripts -> /app/node_modules in the production image. Running the same
