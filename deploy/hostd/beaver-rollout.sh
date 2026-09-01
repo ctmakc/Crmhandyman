@@ -2,7 +2,7 @@
 # Beaver Movers first-client production rollout.
 #
 # This script is intentionally opinionated and fail-closed. It performs, in order:
-#   1. local repository sanity checks
+#   1. local repository sanity + origin/main parity checks
 #   2. read-only production status
 #   3. verified pre-deploy SQLite backup on the host
 #   4. normal HandyCRM deploy (which runs Prisma migrations before Next.js starts)
@@ -44,7 +44,17 @@ if git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   BRANCH=$(git -C "$REPO" branch --show-current)
   [ "$BRANCH" = "main" ] || fail "checkout main first (current branch: ${BRANCH:-detached})"
   [ -z "$(git -C "$REPO" status --porcelain)" ] || fail "working tree is not clean; commit/stash local changes first"
+
+  # A clean local main can still be stale. Refresh the remote-tracking ref but do not mutate
+  # the operator's branch automatically: if HEAD differs from origin/main, stop and require a
+  # deliberate `git pull --ff-only` before production is touched.
+  git -C "$REPO" remote get-url origin >/dev/null 2>&1 || fail "Git remote 'origin' is missing"
+  git -C "$REPO" fetch --quiet origin main || fail "could not refresh origin/main; no production change was attempted"
+
   LOCAL_SHA=$(git -C "$REPO" rev-parse HEAD)
+  REMOTE_SHA=$(git -C "$REPO" rev-parse refs/remotes/origin/main)
+  [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || \
+    fail "local main is not current origin/main; run 'git pull --ff-only' and retry"
 else
   fail "$REPO is not a Git checkout"
 fi
