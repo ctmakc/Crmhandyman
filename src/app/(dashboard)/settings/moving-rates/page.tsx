@@ -9,7 +9,6 @@ import {
   LaneHead,
   PageHead,
   Skeleton,
-  Stamp,
 } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/Toaster";
 import {
@@ -95,7 +94,7 @@ export default function MovingRatesPage() {
       <PageHead
         eyebrow="Desk setup · Moving"
         title="Moving rate card"
-        sub="The sell rates your estimator is allowed to put on a Beaver Movers quote. No generic demo price is used until this card is saved."
+        sub="The sell rates your estimator is allowed to put on a moving quote. No generic demo price becomes an official estimate until this card is saved."
       />
 
       {loading ? (
@@ -105,7 +104,14 @@ export default function MovingRatesPage() {
           <section className="lane pt-4">
             <LaneHead
               title="Crew + truck"
-              right={<Stamp tone={configured ? "good" : "warn"}>{configured ? "LIVE RATES" : "NOT SET"}</Stamp>}
+              right={
+                <span
+                  className="eyebrow"
+                  style={{ color: configured ? "var(--emerald-ink)" : "var(--amber-ink)" }}
+                >
+                  {configured ? "LIVE RATES" : "NOT SET"}
+                </span>
+              }
             />
             <p className="measure t-body mt-2 text-ink-2">
               Hourly sell price for the whole crew and truck. Travel time uses the same crew rate.
