@@ -7,6 +7,8 @@
 #
 # Password mode prompts once and gives the password to sshpass through SSHPASS. The
 # password is never placed in argv, printed, written to disk or copied to the server.
+# A parent rollout script may already have SSHPASS exported; child status/deploy scripts
+# deliberately reuse it instead of prompting again.
 
 handycrm_init_ssh() {
   local box="$1"
@@ -29,7 +31,10 @@ EOF
         return 4
       fi
 
-      local password="${HANDYCRM_DEPLOY_PASSWORD:-}"
+      # HANDYCRM_DEPLOY_PASSWORD is an optional non-interactive override. An already-set
+      # SSHPASS belongs to a parent rollout process and is intentionally reusable by child
+      # status/deploy scripts so the operator only types the password once.
+      local password="${HANDYCRM_DEPLOY_PASSWORD:-${SSHPASS:-}}"
       if [ -z "$password" ]; then
         if [ ! -t 0 ] && [ ! -t 1 ]; then
           echo "Password SSH mode needs an interactive terminal or HANDYCRM_DEPLOY_PASSWORD." >&2
