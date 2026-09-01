@@ -142,17 +142,26 @@ say "provision / reconcile Beaver Movers"
       --add-workers
 " || fail "Beaver tenant provisioning/reconciliation failed"
 
-say "verify Beaver accounts"
-"${SSH[@]}" "
-  docker exec handyman-crm sqlite3 -header -column /app/var/crm.db \"
-    SELECT u.name, u.email, u.role
+say "verify canonical Beaver accounts"
+ACCOUNT_ROWS=$("${SSH[@]}" "
+  docker exec handyman-crm sqlite3 -separator '|' /app/var/crm.db \"
+    SELECT lower(u.email), u.role, u.approved
     FROM User u
     JOIN Tenant t ON t.id = u.tenantId
     WHERE t.slug = 'beaver-movers'
-      AND u.email IN ('darryl@beavermovers.com','mike@beavermovers.com','nicolas@beavermovers.com')
-    ORDER BY CASE u.role WHEN 'ADMIN' THEN 0 ELSE 1 END, u.email;
+      AND lower(u.email) IN ('darryl@beavermovers.com','mike@beavermovers.com','nicolas@beavermovers.com')
+    ORDER BY lower(u.email);
   \"
-" || fail "could not verify Beaver accounts"
+") || fail "could not verify Beaver accounts"
+
+EXPECTED_ACCOUNTS=$(printf '%s\n' \
+  'darryl@beavermovers.com|ADMIN|1' \
+  'mike@beavermovers.com|WORKER|1' \
+  'nicolas@beavermovers.com|WORKER|1')
+
+printf '%s\n' "$ACCOUNT_ROWS"
+[ "$ACCOUNT_ROWS" = "$EXPECTED_ACCOUNTS" ] || \
+  fail "canonical Beaver accounts/roles/approval do not match the launch contract"
 
 say "repository/infrastructure rollout complete"
 printf '%s\n' \
