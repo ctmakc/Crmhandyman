@@ -136,6 +136,22 @@ function crewSizeFromDescription(description: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+export function isMovingRateLine(description: string): boolean {
+  const value = description.trim();
+  return (
+    /^crew of\s+(2|3|4)\b/i.test(value) ||
+    /^travel time\b/i.test(value) ||
+    /^stair carry surcharge/i.test(value) ||
+    /^packing materials kit/i.test(value) ||
+    /^wardrobe box rental/i.test(value) ||
+    /^piano \/ safe handling/i.test(value)
+  );
+}
+
+export function containsMovingRateLines(lines: Array<Pick<PriceItem, "description">>): boolean {
+  return lines.some((line) => isMovingRateLine(line.description));
+}
+
 /**
  * Reprices only moving-specific lines. It preserves quantities/descriptions and leaves
  * unrelated custom lines alone. A generic travel line inherits the crew rate from the
